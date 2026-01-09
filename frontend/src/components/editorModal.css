@@ -1,5 +1,5 @@
-.ef-modal-overlay{position:fixed;inset:0;background:rgba(10,12,16,0.6);display:flex;align-items:center;justify-content:center;z-index:1200}
-.ef-modal{background:#0f1720;color:#e6eef8;border-radius:10px;max-width:720px;width:92%;box-shadow:0 10px 30px rgba(2,6,23,0.6);overflow:hidden;border:1px solid rgba(255,255,255,0.04)}
+.ef-modal-overlay{position:fixed;inset:0;background:rgba(10,12,16,0.6);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:1200}
+.ef-modal{background:rgba(26,31,46,0.95);backdrop-filter:blur(20px);color:#e6eef8;border-radius:10px;max-width:720px;width:92%;box-shadow:0 10px 30px rgba(2,6,23,0.6);overflow:hidden;border:1px solid rgba(255,255,255,0.1)}
 .ef-modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.02)}
 .ef-modal-body{padding:18px 20px;max-height:60vh;overflow:auto}
 .ef-modal-footer{display:flex;justify-content:flex-end;padding:14px 20px;border-top:1px solid rgba(255,255,255,0.02);gap:8px}

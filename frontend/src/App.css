@@ -348,25 +348,25 @@ button:disabled {
 .user { text-align: left; color: blue; }
 .ai { text-align: left; color: green; }
 
-.chat-window > div { max-width: none; width: 100%; margin: 0; background: rgba(0,0,0,0.55); padding: 12px; border-radius: 10px; box-shadow: 0 6px 30px rgba(0,0,0,0.6); }
+.chat-window > div { max-width: none; width: 100%; margin: 0; background: rgba(0,0,0,0.55); backdrop-filter: blur(8px); padding: 12px; border-radius: 10px; box-shadow: 0 6px 30px rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.05); }
 
 .message-row { display:flex; gap:12px; align-items:flex-start; margin-bottom:12px }
-.avatar { width:44px; height:44px; background:linear-gradient(180deg,#25313a,#182026); color:#fff; display:flex; align-items:center; justify-content:center; border-radius:50%; font-weight:700; box-shadow: 0 2px 6px rgba(0,0,0,0.6) }
+.avatar { width:44px; height:44px; background:linear-gradient(180deg,#25313a,#182026); color:#fff; display:flex; align-items:center; justify-content:center; border-radius:50%; font-weight:700; box-shadow: 0 2px 6px rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); }
 .avatar-img { width:100%; height:100%; object-fit:cover; border-radius:50%; display:block }
-.message-body { flex: 1; background: rgba(255,255,255,0.03); padding:10px 12px; border-radius:8px; backdrop-filter: blur(4px); }
+.message-body { flex: 1; background: rgba(255,255,255,0.03); padding:10px 12px; border-radius:8px; backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.05); }
 .avatar-meta { text-align:center; font-size:12px; color:#94a3b8 }
 .avatar-meta .msg-num { font-weight:700; color:#cfe7f8 }
 .avatar-meta .token-count { color:#9aa6ad; font-weight:700 }
 .message-meta { font-size:12px; color:#bfc7cc; margin-bottom:6px }
 .message-text { white-space:pre-wrap; color:#e6eef2; line-height:1.4 }
 .ai .message-text { font-style: normal }
-.ai .message-body { background: rgba(255,255,255,0.02) }
+.ai .message-body { background: rgba(255,255,255,0.02); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.04); }
 .ai.narrator .message-text { font-style: italic; color:#dce8ef }
 .typing-indicator { font-style:italic; color:#cbd6db; margin:6px 0 }
 .ts { margin-left:8px; font-size:11px; color:#94a3b8 }
 
 /* input bar styling to match screenshot */
-.input-area { background: rgba(0,0,0,0.45); padding: 10px; border-radius: 999px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.02); }
+.input-area { background: rgba(0,0,0,0.45); backdrop-filter: blur(8px); padding: 10px; border-radius: 999px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); }
 .input-area { display:flex; gap:10px; align-items:center; }
 .input-area textarea { flex:1; resize:vertical; min-height:44px; max-height:160px; padding:10px 12px; border-radius:12px; background:transparent; color:#e6eef2; border: none; outline:none }
 .input-area button { background: linear-gradient(180deg,#4b5563,#2b3035); color: #fff; border: none; padding: 8px 14px; border-radius: 999px }
@@ -397,7 +397,7 @@ button:disabled {
 .app { font-family: Inter, 'Segoe UI', Roboto, Arial, sans-serif; color: #e6eef2 }
 .app-panel { background: linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.02)); }
 
-.visual-tag{background:rgba(255,255,255,0.03);padding:8px;border-radius:6px;margin-top:6px}
+.visual-tag{background:rgba(255,255,255,0.03);backdrop-filter:blur(4px);padding:8px;border-radius:6px;margin-top:6px;border:1px solid rgba(255,255,255,0.04)}
 
 /* Inline message edit controls */
 .message-edit-inline textarea { width: 100%; box-sizing: border-box; min-height: 88px; resize: vertical; }
@@ -405,7 +405,7 @@ button:disabled {
 .message-row { cursor: default }
 .message-row:hover { background: transparent }
 
-.hierarchy{display:flex;gap:12px;padding:12px 18px;align-items:center;width:100%;box-sizing:border-box}
+.hierarchy{display:flex;gap:12px;padding:12px 18px;align-items:center;width:100%;box-sizing:border-box;background:rgba(255,255,255,0.02);backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.03);border-radius:8px;margin-bottom:8px}
 
 .input-area {
   display: flex;
@@ -466,19 +466,26 @@ input {
   color:#fff;
 }
 
-.icon-btn { background: transparent; border: none; color:#cfe7f8; cursor:pointer; padding:6px; font-size:16px }
+.icon-btn { background: transparent; border: none; color:#cfe7f8; cursor:pointer; padding:6px; font-size:16px; border-radius: 6px; transition: all 0.2s ease }
+.icon-btn:hover { background: rgba(255,255,255,0.1); backdrop-filter: blur(4px); }
 .icon-edit { background: transparent; border: none; color:#9fb9c5; cursor:pointer; padding:6px; margin-left:8px }
 .left-tabs { display:flex; align-items:center }
 .right-tabs { display:flex; align-items:center; gap:12px }
 .active-characters-area { display:flex; align-items:center; gap:8px }
 
 .active-char-btn {
-  background: #555;
+  background: rgba(85, 85, 85, 0.8);
+  backdrop-filter: blur(8px);
   color: white;
-  border: 1px solid #777;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 5px 10px;
   cursor: pointer;
   margin-right: 10px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+.active-char-btn:hover {
+  background: rgba(100, 100, 100, 0.9);
 }
 
 .modal-overlay {
@@ -487,21 +494,26 @@ input {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(10, 12, 16, 0.6);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 1200;
 }
 
 .modal {
-  background: #333;
+  background: rgba(26, 31, 46, 0.95);
+  backdrop-filter: blur(20px);
   color: white;
   padding: 20px;
-  border-radius: 5px;
+  border-radius: 10px;
   max-width: 600px;
   width: 100%;
   max-height: 80vh;
   overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6);
 }
 
 .comfy-modal {
@@ -511,12 +523,15 @@ input {
 
 .comfy-full {
   padding: 20px;
-  background: #333;
+  background: rgba(26, 31, 46, 0.95);
+  backdrop-filter: blur(20px);
   color: white;
-  border-radius: 5px;
+  border-radius: 10px;
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6);
 }
 
 .character-list {
@@ -545,6 +560,11 @@ input {
 
 .manager input, .manager textarea {
   padding: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #e6eef2;
 }
 
 .manager ul {

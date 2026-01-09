@@ -60,7 +60,7 @@ const PersonaComponent: React.FC<PersonaComponentProps> = ({
         </div>
 
         {personaOpen && (
-          <div className="absolute top-full left-0 right-0 border border-border-color rounded-lg mt-1 z-40 shadow-lg w-full" style={{ backgroundColor: '#1f2937' }}>
+          <div className="absolute top-full left-0 right-0 border border-white/10 rounded-lg mt-1 z-40 shadow-lg glass" style={{ backgroundColor: 'rgba(30, 30, 50, 0.35)' }}>
             {personas.map((p) => (
               <div
                 key={p.id}
