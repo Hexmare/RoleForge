@@ -967,11 +967,9 @@ function App() {
   };
 
   const contentClasses = [
-    'flex-1 h-[calc(100vh-50px)] mt-[50px]',
+    'flex-1',
     currentTab === 'chat' ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden',
-    'transition-all duration-300 ease-in-out',
-    leftPanelOpen ? 'ml-80' : 'ml-0',
-    rightPanelOpen ? 'mr-96' : 'mr-0'
+    'transition-all duration-300 ease-in-out'
   ].filter(Boolean).join(' ');
 
   return (
@@ -1014,7 +1012,10 @@ function App() {
           title={sessionContext?.scene?.title || 'RoleForge'}
         />
 
-        <Panel side="left" open={leftPanelOpen} onToggle={() => setLeftPanelOpen(!leftPanelOpen)}>
+        <div className="flex flex-1 mt-[50px] overflow-hidden">
+          {/* Left Panel */}
+          {leftPanelOpen && (
+            <Panel side="left" open={true} onToggle={() => setLeftPanelOpen(false)}>
           <div className="space-y-4">
             <div>
               <h3 className="text-sm font-semibold text-text-primary mb-2">Persona</h3>
@@ -1055,18 +1056,14 @@ function App() {
               </div>
             </div>
           </div>
-        </Panel>
+          </Panel>
+          )}
 
-        <main className={contentClasses}>
-          <div className="h-full flex flex-col">
-            {/* Modal editors */}
-            <WorldEditor visible={modalType === 'world-new' || modalType === 'world-edit'} initial={modalInitial} onClose={closeModal} onSave={saveWorld} />
-            <CampaignEditor visible={modalType === 'campaign-new' || modalType === 'campaign-edit'} initial={modalInitial} onClose={closeModal} onSave={saveCampaign} />
-            <ArcEditor visible={modalType === 'arc-new' || modalType === 'arc-edit'} initial={modalInitial} onClose={closeModal} onSave={saveArc} />
-            <SceneEditor visible={modalType === 'scene-new' || modalType === 'scene-edit'} initial={modalInitial} onClose={closeModal} onSave={saveScene} />
-
-            {currentTab === 'chat' && (
-              <Chat
+          {/* Main Content */}
+          <main className={contentClasses}>
+            <div className="h-full flex flex-col mx-2.5">
+              {currentTab === 'chat' && (
+                <Chat
                 messages={messages}
                 selectedScene={selectedScene}
                 input={input}
@@ -1086,12 +1083,16 @@ function App() {
             {currentTab === 'personas' && <PersonaManager />}
             {currentTab === 'comfyui' && <ComfyConfigModal visible={true} onClose={() => setCurrentTab('chat')} isModal={false} />}
             {currentTab === 'worlds' && <WorldManager onRefresh={fetchWorlds} onSelectScene={handleSceneChange} selectedScene={selectedScene} />}
-          </div>
-        </main>
+            </div>
+          </main>
 
-        <Panel side="right" open={rightPanelOpen} onToggle={() => setRightPanelOpen(!rightPanelOpen)}>
-          <></>
-        </Panel>
+          {/* Right Panel */}
+          {rightPanelOpen && (
+            <Panel side="right" open={true} onToggle={() => setRightPanelOpen(false)}>
+              <></>
+            </Panel>
+          )}
+        </div>
 
         {/* Modal editors */}
         <WorldEditor visible={modalType === 'world-new' || modalType === 'world-edit'} initial={modalInitial} onClose={closeModal} onSave={saveWorld} />
