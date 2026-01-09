@@ -28,10 +28,10 @@ const TopBar: React.FC<TopBarProps> = ({
   breadcrumbs = [] 
 }) => {
   return (
-    <header className="top-bar">
-      <div className="top-bar-start">
+    <header className="fixed top-0 w-screen h-[50px] bg-primary-bg/95 backdrop-blur-[10px] border-b border-border-color flex items-center justify-between px-6 z-200">
+      <div className="flex items-center gap-4">
         <button 
-          className={`panel-toggle${leftOpen ? ' active' : ''}`} 
+          className={`w-8 h-8 flex items-center justify-center rounded hover:bg-panel-tertiary transition-colors ${leftOpen ? 'bg-accent-primary text-white' : 'text-text-primary'}`} 
           onClick={onLeftToggle}
           aria-label="Toggle left panel"
           aria-pressed={leftOpen}
@@ -40,7 +40,7 @@ const TopBar: React.FC<TopBarProps> = ({
         </button>
         {onChatClick && (
           <button 
-            className="panel-toggle" 
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-panel-tertiary transition-colors text-text-primary" 
             onClick={onChatClick}
             aria-label="Switch to chat view"
           >
@@ -49,7 +49,7 @@ const TopBar: React.FC<TopBarProps> = ({
         )}
         {onCharacterClick && (
           <button 
-            className="panel-toggle" 
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-panel-tertiary transition-colors text-text-primary" 
             onClick={onCharacterClick}
             aria-label="Switch to characters view"
           >
@@ -58,7 +58,7 @@ const TopBar: React.FC<TopBarProps> = ({
         )}
         {onLoreClick && (
           <button 
-            className="panel-toggle" 
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-panel-tertiary transition-colors text-text-primary" 
             onClick={onLoreClick}
             aria-label="Open lore manager"
           >
@@ -67,7 +67,7 @@ const TopBar: React.FC<TopBarProps> = ({
         )}
         {onImageClick && (
           <button 
-            className="panel-toggle" 
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-panel-tertiary transition-colors text-text-primary" 
             onClick={onImageClick}
             aria-label="Open ComfyUI settings"
           >
@@ -76,7 +76,7 @@ const TopBar: React.FC<TopBarProps> = ({
         )}
         {onWorldClick && (
           <button 
-            className="panel-toggle" 
+            className="w-10 h-10 flex items-center justify-center rounded hover:bg-panel-tertiary transition-colors text-text-primary" 
             onClick={onWorldClick}
             aria-label="Switch to worlds view"
           >
@@ -85,18 +85,18 @@ const TopBar: React.FC<TopBarProps> = ({
         )}
       </div>
       
-      <div className="top-bar-center">
-        <h1 className="text-heading-2">{title}</h1>
+      <div className="flex-1 flex items-center gap-2">
+        <h1 className="text-lg font-semibold text-text-primary">{title}</h1>
         {breadcrumbs.length > 0 && (
           <nav aria-label="Breadcrumb">
-            <span className="text-small">{breadcrumbs.join(' > ')}</span>
+            <span className="text-sm text-text-secondary">{breadcrumbs.join(' > ')}</span>
           </nav>
         )}
       </div>
       
-      <div className="top-bar-end">
+      <div className="flex items-center">
         <button 
-          className={`panel-toggle${rightOpen ? ' active' : ''}`} 
+          className={`w-8 h-8 flex items-center justify-center rounded hover:bg-panel-tertiary transition-colors ${rightOpen ? 'bg-accent-primary text-white' : 'text-text-primary'}`} 
           onClick={onRightToggle}
           aria-label="Toggle right panel"
           aria-pressed={rightOpen}

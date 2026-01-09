@@ -10,9 +10,9 @@ The frontend is currently Vite + TypeScript + Nunjucks templating — we plan to
 - Target aesthetic: **Dark Glassmorphism** — moody, sophisticated, premium fantasy/sci-fi feel.
   - Deep blacks/grays + subtle vibrant accents (emerald, indigo, crimson, deep purple)
   - Frosted glass (backdrop-blur + translucency) for cards, sidebars, modals
-  - Layered depth without visual noise
-  - Smooth micro-animations (message reveal, hover scale, typing glow)
-- Must feel like a digital Game Master / interactive novel — not just another chat app.
+  - Smooth micro-animations (message reveal, hover scale, typing glow) - optional, low priority
+- Accent colors per character/world (stored in DB)
+- Animations: Framer Motion optional for enhanced smoothness (fade-in-up for messages, scale on hover)
 
 ## Key Screens & Layout Structure
 
@@ -61,7 +61,7 @@ Sleek layered translucent UI elements
   }
   ```
 - Accent colors per character/world (stored in DB)
-- Animations: Framer Motion preferred (fade-in-up for messages, scale on hover)
+- Animations: Framer Motion optional (low priority) for smooth micro-animations (fade-in-up for messages, scale on hover)
 
 ### 3. Image & Video Generation Integration
 - Inline triggers: `/image forest battle at dusk, cinematic` or dedicated button
@@ -82,7 +82,7 @@ Sleek layered translucent UI elements
 - State management: **Zustand** (lightweight) or **Jotai**
 - Real-time: Socket.io from Node backend
 - Styling: Tailwind + custom glass utilities
-- Animations: Framer Motion
+- Animations: Framer Motion (optional, low priority)
 - Image handling: lazy loading + blur placeholder
 - Accessibility:
   - High contrast mode toggle
@@ -97,6 +97,7 @@ Sleek layered translucent UI elements
 5. World dashboard with cards
 6. Theme system + per-world custom backgrounds/accents
 7. Character editor modal
+8. Optional: Framer Motion animations for enhanced polish (low priority)
 
 **Tone & Philosophy**
 Make it feel magical, premium, and addictive for long roleplaying sessions.  

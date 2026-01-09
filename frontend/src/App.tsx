@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import './App.css';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
 import CharacterManager from './CharacterManager';
 import LoreManager from './LoreManager';
 import PersonaManager from './PersonaManager';
@@ -13,12 +10,12 @@ import CampaignEditor from './components/CampaignEditor';
 import ArcEditor from './components/ArcEditor';
 import SceneEditor from './components/SceneEditor';
 import ConfirmModal from './components/ConfirmModal';
-import Spinner from './components/Spinner';
-import ComfyConfigModal from './components/ComfyConfigModal';
-import ImageCard from './components/ImageCard';
-import Panel from './components/Panel';
+import Chat from './components/Chat';
 import TopBar from './components/TopBar';
+import Panel from './components/Panel';
+import Spinner from './components/Spinner';
 import { ToastProvider } from './components/Toast';
+import ComfyConfigModal from './components/ComfyConfigModal';
 
 interface Message {
   role: 'user' | 'ai';
@@ -37,12 +34,10 @@ if (!socket) {
   (window as any).__socket = socket;
 }
 function App() {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const selectedSceneRef = useRef<number | null>(null);
   const prevSelectedSceneRef = useRef<number | null>(null);
   const initialPersonaLoadedRef = useRef(false);
   const loadRequestIdRef = useRef(0);
-  const chatWindowRef = useRef<HTMLDivElement | null>(null);
   const skipAutoScrollRef = useRef(false);
   // use module-level `socket` singleton
 
@@ -74,9 +69,6 @@ function App() {
   const [modalInitial, setModalInitial] = useState<any>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
-  const [editingText, setEditingText] = useState<string>('');
-  const [editingSaving, setEditingSaving] = useState<boolean>(false);
   const lastNextClickRef = useRef<Record<number, number>>({});
 
   // Panel state for new UI
@@ -482,24 +474,6 @@ function App() {
     }
   }, [selectedScene]);
 
-  useEffect(() => {
-    if (skipAutoScrollRef.current) {
-      // a UI action updated messages (e.g., image prev/next/regen) — skip auto-scroll once
-      skipAutoScrollRef.current = false;
-      return;
-    }
-    if (!userScrolledUp) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, userScrolledUp]);
-
-  // Scroll to bottom when switching to chat tab
-  useEffect(() => {
-    if (currentTab === 'chat' && !userScrolledUp) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [currentTab]);
-
   const updateMessageContent = async (id: number, newContent: string) => {
     // Optimistic local update so UI responds immediately to prev/next
     setMessages(prev => prev.map(m => m.id === id ? { ...m, content: newContent } : m));
@@ -525,6 +499,14 @@ function App() {
       console.warn('Failed to update message', e);
       // On failure, reload authoritative messages to ensure consistency
       if (selectedScene) await loadMessages(selectedScene).catch(() => {});
+    }
+  };
+
+  const highlightInlineQuotes = (s: string) => {
+    try {
+      return s.replace(/\"([^\\\"]+)\"/g, '<span class="inline-quote">"$1"</span>');
+    } catch (e) {
+      return s;
     }
   };
 
@@ -936,128 +918,6 @@ function App() {
     );
   };
 
-  const highlightInlineQuotes = (s: string) => {
-    try {
-      return s.replace(/\"([^\\\"]+)\"/g, '<span class="inline-quote">"$1"</span>');
-    } catch (e) {
-      return s;
-    }
-  };
-
-  const renderMessage = (msg: Message) => {
-
-      const getAvatarForSender = (sender: string) => {
-      const namePart = sender && sender.includes(':') ? sender.split(':').pop() || sender : sender;
-      // First check personas (user-selected profiles), then characters
-      const p = personas.find((pp: any) => (pp.name || '').toString() === namePart);
-      if (p && p.avatarUrl) return p.avatarUrl;
-      const ch = characters.find((c: any) => (c.name || '').toString() === namePart);
-      return ch?.avatarUrl || null;
-    };
-    const visualMatch = msg.content.match(/\[VISUAL: ([^\]]+)\]/);
-    if (visualMatch) {
-      const textPart = msg.content.replace(/\[VISUAL: [^\]]+\]/, '').trim();
-      const visualPrompt = visualMatch[1];
-      return (
-        <div className="message-row">
-          <div className="avatar">{getAvatarForSender(msg.sender) ? <img src={getAvatarForSender(msg.sender)!} alt="avatar" className="avatar-img" /> : (msg.sender || 'AI').toString().split(':').pop()?.slice(0,2)}</div>
-          <div className="message-body">
-            <div className="message-meta"><strong>{msg.sender}</strong> {msg.timestamp ? <span className="ts">{new Date(msg.timestamp).toLocaleTimeString()}</span> : null}</div>
-            <div className="message-text"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{highlightInlineQuotes(textPart)}</ReactMarkdown></div>
-            <div className="visual-tag">[Image: {visualPrompt}]</div>
-          </div>
-        </div>
-      );
-    }
-    const displayName = msg.sender && msg.sender.includes(':') ? msg.sender.split(':').pop() : msg.sender;
-    const onEditStart = () => {
-      if (!msg.id) return; // only edit persisted messages
-      setEditingMessageId(msg.id || null);
-      setEditingText(msg.content);
-    };
-
-    const onCancelEdit = () => {
-      setEditingMessageId(null);
-      setEditingText('');
-    };
-
-    const onSaveEdit = async () => {
-      if (!msg.id) return;
-      setEditingSaving(true);
-      try {
-        await fetch(`/api/messages/${msg.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: editingText }) });
-        // refresh messages for selected scene
-        if (selectedScene) await loadMessages(selectedScene);
-      } catch (e) {
-        console.warn('Failed to save message edit', e);
-      } finally {
-        setEditingSaving(false);
-        onCancelEdit();
-      }
-    };
-
-    const onDelete = async () => {
-      if (!msg.id) return;
-      if (!confirm('Delete this message? This will reorder subsequent messages.')) return;
-      try {
-        await fetch(`/api/messages/${msg.id}`, { method: 'DELETE' });
-        if (selectedScene) await loadMessages(selectedScene);
-      } catch (e) { console.warn('Failed to delete message', e); }
-    };
-
-    const onMove = async (direction: 'up' | 'down') => {
-      if (!msg.id) return;
-      try {
-        await fetch(`/api/messages/${msg.id}/move`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ direction }) });
-        if (selectedScene) await loadMessages(selectedScene);
-      } catch (e) { console.warn('Failed to move message', e); }
-    };
-
-    return (
-      <div className="message-row" onDoubleClick={onEditStart}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-          <div className="avatar">{getAvatarForSender(msg.sender) ? <img src={getAvatarForSender(msg.sender)!} alt="avatar" className="avatar-img" /> : (displayName || 'AI').toString().slice(0,2)}</div>
-          <div className="avatar-meta">
-            {msg.messageNumber ? <div className="msg-num">#{msg.messageNumber}</div> : null}
-            {msg.tokenCount !== undefined && msg.tokenCount !== null ? <div className="token-count">{msg.tokenCount}t</div> : null}
-          </div>
-        </div>
-        <div className="message-body">
-          <div className="message-meta"><strong>{displayName}</strong> {msg.timestamp ? <span className="ts">{new Date(msg.timestamp).toLocaleTimeString()}</span> : null}</div>
-          {editingMessageId === msg.id ? (
-            <div className="message-edit-inline">
-              <textarea value={editingText} onChange={e => setEditingText(e.target.value)} rows={4} style={{ width: '100%', padding: 8, borderRadius: 6, background: 'transparent', color: '#e6eef2', border: '1px solid rgba(255,255,255,0.06)' }} />
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button className="icon-btn" onClick={onSaveEdit} disabled={editingSaving} title="Save">✅</button>
-                <button className="icon-btn" onClick={onCancelEdit} title="Cancel">❌</button>
-                <button className="icon-btn" onClick={onDelete} title="Delete">🗑️</button>
-                <button className="icon-btn" onClick={() => onMove('up')} title="Move up">⬆️</button>
-                <button className="icon-btn" onClick={() => onMove('down')} title="Move down">⬇️</button>
-              </div>
-            </div>
-          ) : (
-            <div className="message-text">
-              {(() => {
-                // Avoid mutating image alt JSON by not running quote-highlighting on content that contains images
-                const markdownContent = msg.content && msg.content.includes('![') ? msg.content : highlightInlineQuotes(msg.content);
-                return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={{ img: (props) => <ImageCard {...props} messageId={msg.id} onUpdateMessage={updateMessageContent} selectedScene={selectedScene} /> }}>{markdownContent}</ReactMarkdown>;
-              })()}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  // Modal handlers
-  const openNewWorld = () => { setModalType('world-new'); setModalInitial(null); };
-  const openEditWorld = () => { const w = worlds.find(w => w.id === selectedWorld); setModalType('world-edit'); setModalInitial(w); };
-  const openNewCampaign = () => { setModalType('campaign-new'); setModalInitial(null); };
-  const openEditCampaign = () => { const c = campaigns.find(c => c.id === selectedCampaign); setModalType('campaign-edit'); setModalInitial(c); };
-  const openNewArc = () => { setModalType('arc-new'); setModalInitial(null); };
-  const openEditArc = () => { const a = arcs.find(a => a.id === selectedArc); setModalType('arc-edit'); setModalInitial(a); };
-  const openNewScene = () => { setModalType('scene-new'); setModalInitial(null); };
-  const openEditScene = () => { const s = scenes.find(s => s.id === selectedScene); setModalType('scene-edit'); setModalInitial(s); };
 
   const closeModal = () => { setModalType(null); setModalInitial(null); };
 
@@ -1107,15 +967,16 @@ function App() {
   };
 
   const contentClasses = [
-    'content-main',
-    leftPanelOpen && 'left-open',
-    rightPanelOpen && 'right-open',
-    leftPanelOpen && rightPanelOpen && 'both-open'
+    'flex-1 h-[calc(100vh-50px)] mt-[50px]',
+    currentTab === 'chat' ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden',
+    'transition-all duration-300 ease-in-out',
+    leftPanelOpen ? 'ml-80' : 'ml-0',
+    rightPanelOpen ? 'mr-96' : 'mr-0'
   ].filter(Boolean).join(' ');
 
   return (
     <ToastProvider>
-      <div className="app-container">
+      <div className="w-screen h-screen flex overflow-hidden relative">
         <TopBar 
           onLeftToggle={() => setLeftPanelOpen(!leftPanelOpen)}
           onRightToggle={() => setRightPanelOpen(!rightPanelOpen)}
@@ -1154,46 +1015,50 @@ function App() {
         />
 
         <Panel side="left" open={leftPanelOpen} onToggle={() => setLeftPanelOpen(!leftPanelOpen)}>
-          <div className="panel-section">
-            <h3 className="panel-section-title">Persona</h3>
-            <div className="persona-select">
-              <div className="persona-selected" onClick={() => setPersonaOpen(open => !open)}>
-                {(() => {
-                  const p = personas.find((x: any) => x.name === selectedPersona);
-                  return (
-                    <>
-                      {p?.avatarUrl ? <img src={p.avatarUrl} className="persona-thumb" alt="p" /> : <div className="persona-thumb placeholder">{(p?.name||'').slice(0,2)}</div>}
-                      <span className="persona-name">{selectedPersona}</span>
-                      <span className="persona-caret">▾</span>
-                    </>
-                  );
-                })()}
-              </div>
-              {typeof personaOpen !== 'undefined' && personaOpen && (
-                <div className="persona-options">
-              {personas.map((p: any) => (
-                <div key={p.id} className="persona-option" onPointerDown={(e) => { e.preventDefault(); setSelectedPersona(p.name); setPersonaOpen(false); }}>
-                  {p.avatarUrl ? <img src={p.avatarUrl} className="persona-thumb" alt={p.name} /> : <div className="persona-thumb placeholder">{(p.name||'').slice(0,2)}</div>}
-                  <span className="persona-name">{p.name}</span>
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary mb-2">Persona</h3>
+              <div className="relative">
+                <div className="flex items-center p-2 bg-panel-tertiary rounded cursor-pointer hover:bg-panel-border transition-colors" onClick={() => setPersonaOpen(open => !open)}>
+                  {(() => {
+                    const p = personas.find((x: any) => x.name === selectedPersona);
+                    return (
+                      <>
+                        {p?.avatarUrl ? <img src={p.avatarUrl} className="w-6 h-6 rounded mr-2" alt="p" /> : <div className="w-6 h-6 rounded bg-panel-border flex items-center justify-center text-xs mr-2">{(p?.name||'').slice(0,2)}</div>}
+                        <span className="flex-1 text-text-primary text-sm">{selectedPersona}</span>
+                        <span className="text-text-secondary">▾</span>
+                      </>
+                    );
+                  })()}
                 </div>
-              ))}
+                {typeof personaOpen !== 'undefined' && personaOpen && (
+                  <div className="absolute top-full left-0 right-0 bg-panel-secondary border border-border-color rounded mt-1 z-10">
+                    {personas.map((p: any) => (
+                      <div key={p.id} className="flex items-center p-2 hover:bg-panel-tertiary cursor-pointer" onPointerDown={(e) => { e.preventDefault(); setSelectedPersona(p.name); setPersonaOpen(false); }}>
+                        {p.avatarUrl ? <img src={p.avatarUrl} className="w-6 h-6 rounded mr-2" alt={p.name} /> : <div className="w-6 h-6 rounded bg-panel-border flex items-center justify-center text-xs mr-2">{(p.name||'').slice(0,2)}</div>}
+                        <span className="text-text-primary text-sm">{p.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button className="absolute right-0 top-0 w-6 h-6 flex items-center justify-center text-text-secondary hover:text-text-primary" title="Edit personas" onClick={() => setCurrentTab('personas')}>✎</button>
+              </div>
             </div>
-          )}
-          <button className="icon-edit" title="Edit personas" onClick={() => setCurrentTab('personas')}>✎</button>
-        </div>
-      </div>
-      <div className="panel-section">
-        <h3 className="panel-section-title">Active Characters</h3>
-        <div className="active-characters-area">
-          <span className="active-characters">Active: {activeCharacters.join(', ') || 'None'}</span>
-          <button className="icon-btn" title="Select active characters" onClick={() => setModalOpen(true)}>👥+</button>
-          <button className="icon-edit" title="Edit characters" onClick={() => setCurrentTab('characters')}>✎</button>
-        </div>
-      </div>
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary mb-2">Active Characters</h3>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-text-secondary">Active: {activeCharacters.join(', ') || 'None'}</span>
+                <div className="flex space-x-1">
+                  <button className="w-6 h-6 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-panel-tertiary rounded" title="Select active characters" onClick={() => setModalOpen(true)}>👥+</button>
+                  <button className="w-6 h-6 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-panel-tertiary rounded" title="Edit characters" onClick={() => setCurrentTab('characters')}>✎</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </Panel>
 
         <main className={contentClasses}>
-          <div className="content-inner">
+          <div className="h-full flex flex-col">
             {/* Modal editors */}
             <WorldEditor visible={modalType === 'world-new' || modalType === 'world-edit'} initial={modalInitial} onClose={closeModal} onSave={saveWorld} />
             <CampaignEditor visible={modalType === 'campaign-new' || modalType === 'campaign-edit'} initial={modalInitial} onClose={closeModal} onSave={saveCampaign} />
@@ -1201,51 +1066,26 @@ function App() {
             <SceneEditor visible={modalType === 'scene-new' || modalType === 'scene-edit'} initial={modalInitial} onClose={closeModal} onSave={saveScene} />
 
             {currentTab === 'chat' && (
-              <div className="chat-window">
-                {selectedScene ? (
-                  <div ref={chatWindowRef} onScroll={(e) => {
-                    const el = e.target as HTMLDivElement;
-                    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 50;
-                    setUserScrolledUp(!atBottom);
-                  }}>
-                    {messages.map((msg, i) => (
-                      <div key={i} className={msg.role === 'user' ? 'user' : 'ai'}>
-                        {renderMessage(msg)}
-                      </div>
-                    ))}
-                    {isStreaming && (
-                      <div className="typing-indicator">AI is typing...</div>
-                    )}
-                    <div ref={messagesEndRef} />
-                  </div>
-                ) : (
-                  <div className="empty-chat">No scene selected. Select a scene to load chat.</div>
-                )}
-              </div>
+              <Chat
+                messages={messages}
+                selectedScene={selectedScene}
+                input={input}
+                onInputChange={setInput}
+                onSendMessage={sendMessage}
+                isStreaming={isStreaming}
+                onScroll={(atBottom) => setUserScrolledUp(!atBottom)}
+                userScrolledUp={userScrolledUp}
+                personas={personas}
+                characters={characters}
+                onUpdateMessage={updateMessageContent}
+                onMessagesRefresh={() => selectedScene && loadMessages(selectedScene)}
+              />
             )}
             {currentTab === 'characters' && <CharacterManager onRefresh={fetchCharacters} />}
             {currentTab === 'lore' && <LoreManager />}
             {currentTab === 'personas' && <PersonaManager />}
             {currentTab === 'comfyui' && <ComfyConfigModal visible={true} onClose={() => setCurrentTab('chat')} isModal={false} />}
             {currentTab === 'worlds' && <WorldManager onRefresh={fetchWorlds} onSelectScene={handleSceneChange} selectedScene={selectedScene} />}
-
-            {currentTab === 'chat' && (
-              <div className="chat-area">
-                <div className="input-area">
-                  <textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-                    }}
-                    placeholder={selectedScene ? 'Type your message... (Shift+Enter for newline)' : 'Select a scene to enable chat'}
-                    disabled={!selectedScene}
-                    rows={2}
-                  />
-                  <button onClick={sendMessage} disabled={!selectedScene || !input.trim()}>Send</button>
-                </div>
-              </div>
-            )}
           </div>
         </main>
 
@@ -1261,14 +1101,15 @@ function App() {
         <ComfyConfigModal visible={modalType === 'comfyui'} onClose={() => setModalType(null)} />
 
         {modalOpen && (
-          <div className="modal-overlay" onClick={() => setModalOpen(false)}>
-            <div className="modal" onClick={(e) => e.stopPropagation()}>
-              <h3>Select Active Characters</h3>
-              <div className="character-list">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-300" onClick={() => setModalOpen(false)}>
+            <div className="glass p-6 rounded-lg max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold mb-4 text-text-primary">Select Active Characters</h3>
+              <div className="space-y-2 mb-4">
                 {characters.map((c) => (
-                  <label key={c.id}>
+                  <label key={c.id} className="flex items-center space-x-2 cursor-pointer">
                     <input
                       type="checkbox"
+                      className="w-4 h-4 text-accent-primary bg-panel-secondary border-border-color rounded focus:ring-accent-primary"
                       checked={activeCharacters.includes(c.name)}
                       onChange={(e) => {
                         if (e.target.checked) {
@@ -1278,27 +1119,42 @@ function App() {
                         }
                       }}
                     />
-                    {c.name}
+                    <span className="text-text-primary">{c.name}</span>
                   </label>
                 ))}
               </div>
-              <div className="modal-buttons">
-                <button onClick={() => { updateActiveCharacters([]); }}>Clear All</button>
-                <button onClick={() => setModalOpen(false)}>Done</button>
+              <div className="flex justify-end space-x-2">
+                <button 
+                  className="px-4 py-2 bg-panel-tertiary hover:bg-panel-border text-text-primary rounded transition-colors"
+                  onClick={() => { updateActiveCharacters([]); }}
+                >
+                  Clear All
+                </button>
+                <button 
+                  className="px-4 py-2 bg-accent-primary hover:bg-accent-hover text-white rounded transition-colors"
+                  onClick={() => setModalOpen(false)}
+                >
+                  Done
+                </button>
               </div>
             </div>
           </div>
         )}
         {imageModalUrl && (
-          <div className="modal-overlay" onClick={() => { setImageModalUrl(null); setImageModalPrompt(null); }}>
-            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90%', maxHeight: '90%' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <strong>Image</strong>
-                <button className="icon-btn" onClick={() => { setImageModalUrl(null); setImageModalPrompt(null); }}>✕</button>
+          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-300" onClick={() => { setImageModalUrl(null); setImageModalPrompt(null); }}>
+            <div className="glass p-4 rounded-lg max-w-4xl w-full mx-4 max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-3">
+                <strong className="text-text-primary">Image</strong>
+                <button 
+                  className="w-8 h-8 flex items-center justify-center hover:bg-panel-tertiary rounded text-text-primary"
+                  onClick={() => { setImageModalUrl(null); setImageModalPrompt(null); }}
+                >
+                  ✕
+                </button>
               </div>
-              <div style={{ marginTop: 12, textAlign: 'center' }}>
-                <img src={imageModalUrl} alt={imageModalPrompt || 'image'} style={{ maxWidth: '100%', maxHeight: '70vh' }} />
-                {imageModalPrompt && <div style={{ marginTop: 8, color: '#cfd8dc' }}>{imageModalPrompt}</div>}
+              <div className="text-center">
+                <img src={imageModalUrl} alt={imageModalPrompt || 'image'} className="max-w-full max-h-[70vh] rounded" />
+                {imageModalPrompt && <div className="mt-2 text-text-secondary text-sm">{imageModalPrompt}</div>}
               </div>
             </div>
           </div>
