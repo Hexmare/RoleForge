@@ -504,6 +504,21 @@ input {
   overflow-y: auto;
 }
 
+.comfy-modal {
+  max-width: 1400px;
+  width: 100%;
+}
+
+.comfy-full {
+  padding: 20px;
+  background: #333;
+  color: white;
+  border-radius: 5px;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
 .character-list {
   display: flex;
   flex-direction: column;
@@ -583,6 +598,126 @@ input {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Manager styles */
+.manager {
+  padding: 1rem;
+}
+
+.manager h2 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.2rem;
+  color: var(--text-primary);
+}
+
+.tab-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.tab-buttons button {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-color);
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.tab-buttons button.active {
+  background: var(--button-bg);
+  color: var(--button-text);
+}
+
+.manager-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.manager-form input,
+.manager-form textarea,
+.manager-form select {
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+}
+
+.manager-form button {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  background: var(--button-bg);
+  color: var(--button-text);
+  cursor: pointer;
+  transition: background 200ms ease;
+}
+
+.manager-form button:hover {
+  background: var(--button-hover);
+}
+
+.manager-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.manager-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--panel-bg);
+}
+
+.manager-item-info {
+  flex: 1;
+}
+
+.manager-item-info strong {
+  display: block;
+  color: var(--text-primary);
+}
+
+.manager-item-info p {
+  margin: 0.25rem 0 0 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.manager-item-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.manager-item-actions button {
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: 4px;
+  background: var(--button-secondary-bg);
+  color: var(--button-secondary-text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: background 200ms ease;
+}
+
+.manager-item.selected {
+  border-color: var(--button-bg);
+  background: var(--panel-bg-hover);
+}
+
+.manager-item-actions button.active {
+  background: var(--button-bg);
+  color: var(--button-text);
 }
 
 @media (prefers-reduced-motion: no-preference) {

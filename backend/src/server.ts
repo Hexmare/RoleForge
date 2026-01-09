@@ -106,6 +106,17 @@ app.delete('/api/campaigns/:id', (req, res) => {
   res.json(CampaignService.delete(Number(id)));
 });
 
+app.get('/api/campaigns/:campaignId/state', (req, res) => {
+  const { campaignId } = req.params;
+  res.json(CampaignService.getState(Number(campaignId)));
+});
+
+app.put('/api/campaigns/:campaignId/state', (req, res) => {
+  const { campaignId } = req.params;
+  const updates = req.body;
+  res.json(CampaignService.updateState(Number(campaignId), updates));
+});
+
 // Arcs
 app.get('/api/campaigns/:campaignId/arcs', (req, res) => {
   const { campaignId } = req.params;

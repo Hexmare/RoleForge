@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-type Props = { visible: boolean; onClose: () => void };
+type Props = { visible: boolean; onClose: () => void; isModal?: boolean };
 
 const pow2Options = (() => {
   const res: number[] = [];
@@ -9,7 +9,7 @@ const pow2Options = (() => {
   return res;
 })();
 
-export default function ComfyConfigModal({ visible, onClose }: Props) {
+export default function ComfyConfigModal({ visible, onClose, isModal = true }: Props) {
   const [endpoint, setEndpoint] = useState<string>('http://192.168.88.135:8188');
   const [workflows, setWorkflows] = useState<string[]>([]);
   const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
@@ -133,110 +133,118 @@ export default function ComfyConfigModal({ visible, onClose }: Props) {
 
   if (!visible) return null;
 
-  return (
-    <div className="modal-backdrop">
-      <div className="modal comfy-modal">
-        <h3>ComfyUI Configuration</h3>
-        <div className="modal-row">
-          <label>ComfyUI URL</label>
-          <input value={endpoint} onChange={e => setEndpoint(e.target.value)} style={{ width: '100%' }} />
-        </div>
+  const content = (
+    <div className={isModal ? "modal comfy-modal" : "comfy-full"}>
+      <h3>ComfyUI Configuration</h3>
+      <div className="modal-row">
+        <label>ComfyUI URL</label>
+        <input value={endpoint} onChange={e => setEndpoint(e.target.value)} style={{ width: '100%' }} />
+      </div>
 
-        <div className="modal-row" style={{ display: 'flex', gap: 8 }}>
-          <div style={{ flex: 1 }}>
-            <label>Workflow (from backend/workflows)</label>
-            <select value={selectedWorkflow || ''} onChange={e => setSelectedWorkflow(e.target.value)} style={{ width: '100%' }}>
-              {workflows.map(w => <option key={w} value={w}>{w}</option>)}
-            </select>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <button onClick={() => refreshComfyLists()}>Refresh from ComfyUI</button>
-            <div style={{ marginLeft: 8, color: '#9fb' }}>{comfyStatus ? comfyStatus : ''}</div>
-          </div>
+      <div className="modal-row" style={{ display: 'flex', gap: 8 }}>
+        <div style={{ flex: 1 }}>
+          <label>Workflow (from backend/workflows)</label>
+          <select value={selectedWorkflow || ''} onChange={e => setSelectedWorkflow(e.target.value)} style={{ width: '100%' }}>
+            {workflows.map(w => <option key={w} value={w}>{w}</option>)}
+          </select>
         </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <button onClick={() => refreshComfyLists()}>Refresh from ComfyUI</button>
+          <div style={{ marginLeft: 8, color: '#9fb' }}>{comfyStatus ? comfyStatus : ''}</div>
+        </div>
+      </div>
 
-        <div className="modal-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <div>
-            <label>Model</label>
-            <select value={selectedModel || ''} onChange={e => setSelectedModel(e.target.value)} style={{ width: '100%' }}>
-              {(models.length ? models : ['(none)']).map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-          <div>
-            <label>VAE</label>
-            <select value={selectedVae || ''} onChange={e => setSelectedVae(e.target.value)} style={{ width: '100%' }}>
-              {(vaes.length ? vaes : ['(none)']).map(v => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </div>
-          <div>
-            <label>Sampler</label>
-            <select value={selectedSampler || ''} onChange={e => setSelectedSampler(e.target.value)} style={{ width: '100%' }}>
-              {(samplers.length ? samplers : ['euler']).map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label>Scheduler</label>
-            <select value={selectedScheduler || ''} onChange={e => setSelectedScheduler(e.target.value)} style={{ width: '100%' }}>
-              {(schedulers.length ? schedulers : ['normal']).map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
+      <div className="modal-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div>
+          <label>Model</label>
+          <select value={selectedModel || ''} onChange={e => setSelectedModel(e.target.value)} style={{ width: '100%' }}>
+            {(models.length ? models : ['(none)']).map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
         </div>
+        <div>
+          <label>VAE</label>
+          <select value={selectedVae || ''} onChange={e => setSelectedVae(e.target.value)} style={{ width: '100%' }}>
+            {(vaes.length ? vaes : ['(none)']).map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </div>
+        <div>
+          <label>Sampler</label>
+          <select value={selectedSampler || ''} onChange={e => setSelectedSampler(e.target.value)} style={{ width: '100%' }}>
+            {(samplers.length ? samplers : ['euler']).map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          <label>Scheduler</label>
+          <select value={selectedScheduler || ''} onChange={e => setSelectedScheduler(e.target.value)} style={{ width: '100%' }}>
+            {(schedulers.length ? schedulers : ['normal']).map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+      </div>
 
-        <div className="modal-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div>
-            <label>Steps: {steps}</label>
-            <input type="range" min={1} max={40} value={steps} onChange={e => setSteps(Number(e.target.value))} />
-            <input value={steps} onChange={e => setSteps(Number(e.target.value||0))} style={{ width: 80 }} />
-          </div>
-          <div>
-            <label>Seed: {seed}</label>
-            <input value={seed} onChange={e => setSeed(Number(e.target.value||-1))} style={{ width: '100%' }} />
-          </div>
-          <div>
-            <label>Width: {width}</label>
-            <input type="range" min={64} max={2048} step={64} value={width} onChange={e => setWidth(Number(e.target.value))} />
-            <input value={width} onChange={e => setWidth(Number(e.target.value||512))} style={{ width: 80 }} />
-          </div>
-          <div>
-            <label>Height: {height}</label>
-            <input type="range" min={64} max={2048} step={64} value={height} onChange={e => setHeight(Number(e.target.value))} />
-            <input value={height} onChange={e => setHeight(Number(e.target.value||512))} style={{ width: 80 }} />
-          </div>
+      <div className="modal-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div>
+          <label>Steps: {steps}</label>
+          <input type="range" min={1} max={40} value={steps} onChange={e => setSteps(Number(e.target.value))} />
+          <input value={steps} onChange={e => setSteps(Number(e.target.value||0))} style={{ width: 80 }} />
         </div>
+        <div>
+          <label>Seed: {seed}</label>
+          <input value={seed} onChange={e => setSeed(Number(e.target.value||-1))} style={{ width: '100%' }} />
+        </div>
+        <div>
+          <label>Width: {width}</label>
+          <input type="range" min={64} max={2048} step={64} value={width} onChange={e => setWidth(Number(e.target.value))} />
+          <input value={width} onChange={e => setWidth(Number(e.target.value||512))} style={{ width: 80 }} />
+        </div>
+        <div>
+          <label>Height: {height}</label>
+          <input type="range" min={64} max={2048} step={64} value={height} onChange={e => setHeight(Number(e.target.value))} />
+          <input value={height} onChange={e => setHeight(Number(e.target.value||512))} style={{ width: 80 }} />
+        </div>
+      </div>
 
-        <div className="modal-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-          <div>
-            <label>Clip skip: {clipSkip}</label>
-            <input type="range" min={1} max={12} value={clipSkip} onChange={e => setClipSkip(Number(e.target.value))} />
-            <input value={clipSkip} onChange={e => setClipSkip(Number(e.target.value||1))} style={{ width: 80 }} />
-          </div>
-          <div>
-            <label>Denoise: {denoise}</label>
-            <input type="range" min={0} max={1} step={0.01} value={denoise} onChange={e => setDenoise(Number(e.target.value))} />
-            <input value={denoise} onChange={e => setDenoise(Number(e.target.value||1))} style={{ width: 80 }} />
-          </div>
-          <div>
-            <label>CFG Scale: {cfgScale}</label>
-            <input type="range" min={1} max={20} step={0.1} value={cfgScale} onChange={e => setCfgScale(Number(e.target.value))} />
-            <input value={cfgScale} onChange={e => setCfgScale(Number(e.target.value||8))} style={{ width: 80 }} />
-          </div>
+      <div className="modal-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        <div>
+          <label>Clip skip: {clipSkip}</label>
+          <input type="range" min={1} max={12} value={clipSkip} onChange={e => setClipSkip(Number(e.target.value))} />
+          <input value={clipSkip} onChange={e => setClipSkip(Number(e.target.value||1))} style={{ width: 80 }} />
         </div>
+        <div>
+          <label>Denoise: {denoise}</label>
+          <input type="range" min={0} max={1} step={0.01} value={denoise} onChange={e => setDenoise(Number(e.target.value))} />
+          <input value={denoise} onChange={e => setDenoise(Number(e.target.value||1))} style={{ width: 80 }} />
+        </div>
+        <div>
+          <label>CFG Scale: {cfgScale}</label>
+          <input type="range" min={1} max={20} step={0.1} value={cfgScale} onChange={e => setCfgScale(Number(e.target.value))} />
+          <input value={cfgScale} onChange={e => setCfgScale(Number(e.target.value||8))} style={{ width: 80 }} />
+        </div>
+      </div>
 
-        <div className="modal-row">
-          <label>Positive prompt (AI prompt will be appended)</label>
-          <input value={positivePrompt} onChange={e => setPositivePrompt(e.target.value)} style={{ width: '100%' }} />
-        </div>
+      <div className="modal-row">
+        <label>Positive prompt (AI prompt will be appended)</label>
+        <input value={positivePrompt} onChange={e => setPositivePrompt(e.target.value)} style={{ width: '100%' }} />
+      </div>
 
-        <div className="modal-row">
-          <label>Negative prompt</label>
-          <input value={negativePrompt} onChange={e => setNegativePrompt(e.target.value)} style={{ width: '100%' }} />
-        </div>
+      <div className="modal-row">
+        <label>Negative prompt</label>
+        <input value={negativePrompt} onChange={e => setNegativePrompt(e.target.value)} style={{ width: '100%' }} />
+      </div>
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={onClose}>Cancel</button>
-          <button onClick={saveSettings}>Save</button>
-        </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+        <button onClick={onClose}>{isModal ? 'Cancel' : 'Back to Chat'}</button>
+        <button onClick={saveSettings}>Save</button>
       </div>
     </div>
   );
+
+  if (isModal) {
+    return (
+      <div className="modal-backdrop">
+        {content}
+      </div>
+    );
+  } else {
+    return content;
+  }
 }

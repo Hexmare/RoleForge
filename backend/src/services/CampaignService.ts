@@ -31,6 +31,43 @@ export const CampaignService = {
     const stmt = db.prepare('DELETE FROM Campaigns WHERE id = ?');
     const result = stmt.run(id);
     return { changes: result.changes };
+  },
+
+  getState(campaignId: number) {
+    return db.prepare('SELECT * FROM CampaignState WHERE campaignId = ?').get(campaignId);
+  },
+
+  updateState(campaignId: number, updates: { currentSceneId?: number; elapsedMinutes?: number; dynamicFacts?: any; trackers?: any }) {
+    const existing = this.getState(campaignId);
+    if (!existing) {
+      // Insert new state
+      const stmt = db.prepare(`
+        INSERT INTO CampaignState (campaignId, currentSceneId, elapsedMinutes, dynamicFacts, trackers)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      stmt.run(
+        campaignId,
+        updates.currentSceneId || null,
+        updates.elapsedMinutes || 0,
+        JSON.stringify(updates.dynamicFacts || {}),
+        JSON.stringify(updates.trackers || {})
+      );
+    } else {
+      // Update existing state
+      const stmt = db.prepare(`
+        UPDATE CampaignState
+        SET currentSceneId = ?, elapsedMinutes = ?, dynamicFacts = ?, trackers = ?, updatedAt = CURRENT_TIMESTAMP
+        WHERE campaignId = ?
+      `);
+      stmt.run(
+        updates.currentSceneId !== undefined ? updates.currentSceneId : existing.currentSceneId,
+        updates.elapsedMinutes !== undefined ? updates.elapsedMinutes : existing.elapsedMinutes,
+        updates.dynamicFacts !== undefined ? JSON.stringify(updates.dynamicFacts) : existing.dynamicFacts,
+        updates.trackers !== undefined ? JSON.stringify(updates.trackers) : existing.trackers,
+        campaignId
+      );
+    }
+    return this.getState(campaignId);
   }
 };
 

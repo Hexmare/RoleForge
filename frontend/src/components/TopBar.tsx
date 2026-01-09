@@ -3,6 +3,11 @@ import React from 'react';
 interface TopBarProps {
   onLeftToggle: () => void;
   onRightToggle: () => void;
+  onChatClick?: () => void;
+  onCharacterClick?: () => void;
+  onLoreClick?: () => void;
+  onImageClick?: () => void;
+  onWorldClick?: () => void;
   leftOpen: boolean;
   rightOpen: boolean;
   title?: string;
@@ -12,6 +17,11 @@ interface TopBarProps {
 const TopBar: React.FC<TopBarProps> = ({ 
   onLeftToggle, 
   onRightToggle, 
+  onChatClick,
+  onCharacterClick,
+  onLoreClick,
+  onImageClick,
+  onWorldClick,
   leftOpen, 
   rightOpen, 
   title = 'RoleForge', 
@@ -28,6 +38,51 @@ const TopBar: React.FC<TopBarProps> = ({
         >
           ☰
         </button>
+        {onChatClick && (
+          <button 
+            className="panel-toggle" 
+            onClick={onChatClick}
+            aria-label="Switch to chat view"
+          >
+            💬
+          </button>
+        )}
+        {onCharacterClick && (
+          <button 
+            className="panel-toggle" 
+            onClick={onCharacterClick}
+            aria-label="Switch to characters view"
+          >
+            👤
+          </button>
+        )}
+        {onLoreClick && (
+          <button 
+            className="panel-toggle" 
+            onClick={onLoreClick}
+            aria-label="Open lore manager"
+          >
+            📖
+          </button>
+        )}
+        {onImageClick && (
+          <button 
+            className="panel-toggle" 
+            onClick={onImageClick}
+            aria-label="Open ComfyUI settings"
+          >
+            🖼️
+          </button>
+        )}
+        {onWorldClick && (
+          <button 
+            className="panel-toggle" 
+            onClick={onWorldClick}
+            aria-label="Switch to worlds view"
+          >
+            🌍
+          </button>
+        )}
       </div>
       
       <div className="top-bar-center">

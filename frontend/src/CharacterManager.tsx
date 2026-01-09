@@ -18,6 +18,7 @@ interface Character {
   character_version: string;
   extensions: Record<string, any>;
   character_book: any;
+  avatarUrl?: string;
 }
 
 function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
