@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import ImageCard from './ImageCard';
+import { Socket } from 'socket.io-client';
 
 interface Message {
   role: 'user' | 'ai';
@@ -37,6 +38,7 @@ interface ChatProps {
   characters: Character[];
   onUpdateMessage: (id: number, content: string) => void;
   onMessagesRefresh: () => void;
+  socket: Socket;
 }
 
 const Chat: React.FC<ChatProps> = ({
@@ -51,13 +53,18 @@ const Chat: React.FC<ChatProps> = ({
   personas,
   characters,
   onUpdateMessage,
-  onMessagesRefresh
+  onMessagesRefresh,
+  socket
 }) => {
   const chatWindowRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [editingText, setEditingText] = useState<string>('');
   const [editingSaving, setEditingSaving] = useState<boolean>(false);
+  const [menuOpen, setMenuOpen] = useState<boolean>(false);
+  const [deleteMode, setDeleteMode] = useState<boolean>(false);
+  const [selectedMessages, setSelectedMessages] = useState<Set<number>>(new Set());
+  const [currentAgent, setCurrentAgent] = useState<string | null>(null);
 
   // Auto-scroll to bottom when new messages arrive (unless user scrolled up)
   useEffect(() => {
@@ -65,6 +72,36 @@ const Chat: React.FC<ChatProps> = ({
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, userScrolledUp]);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuOpen && !(event.target as Element).closest('.relative')) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [menuOpen]);
+
+  // Listen for agent status updates
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleAgentStatus = (data: { agent: string; status: 'start' | 'complete' }) => {
+      if (data.status === 'start') {
+        setCurrentAgent(data.agent);
+      } else if (data.status === 'complete') {
+        setCurrentAgent(null);
+      }
+    };
+
+    socket.on('agentStatus', handleAgentStatus);
+
+    return () => {
+      socket.off('agentStatus', handleAgentStatus);
+    };
+  }, [socket]);
 
   const highlightInlineQuotes = (s: string) => {
     try {
@@ -144,7 +181,25 @@ const Chat: React.FC<ChatProps> = ({
     };
 
     return (
-      <div className="message-row" onDoubleClick={onEditStart}>
+      <div className="message-row" onDoubleClick={deleteMode ? undefined : onEditStart}>
+        {deleteMode && msg.id && (
+          <div style={{ display: 'flex', alignItems: 'center', marginRight: 8 }}>
+            <input
+              type="checkbox"
+              checked={selectedMessages.has(msg.id)}
+              onChange={(e) => {
+                const newSelected = new Set(selectedMessages);
+                if (e.target.checked) {
+                  newSelected.add(msg.id);
+                } else {
+                  newSelected.delete(msg.id);
+                }
+                setSelectedMessages(newSelected);
+              }}
+              style={{ margin: 0 }}
+            />
+          </div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
           <div className="avatar">{getAvatarForSender(msg.sender) ? <img src={getAvatarForSender(msg.sender)!} alt="avatar" className="avatar-img" /> : (displayName || 'AI').toString().slice(0,2)}</div>
           <div className="avatar-meta">
@@ -211,6 +266,45 @@ const Chat: React.FC<ChatProps> = ({
                 </div>
               </div>
             )}
+            {currentAgent && (
+              <div className="flex justify-start">
+                <div className="glass p-3 rounded-lg text-text-primary w-full">
+                  <div className="flex items-center space-x-3">
+                    <div className="flex space-x-1">
+                      <div className="w-2 h-2 bg-accent-primary rounded-full animate-pulse"></div>
+                      <div className="w-2 h-2 bg-accent-primary rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
+                      <div className="w-2 h-2 bg-accent-primary rounded-full animate-pulse" style={{animationDelay: '0.4s'}}></div>
+                    </div>
+                    <span className="text-text-secondary text-sm">
+                      {(() => {
+                        // Check if currentAgent is a character name
+                        const isCharacter = characters.some(char => char.name === currentAgent);
+                        if (isCharacter) {
+                          return `${currentAgent} is typing...`;
+                        }
+                        // For system agents, show appropriate messages
+                        switch (currentAgent) {
+                          case 'Narrator':
+                            return 'Narrator is describing the scene...';
+                          case 'Director':
+                            return 'Director is planning the response...';
+                          case 'WorldAgent':
+                            return 'World Agent is updating the story state...';
+                          case 'Summarize':
+                            return 'Summarizing conversation history...';
+                          case 'Visual':
+                            return 'Visual Agent is generating an image...';
+                          case 'Creator':
+                            return 'Creator Agent is generating content...';
+                          default:
+                            return `${currentAgent} is thinking...`;
+                        }
+                      })()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
         ) : (
@@ -222,7 +316,63 @@ const Chat: React.FC<ChatProps> = ({
 
       {/* Input Section */}
       <div className="border-t border-border-color p-4 flex-shrink-0">
+        {deleteMode && (
+          <div className="flex gap-2 mb-3">
+            <button
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              onClick={async () => {
+                if (selectedMessages.size === 0) return;
+                if (!confirm(`Delete ${selectedMessages.size} selected message(s)? This will reorder subsequent messages.`)) return;
+                try {
+                  const deletePromises = Array.from(selectedMessages).map(id =>
+                    fetch(`/api/messages/${id}`, { method: 'DELETE' })
+                  );
+                  await Promise.all(deletePromises);
+                  setSelectedMessages(new Set());
+                  setDeleteMode(false);
+                  onMessagesRefresh();
+                } catch (e) {
+                  console.warn('Failed to delete messages', e);
+                }
+              }}
+              disabled={selectedMessages.size === 0}
+            >
+              Delete Selected ({selectedMessages.size})
+            </button>
+            <button
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              onClick={() => {
+                setDeleteMode(false);
+                setSelectedMessages(new Set());
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
         <div className="flex gap-2">
+          <div className="relative">
+            <button
+              className="chat-menu-btn"
+              onClick={() => setMenuOpen(!menuOpen)}
+              disabled={!selectedScene}
+            >
+              ⋮
+            </button>
+            {menuOpen && (
+              <div className="chat-menu-dropdown">
+                <button
+                  className="chat-menu-item"
+                  onClick={() => {
+                    setDeleteMode(true);
+                    setMenuOpen(false);
+                  }}
+                >
+                  Delete Posts
+                </button>
+              </div>
+            )}
+          </div>
           <textarea
             className="flex-1 p-3 bg-panel-secondary border border-border-color rounded-lg text-text-primary placeholder-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-accent-primary"
             value={input}
@@ -234,13 +384,13 @@ const Chat: React.FC<ChatProps> = ({
               }
             }}
             placeholder={selectedScene ? 'Type your message... (Shift+Enter for newline)' : 'Select a scene to enable chat'}
-            disabled={!selectedScene}
+            disabled={!selectedScene || deleteMode}
             rows={2}
           />
           <button
             className="px-6 py-2 bg-accent-primary hover:bg-accent-hover disabled:bg-gray-600 text-white rounded-lg transition-colors disabled:cursor-not-allowed"
             onClick={onSendMessage}
-            disabled={!selectedScene || !input.trim()}
+            disabled={!selectedScene || !input.trim() || deleteMode}
           >
             Send
           </button>

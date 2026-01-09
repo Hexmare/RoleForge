@@ -12,20 +12,23 @@ import { VisualAgent } from './VisualAgent.js';
 import { CreatorAgent } from './CreatorAgent.js';
 import CharacterService from '../services/CharacterService.js';
 import Database from 'better-sqlite3';
+import { Server } from 'socket.io';
 
 export class Orchestrator {
   private configManager: ConfigManager;
   private env: nunjucks.Environment;
   private db: Database.Database;
+  private io?: Server;
   private agents: Map<string, BaseAgent> = new Map();
   private worldState: Record<string, any> = {};
   private history: string[] = [];
   private sceneSummary: string = '';
 
-  constructor(configManager: ConfigManager, env: nunjucks.Environment, db: Database.Database) {
+  constructor(configManager: ConfigManager, env: nunjucks.Environment, db: Database.Database, io?: Server) {
     this.configManager = configManager;
     this.env = env;
     this.db = db;
+    this.io = io;
 
     // Initialize agents
     this.agents.set('narrator', new NarratorAgent(configManager, env));
@@ -34,6 +37,12 @@ export class Orchestrator {
     this.agents.set('summarize', new SummarizeAgent(configManager, env));
     this.agents.set('visual', new VisualAgent(configManager, env));
     this.agents.set('creator', new CreatorAgent(configManager, env));
+  }
+
+  private emitAgentStatus(agentName: string, status: 'start' | 'complete', sceneId?: number) {
+    if (this.io && sceneId) {
+      this.io.to(`scene-${sceneId}`).emit('agentStatus', { agent: agentName, status });
+    }
   }
 
   // Recreate a single agent instance (useful when config changes)
@@ -213,10 +222,10 @@ export class Orchestrator {
     return keywords.some(keyword => lowerInput.includes(keyword));
   }
 
-  async processUserInput(userInput: string, personaName: string = 'default', activeCharacters?: string[]): Promise<{ sender: string; content: string }[]> {
+  async processUserInput(userInput: string, personaName: string = 'default', activeCharacters?: string[], sceneId?: number): Promise<{ sender: string; content: string }[]> {
     const slashCmd = this.parseSlashCommand(userInput);
     if (slashCmd) {
-      return this.handleSlashCommand(slashCmd.command, slashCmd.args, activeCharacters);
+      return this.handleSlashCommand(slashCmd.command, slashCmd.args, activeCharacters, sceneId);
     }
 
     // Check if user is requesting a scene description
@@ -237,8 +246,10 @@ export class Orchestrator {
       // Call only NarratorAgent for scene description
       const narratorAgent = this.agents.get('narrator')!;
       console.log('Calling NarratorAgent');
+      this.emitAgentStatus('Narrator', 'start', sceneId);
       const narration = await narratorAgent.run(context);
       console.log('NarratorAgent completed');
+      this.emitAgentStatus('Narrator', 'complete', sceneId);
       this.history.push(`Narrator: ${narration}`);
       return [{ sender: 'Narrator', content: narration }];
     }
@@ -261,8 +272,10 @@ export class Orchestrator {
     if (this.history.length > 10) {
       const summarizeAgent = this.agents.get('summarize')!;
       console.log('Calling SummarizeAgent');
+      this.emitAgentStatus('Summarize', 'start', sceneId);
       const summary = await summarizeAgent.run(context);
       console.log('SummarizeAgent completed');
+      this.emitAgentStatus('Summarize', 'complete', sceneId);
       this.sceneSummary = summary;
       // Truncate history
       this.history = this.history.slice(-5);
@@ -272,8 +285,10 @@ export class Orchestrator {
     const directorAgent = this.agents.get('director')!;
     const directorContext = { ...context, activeCharacters: activeCharacters || [] };
     console.log('Calling DirectorAgent');
+    this.emitAgentStatus('Director', 'start', sceneId);
     const directorOutput = await directorAgent.run(directorContext);
     console.log('DirectorAgent completed');
+    this.emitAgentStatus('Director', 'complete', sceneId);
     // Parse output: JSON {"guidance": "...", "characters": [...]}
     let directorGuidance = '';
     let charactersToRespond: string[] = [];
@@ -310,8 +325,10 @@ export class Orchestrator {
     // Step 3: World state update
     const worldAgent = this.agents.get('world')!;
     console.log('Calling WorldAgent');
+    this.emitAgentStatus('WorldAgent', 'start', sceneId);
     const worldUpdateStr = await worldAgent.run(context);
     console.log('WorldAgent completed');
+    this.emitAgentStatus('WorldAgent', 'complete', sceneId);
     // Extract JSON from response
     const jsonStr = this.extractFirstJson(worldUpdateStr);
     if (jsonStr) {
@@ -344,8 +361,10 @@ export class Orchestrator {
         character: characterData,
       };
       console.log(`Calling CharacterAgent for ${charName}`);
+      this.emitAgentStatus(charName, 'start', sceneId);
       const characterResponse = await characterAgent.run(characterContext);
       console.log(`CharacterAgent for ${charName} completed`);
+      this.emitAgentStatus(charName, 'complete', sceneId);
       if (characterResponse) {
         responses.push({ sender: charName, content: characterResponse });
         this.history.push(`${charName}: ${characterResponse}`);
@@ -355,7 +374,7 @@ export class Orchestrator {
     return responses;
   }
 
-  private async handleSlashCommand(command: string, args: string[], activeCharacters?: string[]): Promise<{ sender: string; content: string }[]> {
+  private async handleSlashCommand(command: string, args: string[], activeCharacters?: string[], sceneId?: number): Promise<{ sender: string; content: string }[]> {
     switch (command) {
       case 'create':
         const creatorAgent = this.agents.get('creator')!;
@@ -366,8 +385,10 @@ export class Orchestrator {
           creationRequest: args.join(' '),
         };
         console.log('Calling CreatorAgent');
+        this.emitAgentStatus('Creator', 'start', sceneId);
         const creatorResult = await creatorAgent.run(context);
         console.log('CreatorAgent completed');
+        this.emitAgentStatus('Creator', 'complete', sceneId);
         return [{ sender: 'Creator', content: creatorResult }];
       case 'image':
         if (!this.configManager.isVisualAgentEnabled()) {
@@ -382,8 +403,10 @@ export class Orchestrator {
           sceneElements: [], // No specific elements for /image command
         };
         console.log('Calling VisualAgent for /image');
+        this.emitAgentStatus('Visual', 'start', sceneId);
         const visualResult = await visualAgent.run(visualContext);
         console.log('VisualAgent completed for /image');
+        this.emitAgentStatus('Visual', 'complete', sceneId);
         return [{ sender: 'Visual', content: visualResult }];
       case 'scenepicture':
         if (!this.configManager.isVisualAgentEnabled()) {
@@ -423,8 +446,10 @@ export class Orchestrator {
           activeCharacters: resolvedChars
         } as any;
         console.log('Calling NarratorAgent for /scenepicture');
+        this.emitAgentStatus('Narrator', 'start', sceneId);
         const narration = await narratorAgent.run(narrContext);
         console.log('NarratorAgent completed for /scenepicture');
+        this.emitAgentStatus('Narrator', 'complete', sceneId);
 
         // Append character info to prompt for visual agent
         let promptForImage = narration;
@@ -438,7 +463,9 @@ export class Orchestrator {
         // Generate image from narration+characters
         const visAgent = this.agents.get('visual')! as any;
         try {
+          this.emitAgentStatus('Visual', 'start', sceneId);
           const imageUrl = await visAgent.generateFromPrompt(promptForImage);
+          this.emitAgentStatus('Visual', 'complete', sceneId);
           const meta = { prompt: promptForImage, urls: [imageUrl], current: 0 };
           const md = `![${JSON.stringify(meta)}](${imageUrl})`;
           return [{ sender: 'Visual', content: md }];

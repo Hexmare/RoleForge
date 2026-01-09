@@ -1039,6 +1039,7 @@ function App() {
                 characters={characters}
                 onUpdateMessage={updateMessageContent}
                 onMessagesRefresh={() => selectedScene && loadMessages(selectedScene)}
+                socket={socket}
               />
             )}
             {currentTab === 'characters' && <CharacterManager onRefresh={fetchCharacters} />}

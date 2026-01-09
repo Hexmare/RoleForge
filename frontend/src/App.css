@@ -365,8 +365,59 @@ button:disabled {
 .typing-indicator { font-style:italic; color:#cbd6db; margin:6px 0 }
 .ts { margin-left:8px; font-size:11px; color:#94a3b8 }
 
-/* input bar styling to match screenshot */
-.input-area { background: rgba(0,0,0,0.45); backdrop-filter: blur(8px); padding: 10px; border-radius: 999px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); }
+/* Chat menu button */
+.chat-menu-btn {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e6eef2;
+  padding: 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.chat-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.chat-menu-dropdown {
+  background: rgba(26, 31, 46, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  min-width: 120px;
+}
+
+.chat-menu-item {
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  color: #e6eef2;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.chat-menu-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.chat-menu-item:first-child {
+  border-radius: 6px 6px 0 0;
+}
+
+.chat-menu-item:last-child {
+  border-radius: 0 0 6px 6px;
+}
+
+.chat-menu-item:only-child {
+  border-radius: 6px;
+}
 .input-area { display:flex; gap:10px; align-items:center; }
 .input-area textarea { flex:1; resize:vertical; min-height:44px; max-height:160px; padding:10px 12px; border-radius:12px; background:transparent; color:#e6eef2; border: none; outline:none }
 .input-area button { background: linear-gradient(180deg,#4b5563,#2b3035); color: #fff; border: none; padding: 8px 14px; border-radius: 999px }

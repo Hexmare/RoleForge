@@ -936,10 +936,10 @@ app.delete('/api/personas/:id', (req, res) => {
 // Load config
 const configManager = new ConfigManager();
 
-// Initialize Orchestrator
+// Initialize Orchestrator (after io is defined)
 let orchestrator: Orchestrator;
 try {
-  orchestrator = new Orchestrator(configManager, env, db);
+  orchestrator = new Orchestrator(configManager, env, db, io);
 } catch (error) {
   console.error('Error initializing Orchestrator:', error);
   process.exit(1);
@@ -1038,7 +1038,7 @@ io.on('connection', (socket) => {
       }
 
       // Process through Orchestrator
-      const response = await orchestrator.processUserInput(input, persona, activeCharacters);
+      const response = await orchestrator.processUserInput(input, persona, activeCharacters, sceneId);
 
       // Persist responses to messages if scene provided
       if (sceneId && Array.isArray(response)) {
