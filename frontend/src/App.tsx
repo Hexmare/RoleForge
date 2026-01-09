@@ -15,6 +15,8 @@ import ConfirmModal from './components/ConfirmModal';
 import Spinner from './components/Spinner';
 import ComfyConfigModal from './components/ComfyConfigModal';
 import ImageCard from './components/ImageCard';
+import Panel from './components/Panel';
+import TopBar from './components/TopBar';
 import { ToastProvider } from './components/Toast';
 
 interface Message {
@@ -67,7 +69,6 @@ function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [currentTab, setCurrentTab] = useState<'chat'|'characters'|'lore'|'personas'>('chat');
   const [personaOpen, setPersonaOpen] = useState<boolean>(false);
-  const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [modalType, setModalType] = useState<string | null>(null);
   const [modalInitial, setModalInitial] = useState<any>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
@@ -76,6 +77,10 @@ function App() {
   const [editingText, setEditingText] = useState<string>('');
   const [editingSaving, setEditingSaving] = useState<boolean>(false);
   const lastNextClickRef = useRef<Record<number, number>>({});
+
+  // Panel state for new UI
+  const [leftPanelOpen, setLeftPanelOpen] = useState(false);
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
   // Debug config fetched from backend; use to drive client debug flags
   const [debugConfig, setDebugConfig] = useState<any>({});
   const debugRef = useRef<any>({});
@@ -423,7 +428,7 @@ function App() {
     if (input.trim()) {
       socket.emit('userMessage', { input, persona: selectedPersona, activeCharacters, sceneId: selectedScene });
       setIsStreaming(true);
-      const newMessage: Message = { role: 'user', content: input, sender: selectedPersona };
+      const newMessage: Message = { role: 'user', content: input, sender: selectedPersona || 'user' };
       setMessages(prev => [...prev, newMessage]);
       setInput('');
     }
@@ -635,7 +640,7 @@ function App() {
         if (!recomputed.includes(src)) recomputed.unshift(src);
         // Only update if different to avoid re-renders
         if (JSON.stringify(recomputed) !== JSON.stringify(localUrls)) {
-          setLocalUrls(recomputed.length ? recomputed : [src]);
+          setLocalUrls(recomputed.length ? recomputed as string[] : [src]);
           // reset failed set because URLs changed
           failedUrlsRef.current = new Set();
         }
@@ -1091,205 +1096,225 @@ function App() {
     closeModal();
   };
 
+  const contentClasses = [
+    'content-main',
+    leftPanelOpen && 'left-open',
+    rightPanelOpen && 'right-open',
+    leftPanelOpen && rightPanelOpen && 'both-open'
+  ].filter(Boolean).join(' ');
+
   return (
     <ToastProvider>
-    <div className="app">
-      <div className="app-panel">
-      <div className="tabs">
-        <button className="icon-btn sidebar-toggle" onClick={() => setShowSidebar(s => !s)}>☰</button>
-        <div className="left-tabs">
-          <button onClick={() => setCurrentTab('chat')} className={currentTab === 'chat' ? 'active' : ''}>Chat</button>
-        </div>
-        <div className="right-tabs">
-          <div className="persona-select">
-            <div className="persona-selected" onClick={() => setPersonaOpen(open => !open)}>
-              {(() => {
-                const p = personas.find((x: any) => x.name === selectedPersona);
-                return (
-                  <>
-                    {p?.avatarUrl ? <img src={p.avatarUrl} className="persona-thumb" alt="p" /> : <div className="persona-thumb placeholder">{(p?.name||'').slice(0,2)}</div>}
-                    <span className="persona-name">{selectedPersona}</span>
-                    <span className="persona-caret">▾</span>
-                  </>
-                );
-              })()}
-            </div>
-            {typeof personaOpen !== 'undefined' && personaOpen && (
-              <div className="persona-options">
-                {personas.map((p: any) => (
-                  <div key={p.id} className="persona-option" onPointerDown={(e) => { e.preventDefault(); setSelectedPersona(p.name); setPersonaOpen(false); }}>
-                    {p.avatarUrl ? <img src={p.avatarUrl} className="persona-thumb" alt={p.name} /> : <div className="persona-thumb placeholder">{(p.name||'').slice(0,2)}</div>}
-                    <span className="persona-name">{p.name}</span>
-                  </div>
-                ))}
+      <div className="app-container">
+        <TopBar 
+          onLeftToggle={() => setLeftPanelOpen(!leftPanelOpen)}
+          onRightToggle={() => setRightPanelOpen(!rightPanelOpen)}
+          leftOpen={leftPanelOpen}
+          rightOpen={rightPanelOpen}
+          title={sessionContext?.scene?.title || 'RoleForge'}
+        />
+
+        <Panel side="left" open={leftPanelOpen} onToggle={() => setLeftPanelOpen(!leftPanelOpen)} title="Management">
+          <div className="panel-section">
+            <h3 className="panel-section-title">Hierarchy</h3>
+            <div className="hierarchy-block">
+              <div>
+                <label>World</label>
+                <div className="selector-row">
+                  <select value={selectedWorld ?? ''} onChange={(e) => { const id = Number(e.target.value); setSelectedWorld(id); fetchCampaigns(id); }}>
+                    {worlds.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  </select>
+                  <button onClick={openNewWorld}>New</button>
+                  <button onClick={openEditWorld}>Edit</button>
+                  <button onClick={async () => { if (!selectedWorld) return alert('Select a world'); if (!confirm('Delete world and all child campaigns/arcs/scenes?')) return; await fetch(`/api/worlds/${selectedWorld}`, { method: 'DELETE' }); await fetchWorlds(); setSelectedWorld(null); }}>Delete</button>
+                </div>
               </div>
-            )}
-            <button className="icon-edit" title="Edit personas" onClick={() => setCurrentTab('personas')}>✎</button>
-          </div>
-
-          <div className="active-characters-area">
-            <span className="active-characters">Active: {activeCharacters.join(', ') || 'None'}</span>
-            <button className="icon-btn" title="Select active characters" onClick={() => setModalOpen(true)}>👥+</button>
-            <button className="icon-edit" title="Edit characters" onClick={() => setCurrentTab('characters')}>✎</button>
-          </div>
-
-          <button className="icon-btn lore-btn" title="Lore">📖</button>
-          <button className="icon-btn" title="ComfyUI" onClick={() => setModalType('comfyui')}>🖼️</button>
-        </div>
-      </div>
-      {/* Sidebar for world/campaign/arc/scene selection and CRUD */}
-      <div className={`sidebar ${showSidebar ? 'open' : ''}`}>
-        <div className="sidebar-header">
-          <strong>Hierarchy</strong>
-          <button className="icon-btn" onClick={() => setShowSidebar(false)}>✕</button>
-        </div>
-        <div className="sidebar-body">
-        <div className="hierarchy-block">
-          <div>
-            <label>World</label>
-            <div className="selector-row">
-              <select value={selectedWorld ?? ''} onChange={(e) => { const id = Number(e.target.value); setSelectedWorld(id); fetchCampaigns(id); }}>
-                {worlds.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
-              <button onClick={openNewWorld}>New</button>
-              <button onClick={openEditWorld}>Edit</button>
-              <button onClick={async () => { if (!selectedWorld) return alert('Select a world'); if (!confirm('Delete world and all child campaigns/arcs/scenes?')) return; await fetch(`/api/worlds/${selectedWorld}`, { method: 'DELETE' }); await fetchWorlds(); setSelectedWorld(null); }}>Delete</button>
+              <div>
+                <label>Campaign</label>
+                <div className="selector-row">
+                  <select value={selectedCampaign ?? ''} onChange={(e) => { const id = Number(e.target.value); setSelectedCampaign(id); fetchArcs(id); }}>
+                    {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <button onClick={openNewCampaign}>New</button>
+                  <button onClick={openEditCampaign}>Edit</button>
+                  <button onClick={async () => { if (!selectedCampaign) return alert('Select a campaign'); if (!confirm('Delete campaign and all child arcs/scenes?')) return; await fetch(`/api/campaigns/${selectedCampaign}`, { method: 'DELETE' }); await fetchCampaigns(selectedWorld!); setSelectedCampaign(null); }}>Delete</button>
+                </div>
+              </div>
+              <div>
+                <label>Arc</label>
+                <div className="selector-row">
+                  <select value={selectedArc ?? ''} onChange={(e) => { const id = Number(e.target.value); setSelectedArc(id); fetchScenes(id); }}>
+                    {arcs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                  <button onClick={openNewArc}>New</button>
+                  <button onClick={openEditArc}>Edit</button>
+                  <button onClick={async () => { if (!selectedArc) return alert('Select an arc'); if (!confirm('Delete arc and all child scenes?')) return; await fetch(`/api/arcs/${selectedArc}`, { method: 'DELETE' }); await fetchArcs(selectedCampaign!); setSelectedArc(null); }}>Delete</button>
+                </div>
+              </div>
+              <div>
+                <label>Scene</label>
+                <div className="selector-row">
+                  <select value={selectedScene ?? ''} onChange={(e) => { const id = Number(e.target.value); handleSceneChange(id); }}>
+                    {scenes.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                  </select>
+                  <button onClick={openNewScene}>New</button>
+                  <button onClick={openEditScene}>Edit</button>
+                  <button onClick={async () => { if (!selectedScene) return alert('Select a scene'); if (!confirm('Delete scene?')) return; await fetch(`/api/scenes/${selectedScene}`, { method: 'DELETE' }); await fetchScenes(selectedArc!); setSelectedScene(null); }}>Delete</button>
+                </div>
+              </div>
             </div>
           </div>
-          <div>
-            <label>Campaign</label>
-            <div className="selector-row">
-              <select value={selectedCampaign ?? ''} onChange={(e) => { const id = Number(e.target.value); setSelectedCampaign(id); fetchArcs(id); }}>
-                {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <button onClick={openNewCampaign}>New</button>
-              <button onClick={openEditCampaign}>Edit</button>
-              <button onClick={async () => { if (!selectedCampaign) return alert('Select a campaign'); if (!confirm('Delete campaign and all child arcs/scenes?')) return; await fetch(`/api/campaigns/${selectedCampaign}`, { method: 'DELETE' }); await fetchCampaigns(selectedWorld!); setSelectedCampaign(null); }}>Delete</button>
-            </div>
-          </div>
-          <div>
-            <label>Arc</label>
-            <div className="selector-row">
-              <select value={selectedArc ?? ''} onChange={(e) => { const id = Number(e.target.value); setSelectedArc(id); fetchScenes(id); }}>
-                {arcs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-              <button onClick={openNewArc}>New</button>
-              <button onClick={openEditArc}>Edit</button>
-              <button onClick={async () => { if (!selectedArc) return alert('Select an arc'); if (!confirm('Delete arc and all child scenes?')) return; await fetch(`/api/arcs/${selectedArc}`, { method: 'DELETE' }); await fetchArcs(selectedCampaign!); setSelectedArc(null); }}>Delete</button>
-            </div>
-          </div>
-          <div>
-            <label>Scene</label>
-            <div className="selector-row">
-              <select value={selectedScene ?? ''} onChange={(e) => { const id = Number(e.target.value); handleSceneChange(id); }}>
-                {scenes.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-              </select>
-              <button onClick={openNewScene}>New</button>
-              <button onClick={openEditScene}>Edit</button>
-              <button onClick={async () => { if (!selectedScene) return alert('Select a scene'); if (!confirm('Delete scene?')) return; await fetch(`/api/scenes/${selectedScene}`, { method: 'DELETE' }); await fetchScenes(selectedArc!); setSelectedScene(null); }}>Delete</button>
-            </div>
-          </div>
-        </div>
-        </div>
-      </div>
-      {showSidebar && <div className="sidebar-backdrop" onClick={() => setShowSidebar(false)}></div>}
-
-      {sessionContext && (
-        <div className="session-badge">Session: {sessionContext.scene?.title || sessionContext.scene?.id}</div>
-      )}
-
-      {/* Modal editors */}
-      <WorldEditor visible={modalType === 'world-new' || modalType === 'world-edit'} initial={modalInitial} onClose={closeModal} onSave={saveWorld} />
-      <CampaignEditor visible={modalType === 'campaign-new' || modalType === 'campaign-edit'} initial={modalInitial} onClose={closeModal} onSave={saveCampaign} />
-      <ArcEditor visible={modalType === 'arc-new' || modalType === 'arc-edit'} initial={modalInitial} onClose={closeModal} onSave={saveArc} />
-      <SceneEditor visible={modalType === 'scene-new' || modalType === 'scene-edit'} initial={modalInitial} onClose={closeModal} onSave={saveScene} />
-      <ComfyConfigModal visible={modalType === 'comfyui'} onClose={() => setModalType(null)} />
-      {currentTab === 'chat' && (
-        <div className="chat-window">
-              {selectedScene ? (
-                <div ref={chatWindowRef} onScroll={(e) => {
-                  const el = e.target as HTMLDivElement;
-                  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 50;
-                  setUserScrolledUp(!atBottom);
-                }}>
-                  {messages.map((msg, i) => (
-                    <div key={i} className={msg.role === 'user' ? 'user' : 'ai'}>
-                      {renderMessage(msg)}
+          <div className="panel-section">
+            <h3 className="panel-section-title">Persona</h3>
+            <div className="persona-select">
+              <div className="persona-selected" onClick={() => setPersonaOpen(open => !open)}>
+                {(() => {
+                  const p = personas.find((x: any) => x.name === selectedPersona);
+                  return (
+                    <>
+                      {p?.avatarUrl ? <img src={p.avatarUrl} className="persona-thumb" alt="p" /> : <div className="persona-thumb placeholder">{(p?.name||'').slice(0,2)}</div>}
+                      <span className="persona-name">{selectedPersona}</span>
+                      <span className="persona-caret">▾</span>
+                    </>
+                  );
+                })()}
+              </div>
+              {typeof personaOpen !== 'undefined' && personaOpen && (
+                <div className="persona-options">
+                  {personas.map((p: any) => (
+                    <div key={p.id} className="persona-option" onPointerDown={(e) => { e.preventDefault(); setSelectedPersona(p.name); setPersonaOpen(false); }}>
+                      {p.avatarUrl ? <img src={p.avatarUrl} className="persona-thumb" alt={p.name} /> : <div className="persona-thumb placeholder">{(p.name||'').slice(0,2)}</div>}
+                      <span className="persona-name">{p.name}</span>
                     </div>
                   ))}
-                  {isStreaming && (
-                    <div className="typing-indicator">AI is typing...</div>
-                  )}
-                  <div ref={messagesEndRef} />
                 </div>
-              ) : (
-                <div className="empty-chat">No scene selected. Select a scene to load chat.</div>
               )}
-        </div>
-      )}
-      {currentTab === 'characters' && <CharacterManager onRefresh={fetchCharacters} />}
-      {currentTab === 'lore' && <LoreManager />}
-      {currentTab === 'personas' && <PersonaManager />}
-      {currentTab === 'chat' && (
-        <div className="chat-area">
-          <div className="input-area">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-              }}
-              placeholder={selectedScene ? 'Type your message... (Shift+Enter for newline)' : 'Select a scene to enable chat'}
-              disabled={!selectedScene}
-              rows={2}
-            />
-            <button onClick={sendMessage} disabled={!selectedScene || !input.trim()}>Send</button>
+              <button className="icon-edit" title="Edit personas" onClick={() => setCurrentTab('personas')}>✎</button>
+            </div>
           </div>
-        </div>
-      )}
-      {modalOpen && (
-        <div className="modal-overlay" onClick={() => setModalOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Select Active Characters</h3>
-            <div className="character-list">
-              {characters.map((c) => (
-                <label key={c.id}>
-                  <input
-                    type="checkbox"
-                    checked={activeCharacters.includes(c.name)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        updateActiveCharacters([...activeCharacters, c.name]);
-                      } else {
-                        updateActiveCharacters(activeCharacters.filter(name => name !== c.name));
-                      }
+          <div className="panel-section">
+            <h3 className="panel-section-title">Active Characters</h3>
+            <div className="active-characters-area">
+              <span className="active-characters">Active: {activeCharacters.join(', ') || 'None'}</span>
+              <button className="icon-btn" title="Select active characters" onClick={() => setModalOpen(true)}>👥+</button>
+              <button className="icon-edit" title="Edit characters" onClick={() => setCurrentTab('characters')}>✎</button>
+            </div>
+          </div>
+        </Panel>
+
+        <main className={contentClasses}>
+          <div className="content-inner">
+            {/* Modal editors */}
+            <WorldEditor visible={modalType === 'world-new' || modalType === 'world-edit'} initial={modalInitial} onClose={closeModal} onSave={saveWorld} />
+            <CampaignEditor visible={modalType === 'campaign-new' || modalType === 'campaign-edit'} initial={modalInitial} onClose={closeModal} onSave={saveCampaign} />
+            <ArcEditor visible={modalType === 'arc-new' || modalType === 'arc-edit'} initial={modalInitial} onClose={closeModal} onSave={saveArc} />
+            <SceneEditor visible={modalType === 'scene-new' || modalType === 'scene-edit'} initial={modalInitial} onClose={closeModal} onSave={saveScene} />
+
+            {currentTab === 'chat' && (
+              <div className="chat-window">
+                {selectedScene ? (
+                  <div ref={chatWindowRef} onScroll={(e) => {
+                    const el = e.target as HTMLDivElement;
+                    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 50;
+                    setUserScrolledUp(!atBottom);
+                  }}>
+                    {messages.map((msg, i) => (
+                      <div key={i} className={msg.role === 'user' ? 'user' : 'ai'}>
+                        {renderMessage(msg)}
+                      </div>
+                    ))}
+                    {isStreaming && (
+                      <div className="typing-indicator">AI is typing...</div>
+                    )}
+                    <div ref={messagesEndRef} />
+                  </div>
+                ) : (
+                  <div className="empty-chat">No scene selected. Select a scene to load chat.</div>
+                )}
+              </div>
+            )}
+            {currentTab === 'characters' && <CharacterManager onRefresh={fetchCharacters} />}
+            {currentTab === 'lore' && <LoreManager />}
+            {currentTab === 'personas' && <PersonaManager />}
+
+            {currentTab === 'chat' && (
+              <div className="chat-area">
+                <div className="input-area">
+                  <textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
                     }}
+                    placeholder={selectedScene ? 'Type your message... (Shift+Enter for newline)' : 'Select a scene to enable chat'}
+                    disabled={!selectedScene}
+                    rows={2}
                   />
-                  {c.name}
-                </label>
-              ))}
-            </div>
-            <div className="modal-buttons">
-              <button onClick={() => { updateActiveCharacters([]); }}>Clear All</button>
-              <button onClick={() => setModalOpen(false)}>Done</button>
+                  <button onClick={sendMessage} disabled={!selectedScene || !input.trim()}>Send</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
+
+        <Panel side="right" open={rightPanelOpen} onToggle={() => setRightPanelOpen(!rightPanelOpen)} title="Settings">
+          <div className="panel-section">
+            <h3 className="panel-section-title">Configuration</h3>
+            <button className="icon-btn" title="ComfyUI" onClick={() => setModalType('comfyui')}>🖼️ ComfyUI Settings</button>
+            <button className="icon-btn lore-btn" title="Lore" onClick={() => setCurrentTab('lore')}>📖 Lore Manager</button>
+          </div>
+        </Panel>
+
+        {/* Modal editors */}
+        <WorldEditor visible={modalType === 'world-new' || modalType === 'world-edit'} initial={modalInitial} onClose={closeModal} onSave={saveWorld} />
+        <CampaignEditor visible={modalType === 'campaign-new' || modalType === 'campaign-edit'} initial={modalInitial} onClose={closeModal} onSave={saveCampaign} />
+        <ArcEditor visible={modalType === 'arc-new' || modalType === 'arc-edit'} initial={modalInitial} onClose={closeModal} onSave={saveArc} />
+        <SceneEditor visible={modalType === 'scene-new' || modalType === 'scene-edit'} initial={modalInitial} onClose={closeModal} onSave={saveScene} />
+        <ComfyConfigModal visible={modalType === 'comfyui'} onClose={() => setModalType(null)} />
+
+        {modalOpen && (
+          <div className="modal-overlay" onClick={() => setModalOpen(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <h3>Select Active Characters</h3>
+              <div className="character-list">
+                {characters.map((c) => (
+                  <label key={c.id}>
+                    <input
+                      type="checkbox"
+                      checked={activeCharacters.includes(c.name)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          updateActiveCharacters([...activeCharacters, c.name]);
+                        } else {
+                          updateActiveCharacters(activeCharacters.filter(name => name !== c.name));
+                        }
+                      }}
+                    />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+              <div className="modal-buttons">
+                <button onClick={() => { updateActiveCharacters([]); }}>Clear All</button>
+                <button onClick={() => setModalOpen(false)}>Done</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      {imageModalUrl && (
-        <div className="modal-overlay" onClick={() => { setImageModalUrl(null); setImageModalPrompt(null); }}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90%', maxHeight: '90%' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <strong>Image</strong>
-              <button className="icon-btn" onClick={() => { setImageModalUrl(null); setImageModalPrompt(null); }}>✕</button>
-            </div>
-            <div style={{ marginTop: 12, textAlign: 'center' }}>
-              <img src={imageModalUrl} alt={imageModalPrompt || 'image'} style={{ maxWidth: '100%', maxHeight: '70vh' }} />
-              {imageModalPrompt && <div style={{ marginTop: 8, color: '#cfd8dc' }}>{imageModalPrompt}</div>}
+        )}
+        {imageModalUrl && (
+          <div className="modal-overlay" onClick={() => { setImageModalUrl(null); setImageModalPrompt(null); }}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90%', maxHeight: '90%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <strong>Image</strong>
+                <button className="icon-btn" onClick={() => { setImageModalUrl(null); setImageModalPrompt(null); }}>✕</button>
+              </div>
+              <div style={{ marginTop: 12, textAlign: 'center' }}>
+                <img src={imageModalUrl} alt={imageModalPrompt || 'image'} style={{ maxWidth: '100%', maxHeight: '70vh' }} />
+                {imageModalPrompt && <div style={{ marginTop: 8, color: '#cfd8dc' }}>{imageModalPrompt}</div>}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
         <ConfirmModal
           open={!!(deleteChoice && deleteChoice.open)}
           title="Delete image"
@@ -1319,7 +1344,6 @@ function App() {
           }}
         />
       </div>
-    </div>
     </ToastProvider>
   );
 }

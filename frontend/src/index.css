@@ -1,16 +1,49 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  color-scheme: dark;
+  color: #e6e8ec;
+  background-color: #0f1419;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Base colors */
+  --bg-primary: #0f1419;
+  --bg-secondary: #1a1f2e;
+  --bg-tertiary: #252b3b;
+  
+  /* Panel colors */
+  --panel-bg: #1a1f2e;
+  --panel-border: #2a3142;
+  
+  /* Content area */
+  --content-bg: #0f1419;
+  
+  /* Text */
+  --text-primary: #e6e8ec;
+  --text-secondary: #a1a8b8;
+  --text-muted: #6b7280;
+  
+  /* Accents */
+  --accent-primary: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-active: #1d4ed8;
+  
+  /* Borders & shadows */
+  --border-color: #2a3142;
+  --panel-shadow: 2px 0 12px rgba(0, 0, 0, 0.5);
+  
+  /* Status colors */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
 }
 
 a {
@@ -24,8 +57,11 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
+  padding: 0;
+  overflow: hidden;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
   min-width: 320px;
   min-height: 100vh;
 }
