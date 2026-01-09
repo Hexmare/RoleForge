@@ -13,6 +13,8 @@ import ConfirmModal from './components/ConfirmModal';
 import Chat from './components/Chat';
 import TopBar from './components/TopBar';
 import Panel from './components/Panel';
+import PersonaComponent from './components/PersonaComponent';
+import ActiveCharacterComponent from './components/ActiveCharacterComponent';
 import Spinner from './components/Spinner';
 import { ToastProvider } from './components/Toast';
 import ComfyConfigModal from './components/ComfyConfigModal';
@@ -62,9 +64,7 @@ function App() {
   const [regenErrors, setRegenErrors] = useState<Record<number, string>>({});
   const [imageModalUrl, setImageModalUrl] = useState<string | null>(null);
   const [imageModalPrompt, setImageModalPrompt] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
   const [currentTab, setCurrentTab] = useState<'chat'|'characters'|'lore'|'personas'|'comfyui'|'worlds'>('chat');
-  const [personaOpen, setPersonaOpen] = useState<boolean>(false);
   const [modalType, setModalType] = useState<string | null>(null);
   const [modalInitial, setModalInitial] = useState<any>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
@@ -980,32 +980,22 @@ function App() {
           onRightToggle={() => setRightPanelOpen(!rightPanelOpen)}
           onChatClick={() => {
             setCurrentTab('chat');
-            setModalOpen(false);
             setModalType(null);
-            setPersonaOpen(false);
           }}
           onCharacterClick={() => {
             setCurrentTab('characters');
-            setModalOpen(false);
             setModalType(null);
-            setPersonaOpen(false);
           }}
           onLoreClick={() => {
             setCurrentTab('lore');
-            setModalOpen(false);
             setModalType(null);
-            setPersonaOpen(false);
           }}
           onImageClick={() => {
             setCurrentTab('comfyui');
-            setModalOpen(false);
-            setPersonaOpen(false);
           }}
           onWorldClick={() => {
             setCurrentTab('worlds');
-            setModalOpen(false);
             setModalType(null);
-            setPersonaOpen(false);
           }}
           leftOpen={leftPanelOpen}
           rightOpen={rightPanelOpen}
@@ -1016,45 +1006,18 @@ function App() {
           {/* Left Panel */}
           {leftPanelOpen && (
             <Panel side="left" open={true} onToggle={() => setLeftPanelOpen(false)}>
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-sm font-semibold text-text-primary mb-2">Persona</h3>
-              <div className="relative">
-                <div className="flex items-center p-2 bg-panel-tertiary rounded cursor-pointer hover:bg-panel-border transition-colors" onClick={() => setPersonaOpen(open => !open)}>
-                  {(() => {
-                    const p = personas.find((x: any) => x.name === selectedPersona);
-                    return (
-                      <>
-                        {p?.avatarUrl ? <img src={p.avatarUrl} className="w-6 h-6 rounded mr-2" alt="p" /> : <div className="w-6 h-6 rounded bg-panel-border flex items-center justify-center text-xs mr-2">{(p?.name||'').slice(0,2)}</div>}
-                        <span className="flex-1 text-text-primary text-sm">{selectedPersona}</span>
-                        <span className="text-text-secondary">▾</span>
-                      </>
-                    );
-                  })()}
-                </div>
-                {typeof personaOpen !== 'undefined' && personaOpen && (
-                  <div className="absolute top-full left-0 right-0 bg-panel-secondary border border-border-color rounded mt-1 z-10">
-                    {personas.map((p: any) => (
-                      <div key={p.id} className="flex items-center p-2 hover:bg-panel-tertiary cursor-pointer" onPointerDown={(e) => { e.preventDefault(); setSelectedPersona(p.name); setPersonaOpen(false); }}>
-                        {p.avatarUrl ? <img src={p.avatarUrl} className="w-6 h-6 rounded mr-2" alt={p.name} /> : <div className="w-6 h-6 rounded bg-panel-border flex items-center justify-center text-xs mr-2">{(p.name||'').slice(0,2)}</div>}
-                        <span className="text-text-primary text-sm">{p.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <button className="absolute right-0 top-0 w-6 h-6 flex items-center justify-center text-text-secondary hover:text-text-primary" title="Edit personas" onClick={() => setCurrentTab('personas')}>✎</button>
-              </div>
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-text-primary mb-2">Active Characters</h3>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-text-secondary">Active: {activeCharacters.join(', ') || 'None'}</span>
-                <div className="flex space-x-1">
-                  <button className="w-6 h-6 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-panel-tertiary rounded" title="Select active characters" onClick={() => setModalOpen(true)}>👥+</button>
-                  <button className="w-6 h-6 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-panel-tertiary rounded" title="Edit characters" onClick={() => setCurrentTab('characters')}>✎</button>
-                </div>
-              </div>
-            </div>
+          <div className="space-y-6 p-4">
+            <PersonaComponent
+              personas={personas}
+              selectedPersona={selectedPersona}
+              onPersonaChange={setSelectedPersona}
+              onEditPersonas={() => setCurrentTab('personas')}
+            />
+            <ActiveCharacterComponent
+              characters={characters}
+              activeCharacters={activeCharacters}
+              onApplySelections={updateActiveCharacters}
+            />
           </div>
           </Panel>
           )}
@@ -1100,47 +1063,6 @@ function App() {
         <ArcEditor visible={modalType === 'arc-new' || modalType === 'arc-edit'} initial={modalInitial} onClose={closeModal} onSave={saveArc} />
         <SceneEditor visible={modalType === 'scene-new' || modalType === 'scene-edit'} initial={modalInitial} onClose={closeModal} onSave={saveScene} />
         <ComfyConfigModal visible={modalType === 'comfyui'} onClose={() => setModalType(null)} />
-
-        {modalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-300" onClick={() => setModalOpen(false)}>
-            <div className="glass p-6 rounded-lg max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-lg font-semibold mb-4 text-text-primary">Select Active Characters</h3>
-              <div className="space-y-2 mb-4">
-                {characters.map((c) => (
-                  <label key={c.id} className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4 text-accent-primary bg-panel-secondary border-border-color rounded focus:ring-accent-primary"
-                      checked={activeCharacters.includes(c.name)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          updateActiveCharacters([...activeCharacters, c.name]);
-                        } else {
-                          updateActiveCharacters(activeCharacters.filter(name => name !== c.name));
-                        }
-                      }}
-                    />
-                    <span className="text-text-primary">{c.name}</span>
-                  </label>
-                ))}
-              </div>
-              <div className="flex justify-end space-x-2">
-                <button 
-                  className="px-4 py-2 bg-panel-tertiary hover:bg-panel-border text-text-primary rounded transition-colors"
-                  onClick={() => { updateActiveCharacters([]); }}
-                >
-                  Clear All
-                </button>
-                <button 
-                  className="px-4 py-2 bg-accent-primary hover:bg-accent-hover text-white rounded transition-colors"
-                  onClick={() => setModalOpen(false)}
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
         {imageModalUrl && (
           <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-300" onClick={() => { setImageModalUrl(null); setImageModalPrompt(null); }}>
             <div className="glass p-4 rounded-lg max-w-4xl w-full mx-4 max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
