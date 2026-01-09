@@ -1,0 +1,8 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../dist/backend",
+    "types": ["vitest/globals"]
+  },
+  "include": ["src/**/*"]
+}

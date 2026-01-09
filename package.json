@@ -1,0 +1,37 @@
+{
+  "name": "roleforge",
+  "version": "0.1.0",
+  "description": "This is a LLM driven Roleplay system that I am building as a science project. This project is heavily inspired by Talemate https://github.com/vegu-ai/talemate as well as SillyTavern https://github.com/SillyTavern/SillyTavern",
+  "main": "index.js",
+  "workspaces": [
+    "backend",
+    "frontend",
+    "shared"
+  ],
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev:backend": "cd backend && npm run dev:backend",
+    "dev:frontend": "cd frontend && npm run dev:frontend",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build": "tsc -b && cd frontend && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hexmare/RoleForge.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Hexmare/RoleForge/issues"
+  },
+  "homepage": "https://github.com/Hexmare/RoleForge#readme",
+  "private": true,
+  "devDependencies": {
+    "@types/node": "^25.0.3",
+    "concurrently": "^9.2.1",
+    "nodemon": "^3.1.11",
+    "typescript": "^5.9.3"
+  }
+}

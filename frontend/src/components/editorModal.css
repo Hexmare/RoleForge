@@ -1,0 +1,17 @@
+.ef-modal-overlay{position:fixed;inset:0;background:rgba(10,12,16,0.6);display:flex;align-items:center;justify-content:center;z-index:1200}
+.ef-modal{background:#0f1720;color:#e6eef8;border-radius:10px;max-width:720px;width:92%;box-shadow:0 10px 30px rgba(2,6,23,0.6);overflow:hidden;border:1px solid rgba(255,255,255,0.04)}
+.ef-modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.02)}
+.ef-modal-body{padding:18px 20px;max-height:60vh;overflow:auto}
+.ef-modal-footer{display:flex;justify-content:flex-end;padding:14px 20px;border-top:1px solid rgba(255,255,255,0.02);gap:8px}
+.ef-close{background:transparent;border:none;color:#9fb3d6;font-size:18px}
+.ef-label{display:block;margin:8px 0 6px;color:#9fb3d6;font-size:13px}
+.ef-input,.ef-textarea{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:#071025;color:#e6eef8}
+.ef-textarea{min-height:90px}
+.ef-btn{padding:8px 12px;border-radius:8px;border:none;cursor:pointer}
+.ef-btn-primary{background:linear-gradient(90deg,#0066ff,#00ccff);color:white}
+.ef-btn-secondary{background:transparent;color:#9fb3d6;border:1px solid rgba(255,255,255,0.03)}
+
+/* selector row */
+.selector-row{display:flex;gap:8px;align-items:center}
+.selector-row select{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:#071025;color:#e6eef8}
+.selector-row button{padding:8px 10px;border-radius:8px;background:#0b2133;color:#dff0ff;border:none}

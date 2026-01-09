@@ -1,0 +1,1327 @@
+import { useState, useEffect, useRef } from 'react';
+import io from 'socket.io-client';
+import './App.css';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import CharacterManager from './CharacterManager';
+import LoreManager from './LoreManager';
+import PersonaManager from './PersonaManager';
+import WorldEditor from './components/WorldEditor';
+import CampaignEditor from './components/CampaignEditor';
+import ArcEditor from './components/ArcEditor';
+import SceneEditor from './components/SceneEditor';
+import ConfirmModal from './components/ConfirmModal';
+import Spinner from './components/Spinner';
+import ComfyConfigModal from './components/ComfyConfigModal';
+import ImageCard from './components/ImageCard';
+import { ToastProvider } from './components/Toast';
+
+interface Message {
+  role: 'user' | 'ai';
+  content: string;
+  sender: string;
+  id?: number;
+  timestamp?: string;
+  messageNumber?: number;
+  tokenCount?: number;
+}
+// Ensure a single socket instance across HMR reloads
+declare global { interface Window { __socket?: any } }
+let socket = (window as any).__socket;
+if (!socket) {
+  socket = io('http://localhost:3001');
+  (window as any).__socket = socket;
+}
+function App() {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const selectedSceneRef = useRef<number | null>(null);
+  const prevSelectedSceneRef = useRef<number | null>(null);
+  const initialPersonaLoadedRef = useRef(false);
+  const loadRequestIdRef = useRef(0);
+  const chatWindowRef = useRef<HTMLDivElement | null>(null);
+  const skipAutoScrollRef = useRef(false);
+  // use module-level `socket` singleton
+
+  // App state (many used throughout this file)
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [personas, setPersonas] = useState<any[]>([]);
+  const [characters, setCharacters] = useState<any[]>([]);
+  const [worlds, setWorlds] = useState<any[]>([]);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [arcs, setArcs] = useState<any[]>([]);
+  const [scenes, setScenes] = useState<any[]>([]);
+  const [selectedWorld, setSelectedWorld] = useState<number | null>(null);
+  const [selectedCampaign, setSelectedCampaign] = useState<number | null>(null);
+  const [selectedArc, setSelectedArc] = useState<number | null>(null);
+  const [selectedScene, setSelectedScene] = useState<number | null>(null);
+  const [sessionContext, setSessionContext] = useState<any | null>(null);
+  const [activeCharacters, setActiveCharacters] = useState<string[]>([]);
+  const [input, setInput] = useState<string>('');
+  const [selectedPersona, setSelectedPersona] = useState<string | null>(null);
+  const [deleteChoice, setDeleteChoice] = useState<any>({ open: false });
+  const [regenPendingIds, setRegenPendingIds] = useState<number[]>([]);
+  const [regenErrors, setRegenErrors] = useState<Record<number, string>>({});
+  const [imageModalUrl, setImageModalUrl] = useState<string | null>(null);
+  const [imageModalPrompt, setImageModalPrompt] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [currentTab, setCurrentTab] = useState<'chat'|'characters'|'lore'|'personas'>('chat');
+  const [personaOpen, setPersonaOpen] = useState<boolean>(false);
+  const [showSidebar, setShowSidebar] = useState<boolean>(false);
+  const [modalType, setModalType] = useState<string | null>(null);
+  const [modalInitial, setModalInitial] = useState<any>(null);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState<string>('');
+  const [editingSaving, setEditingSaving] = useState<boolean>(false);
+  const lastNextClickRef = useRef<Record<number, number>>({});
+  // Debug config fetched from backend; use to drive client debug flags
+  const [debugConfig, setDebugConfig] = useState<any>({});
+  const debugRef = useRef<any>({});
+
+  useEffect(() => {
+    fetchPersonas();
+    fetchCharacters();
+    fetchWorlds();
+    const saved = localStorage.getItem('activeCharacters');
+    if (saved) {
+      setActiveCharacters(JSON.parse(saved));
+    }
+
+    // Fetch debug config from server so client logging behavior mirrors backend config
+    (async () => {
+      try {
+        const r = await fetch('/api/debug-config');
+        if (r.ok) {
+          const json = await r.json();
+          setDebugConfig(json);
+          debugRef.current = json || {};
+        }
+      } catch (e) { /* ignore */ }
+    })();
+
+    // Socket listeners for session events
+    socket.on('connect', () => {
+      try { if (debugRef.current && debugRef.current.features && debugRef.current.features.socketAckLogs) console.info('socket connected', socket.id); } catch (e) {}
+    });
+    socket.on('sceneAdvanced', (data: any) => {
+        if (data && data.session) {
+        setSessionContext(data.session);
+      }
+      if (data && data.sceneId) {
+        loadMessages(data.sceneId);
+        // update selected scene if different
+        setSelectedScene(data.sceneId);
+      }
+    });
+
+    socket.on('stateUpdated', (data: any) => {
+      // merge into sessionContext.worldState or set trackers
+      setSessionContext((prev: any) => ({ ...prev, worldState: data.state || prev?.worldState, trackers: data.trackers || prev?.trackers }));
+    });
+
+    socket.on('characterOverrideChanged', (data: any) => {
+      // refresh characters and merged previews
+      fetchCharacters();
+    });
+
+    socket.on('messageUpdated', (data: { messageId: number; newContent: string }) => {
+      let found = false;
+      setMessages(prev => {
+        const next = prev.map(m => {
+          if (m.id === data.messageId) {
+            found = true;
+            return { ...m, content: data.newContent };
+          }
+          return m;
+        });
+        return next;
+      });
+      // clear regen pending and errors for this message
+      setRegenPendingIds(prev => prev.filter(id => id !== data.messageId));
+      setRegenErrors(prev => { const n = { ...prev }; delete n[data.messageId]; return n; });
+
+      // If we didn't find the message locally, or the updated content contains an image,
+      // reload authoritative messages for the scene so DB-indexed updates are reflected.
+      try {
+        const sid = selectedSceneRef.current;
+        if (!found || (data.newContent && typeof data.newContent === 'string' && data.newContent.includes('!['))) {
+          if (sid) loadMessages(sid).catch(() => {});
+        }
+      } catch (e) {
+        console.warn('Failed to reload messages after messageUpdated', e);
+      }
+    });
+    socket.on('imageStored', (data: { messageId: number; sceneId: number; originalUrl: string; localUrl: string; size?: number; width?: number; height?: number }) => {
+      const { messageId, sceneId, originalUrl, localUrl } = data as any;
+      if (sceneId !== selectedSceneRef.current) return;
+
+      // The authoritative message content (and metadata) lives on the server. Rather than
+      // attempting fragile local patches of alt JSON, reload the messages for this scene so
+      // the UI receives the canonical updated content immediately.
+      try {
+        if (selectedSceneRef.current) {
+          loadMessages(selectedSceneRef.current).catch(() => {});
+        }
+      } catch (e) { /* noop */ }
+
+      // Preload the stored image so UI swaps instantly and cached
+      try {
+        const img = new Image();
+        img.onload = () => { /* noop */ };
+        img.onerror = () => { /* noop */ };
+        img.src = localUrl;
+      } catch (e) { /* noop */ }
+    });
+    socket.on('regenFailed', (data: { messageId: number; error?: string }) => {
+      setRegenPendingIds(prev => prev.filter(id => id !== data.messageId));
+      setRegenErrors(prev => ({ ...prev, [data.messageId]: data.error || 'Regeneration failed' }));
+    });
+    socket.on('regenStarted', (data: { messageId: number }) => {
+      setRegenPendingIds(prev => Array.from(new Set([...(prev||[]), data.messageId])));
+      setRegenErrors(prev => { const n = { ...prev }; delete n[data.messageId]; return n; });
+    });
+
+    return () => {
+      socket.off('sceneAdvanced');
+      socket.off('stateUpdated');
+      socket.off('characterOverrideChanged');
+      socket.off('messageUpdated');
+      socket.off('regenFailed');
+      socket.off('regenStarted');
+      socket.off('imageStored');
+    };
+  }, []);
+
+  // Load persisted persona setting once on startup
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/settings/persona');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.persona !== null && data.persona !== undefined) {
+            setSelectedPersona(data.persona);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load persona setting', e);
+      } finally {
+        initialPersonaLoadedRef.current = true;
+      }
+    })();
+  }, []);
+
+  // Persist persona selection when it changes (skip the initial load)
+  useEffect(() => {
+    if (!initialPersonaLoadedRef.current) return;
+    (async () => {
+      try {
+        await fetch('/api/settings/persona', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ persona: selectedPersona }) });
+      } catch (e) {
+        console.warn('Failed to persist persona selection', e);
+      }
+    })();
+  }, [selectedPersona]);
+
+  // Keep a ref of current selectedScene for socket handlers
+  useEffect(() => {
+    selectedSceneRef.current = selectedScene;
+  }, [selectedScene]);
+
+  const fetchPersonas = async () => {
+    const res = await fetch('/api/personas');
+    const data = await res.json();
+    setPersonas(data);
+    if (data.length > 0 && !data.find((p: any) => p.name === selectedPersona)) {
+      setSelectedPersona(data[0].name);
+    }
+  };
+
+  // Ensure switching scenes always loads the correct messages and session
+  useEffect(() => {
+    if (!selectedScene) {
+      setMessages([]);
+      setSessionContext(null);
+      return;
+    }
+
+    // selectedScene effect
+
+    // Load messages and session for the selected scene
+    loadMessages(selectedScene);
+    (async () => {
+      try {
+        const res = await fetch(`/api/scenes/${selectedScene}/session`);
+        if (res.ok) {
+          const session = await res.json();
+          setSessionContext(session);
+          const names = (session.activeCharacters || []).map((c: any) => c.name || c.slug || c.id || c.title).filter(Boolean);
+          setActiveCharacters(names);
+          localStorage.setItem('activeCharacters', JSON.stringify(names));
+        }
+      } catch (e) {
+        console.warn('Failed to refresh session on scene change', selectedScene, e);
+      }
+    })();
+
+    // Join the socket room for this scene and leave previous. Wait for socket connection if needed.
+    try {
+      const prev = prevSelectedSceneRef.current;
+      if (prev && prev !== selectedScene) {
+        console.debug('Emitting leaveScene', { sceneId: prev, socketConnected: socket?.connected });
+        if (socket && socket.connected) {
+          socket.emit('leaveScene', { sceneId: prev });
+        } else if (socket && socket.once) {
+          socket.once('connect', () => socket.emit('leaveScene', { sceneId: prev }));
+        }
+      }
+      if (selectedScene) {
+        console.debug('Emitting joinScene', { sceneId: selectedScene, socketConnected: socket?.connected });
+        if (socket && socket.connected) {
+          socket.emit('joinScene', { sceneId: selectedScene });
+        } else if (socket && socket.once) {
+          socket.once('connect', () => socket.emit('joinScene', { sceneId: selectedScene }));
+        }
+      }
+      prevSelectedSceneRef.current = selectedScene;
+    } catch (e) {
+      console.warn('Failed to join/leave scene socket room', e);
+    }
+  }, [selectedScene]);
+
+  const fetchWorlds = async () => {
+    const res = await fetch('/api/worlds');
+    const data = await res.json();
+    setWorlds(data);
+    if (data.length > 0 && selectedWorld === null) {
+      setSelectedWorld(data[0].id);
+      fetchCampaigns(data[0].id);
+    }
+  };
+
+  const fetchCampaigns = async (worldId: number) => {
+    const res = await fetch(`/api/worlds/${worldId}/campaigns`);
+    const data = await res.json();
+    setCampaigns(data);
+    if (data.length > 0) {
+      setSelectedCampaign(data[0].id);
+      fetchArcs(data[0].id);
+    } else {
+      setSelectedCampaign(null);
+      setArcs([]);
+      setSelectedArc(null);
+      setScenes([]);
+      setSelectedScene(null);
+      setSessionContext(null);
+      setActiveCharacters([]);
+    }
+  };
+
+  const fetchArcs = async (campaignId: number) => {
+    const res = await fetch(`/api/campaigns/${campaignId}/arcs`);
+    const data = await res.json();
+    setArcs(data);
+    if (data.length > 0) {
+      // Only auto-select an arc if none is currently selected or the current one is not in the new list
+      const ids = data.map((d: any) => d.id);
+      if (!selectedArc || !ids.includes(selectedArc)) {
+        setSelectedArc(data[0].id);
+        fetchScenes(data[0].id);
+      }
+    } else {
+      setSelectedArc(null);
+      setScenes([]);
+      setSelectedScene(null);
+      setSessionContext(null);
+      setActiveCharacters([]);
+    }
+  };
+
+  const fetchScenes = async (arcId: number) => {
+    const res = await fetch(`/api/arcs/${arcId}/scenes`);
+    const data = await res.json();
+    setScenes(data);
+    if (data.length > 0) {
+      const ids = data.map((d: any) => d.id);
+      // Only auto-select a scene if none selected or the current selection is not present
+      if (!selectedScene || !ids.includes(selectedScene)) {
+        setSelectedScene(data[0].id);
+        loadMessages(data[0].id);
+      } else {
+        // ensure messages are loaded for the currently selected scene
+        loadMessages(selectedScene);
+      }
+    } else {
+      setSelectedScene(null);
+      setSessionContext(null);
+      setActiveCharacters([]);
+      setMessages([]);
+      setInput('');
+    }
+  };
+
+  const loadMessages = async (sceneId: number) => {
+    console.debug('loadMessages called for scene', sceneId);
+    // mark this request
+    const reqId = ++loadRequestIdRef.current;
+    try {
+      const res = await fetch(`/api/scenes/${sceneId}/messages?limit=100`);
+      const data = await res.json();
+      // transform to Message[] with role heuristics
+      const msgs = data.reverse().map((m: any) => ({
+        role: m.sender && m.sender.startsWith && m.sender.startsWith('user:') ? 'user' : 'ai',
+        sender: m.sender,
+        content: m.message,
+        id: m.id,
+        timestamp: m.timestamp,
+        messageNumber: m.messageNumber,
+        tokenCount: m.tokenCount
+      }));
+      // Only apply if this request is the latest and the selected scene hasn't changed
+      if (loadRequestIdRef.current === reqId && selectedSceneRef.current === sceneId) {
+        setMessages(msgs);
+      } else {
+        console.debug('Discarding messages for scene', sceneId, 'reqId', reqId, 'current', loadRequestIdRef.current, 'selectedScene', selectedSceneRef.current);
+      }
+    } catch (e) {
+      console.warn('Failed to load messages for scene', sceneId, e);
+    }
+  };
+
+  const fetchCharacters = async () => {
+    const res = await fetch('/api/characters');
+    const data = await res.json();
+    setCharacters(data);
+  };
+
+  const updateActiveCharacters = (newActive: string[]) => {
+    setActiveCharacters(newActive);
+    localStorage.setItem('activeCharacters', JSON.stringify(newActive));
+  };
+
+  useEffect(() => {
+    socket.on('aiResponse', (responses: { sender: string; content: string }[]) => {
+      const newMsgs: Message[] = responses.map(res => ({ role: 'ai', sender: res.sender, content: res.content }));
+      setMessages(prev => [...prev, ...newMsgs]);
+      // Also refresh authoritative messages from server for the current scene
+      const sid = selectedSceneRef.current;
+      if (sid) {
+        loadMessages(sid).catch(() => {});
+      }
+      setIsStreaming(false);
+    });
+
+    return () => {
+      socket.off('aiResponse');
+    };
+  }, []);
+
+  const sendMessage = () => {
+    if (!selectedScene) return; // require a scene to send
+    if (input.trim()) {
+      socket.emit('userMessage', { input, persona: selectedPersona, activeCharacters, sceneId: selectedScene });
+      setIsStreaming(true);
+      const newMessage: Message = { role: 'user', content: input, sender: selectedPersona };
+      setMessages(prev => [...prev, newMessage]);
+      setInput('');
+    }
+  };
+
+  // When no scene selected, clear messages and disable input
+  useEffect(() => {
+    if (!selectedScene) {
+      setMessages([]);
+      setInput('');
+    }
+  }, [selectedScene]);
+
+  useEffect(() => {
+    if (skipAutoScrollRef.current) {
+      // a UI action updated messages (e.g., image prev/next/regen) — skip auto-scroll once
+      skipAutoScrollRef.current = false;
+      return;
+    }
+    if (!userScrolledUp) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, userScrolledUp]);
+
+  const updateMessageContent = async (id: number, newContent: string) => {
+    // Optimistic local update so UI responds immediately to prev/next
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, content: newContent } : m));
+    try {
+      const res = await fetch(`/api/messages/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: newContent }) });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        console.warn('updateMessageContent: server error', { id, status: res.status, text });
+      }
+      // After successful PUT, fetch the authoritative message for this id and log it for debugging
+      try {
+        if (selectedScene) {
+          const res2 = await fetch(`/api/scenes/${selectedScene}/messages?limit=100`);
+          if (res2.ok) {
+            const list = await res2.json();
+            const found = list.find((m: any) => m.id === id);
+            // preview available from server
+          }
+          await loadMessages(selectedScene);
+        }
+      } catch (e) { console.warn('updateMessageContent: fetch-after-put failed', e); }
+    } catch (e) {
+      console.warn('Failed to update message', e);
+      // On failure, reload authoritative messages to ensure consistency
+      if (selectedScene) await loadMessages(selectedScene).catch(() => {});
+    }
+  };
+
+  const CustomImage = ({ src, alt, messageId, onUpdateMessage, selectedScene }: { src: string; alt: string; messageId?: number; onUpdateMessage: (id: number, content: string) => void; selectedScene: number | null }) => {
+    let data: any;
+    // If this message isn't persisted yet (no messageId), prefer the provided `src`
+    // and avoid expensive/deep parsing which causes duplicate counts during optimistic updates.
+    if (!messageId) {
+      data = { prompt: alt, urls: [src], current: 0 };
+    } else {
+      try {
+        data = JSON.parse(alt);
+      } catch {
+        data = { prompt: alt, urls: [src], current: 0 };
+      }
+    }
+      // Robustly normalize nested/stringified JSON in `alt`.
+    const tryParse = (s: any) => {
+      if (typeof s !== 'string') return s;
+      const str = s.trim();
+      if (!(str.startsWith('{') || str.startsWith('[') || (str.startsWith('"{') && str.endsWith('"')))) return s;
+      try { return JSON.parse(s); } catch { try { return JSON.parse(str.replace(/^"|"$/g, '')); } catch { return s; } }
+    };
+
+    const deepParseObject = (obj: any, maxDepth = 6) => {
+      let changed = true;
+      let depth = 0;
+      const cur = obj;
+      while (changed && depth < maxDepth) {
+        changed = false;
+        const walk = (o: any) => {
+          if (!o || typeof o !== 'object') return;
+          for (const k of Object.keys(o)) {
+            const v = o[k];
+            if (typeof v === 'string') {
+              const parsed = tryParse(v);
+              if (parsed !== v) { o[k] = parsed; changed = true; }
+            } else if (typeof v === 'object' && v !== null) {
+              walk(v);
+            }
+          }
+        };
+        walk(cur);
+        depth++;
+      }
+      return cur;
+    };
+
+    const findFirst = (obj: any, keyName: string): any => {
+      if (!obj || typeof obj !== 'object') return undefined;
+      if (Object.prototype.hasOwnProperty.call(obj, keyName)) return obj[keyName];
+      for (const k of Object.keys(obj)) {
+        const v = obj[k];
+        if (v && typeof v === 'object') {
+          const f = findFirst(v, keyName);
+          if (f !== undefined) return f;
+        }
+      }
+      return undefined;
+    };
+
+    try {
+      data = deepParseObject(data, 8);
+      // If urls/prompt/current are nested deeper, extract them
+      try {
+        if (!Array.isArray(data.urls)) {
+          const nestedUrls = findFirst(data, 'urls');
+          if (Array.isArray(nestedUrls)) data.urls = nestedUrls;
+        }
+        if (typeof data.prompt !== 'string') {
+          const nestedPrompt = findFirst(data, 'prompt');
+          if (typeof nestedPrompt === 'string') data.prompt = nestedPrompt;
+          else if (nestedPrompt && typeof nestedPrompt === 'object' && typeof nestedPrompt.prompt === 'string') data.prompt = nestedPrompt.prompt;
+        }
+        if (typeof data.current !== 'number') {
+          const nestedCurrent = findFirst(data, 'current');
+          const parsedCur = typeof nestedCurrent === 'number' ? nestedCurrent : parseInt(String(nestedCurrent || '0'), 10);
+          if (!Number.isNaN(parsedCur)) data.current = parsedCur;
+        }
+      } catch (e) { /* noop */ }
+    } catch (e) {
+      // noop
+    }
+
+    // Coerce `urls` to an array if it's a JSON string or other type
+    try {
+      let urlsArr: any = data.urls;
+      if (typeof urlsArr === 'string') {
+        try { urlsArr = JSON.parse(urlsArr); } catch { urlsArr = [urlsArr]; }
+      }
+      if (!Array.isArray(urlsArr)) urlsArr = [urlsArr == null ? src : String(urlsArr)];
+      urlsArr = urlsArr.map((u: any) => String(u));
+      data.urls = urlsArr;
+    } catch (e) {
+      data.urls = [src];
+    }
+
+    // Ensure `current` is a valid integer index
+    try {
+      let cur = typeof data.current === 'number' ? data.current : parseInt(String(data.current || '0'), 10);
+      if (Number.isNaN(cur)) cur = 0;
+      if (cur < 0) cur = 0;
+      if (cur >= (data.urls || []).length) cur = (data.urls || []).length - 1;
+      data.current = cur;
+    } catch (e) {
+      data.current = 0;
+    }
+
+    // Fallback: if urls appears to be a single entry but there are multiple URLs embedded
+    // somewhere in the metadata (or in the nested prompt string), extract them via regex.
+    try {
+      const urlsNow = Array.isArray(data.urls) ? data.urls : [];
+      if ((urlsNow.length <= 1)) {
+        const serialized = JSON.stringify(data || '') || '';
+        const urlRe = /https?:\/\/[^\s"')\]]+/g;
+        const matches = Array.from(new Set(Array.from(serialized.matchAll(urlRe)).map(m => m[0])));
+        if (matches.length > 1) {
+          data.urls = matches;
+          // clamp current
+          if (typeof data.current !== 'number' || data.current < 0 || data.current >= matches.length) data.current = Math.max(0, Math.min(matches.length - 1, Number(data.current) || 0));
+        }
+      }
+    } catch (e) {
+      // noop
+    }
+
+    let prompt: any = data.prompt;
+    if (typeof prompt !== 'string') {
+      if (prompt && typeof prompt === 'object') {
+        if (typeof prompt.prompt === 'string') prompt = prompt.prompt;
+        else prompt = JSON.stringify(prompt || '');
+      } else {
+        prompt = String(prompt || '');
+      }
+    }
+    const urls = data.urls;
+    const current = data.current;
+    // normalized image metadata
+    // Normalize URLs: unescape backslashes, strip surrounding quotes, trim whitespace
+    const normalizeUrl = (u: any) => {
+      try {
+        let s = String(u || '');
+        s = s.replace(/\\\\/g, '\\'); // replace double-escaped backslashes
+        s = s.replace(/\\+$/g, ''); // strip trailing backslashes
+        s = s.replace(/^"|"$/g, ''); // strip surrounding quotes
+        return s.trim();
+      } catch (e) { return String(u || '').trim(); }
+    };
+    const normalizedUrls = Array.from(new Set((Array.isArray(urls) ? urls : [urls || src]).map(normalizeUrl).filter(Boolean)));
+    // Ensure we always include `src` as a fallback but avoid duplicates
+    if (!normalizedUrls.includes(src)) normalizedUrls.unshift(src);
+    const [localUrls, setLocalUrls] = useState<string[]>(normalizedUrls.length ? normalizedUrls : [src]);
+    const failedUrlsRef = useRef<Set<string>>(new Set());
+
+    // When `alt` changes for a persisted message, recompute normalized URLs and update state.
+    useEffect(() => {
+      if (!messageId) return;
+      try {
+        const recomputed = Array.from(new Set((Array.isArray(data.urls) ? data.urls : [data.urls || src]).map(normalizeUrl).filter(Boolean)));
+        if (!recomputed.includes(src)) recomputed.unshift(src);
+        // Only update if different to avoid re-renders
+        if (JSON.stringify(recomputed) !== JSON.stringify(localUrls)) {
+          setLocalUrls(recomputed.length ? recomputed : [src]);
+          // reset failed set because URLs changed
+          failedUrlsRef.current = new Set();
+        }
+      } catch (e) {
+        // noop
+      }
+    }, [alt]);
+    const [localCurrent, setLocalCurrent] = useState<number>(current || 0);
+
+    // Helper to find next available index (forward) that isn't marked failed
+    const findNextAvailable = (start: number) => {
+      const n = localUrls.length;
+      if (n === 0) return -1;
+      for (let i = start; i < n; i++) if (!failedUrlsRef.current.has(localUrls[i])) return i;
+      for (let i = 0; i < start; i++) if (!failedUrlsRef.current.has(localUrls[i])) return i;
+      return -1;
+    };
+    const findPrevAvailable = (start: number) => {
+      const n = localUrls.length;
+      if (n === 0) return -1;
+      for (let i = start; i >= 0; i--) if (!failedUrlsRef.current.has(localUrls[i])) return i;
+      for (let i = n - 1; i > start; i--) if (!failedUrlsRef.current.has(localUrls[i])) return i;
+      return -1;
+    };
+
+    let currentUrl = src;
+    const availableIndex = (localUrls && localUrls.length) ? (failedUrlsRef.current.has(localUrls[localCurrent]) ? findNextAvailable(localCurrent) : localCurrent) : -1;
+    if (availableIndex >= 0) currentUrl = localUrls[availableIndex];
+    // Keep localCurrent synchronized to an available index so navigation logic is consistent
+    useEffect(() => {
+      try {
+        const avail = (localUrls && localUrls.length) ? (failedUrlsRef.current.has(localUrls[localCurrent]) ? findNextAvailable(localCurrent) : localCurrent) : -1;
+        if (avail >= 0 && avail !== localCurrent) setLocalCurrent(avail);
+      } catch (e) { /* noop */ }
+    }, [localUrls]);
+    const imgRef = useRef<HTMLImageElement | null>(null);
+    const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+
+    const updateImgSize = () => {
+      const el = imgRef.current;
+      if (el) {
+        setImgSize({ w: el.clientWidth, h: el.clientHeight });
+      }
+    };
+
+    useEffect(() => {
+      updateImgSize();
+      const ro = (window as any).ResizeObserver ? new (window as any).ResizeObserver(() => updateImgSize()) : null;
+      if (ro && imgRef.current) ro.observe(imgRef.current);
+      window.addEventListener('resize', updateImgSize);
+      return () => {
+        if (ro && imgRef.current) try { ro.unobserve(imgRef.current); } catch (e) {}
+        window.removeEventListener('resize', updateImgSize);
+      };
+    }, [currentUrl]);
+
+    useEffect(() => { setLocalCurrent(current || 0); }, [current]);
+
+    // If a URL fails to load, mark it failed and advance to the next available index.
+    const handleImgError = (failedUrl: string) => {
+      // Normalize the failedUrl key same as we normalized stored URLs
+      const key = normalizeUrl(failedUrl);
+      console.warn('Image failed to load, marking failed for UI:', key);
+      failedUrlsRef.current.add(key);
+      // If the current displayed URL failed, advance to next available
+      if (normalizeUrl(localUrls[localCurrent] || '') === key) {
+        const nextIdx = findNextAvailable(localCurrent + 1);
+        if (nextIdx >= 0) {
+          setLocalCurrent(nextIdx);
+        } else {
+          // no available images -> show placeholder by setting current to 0 and leaving failed set
+          setLocalCurrent(0);
+        }
+      }
+    };
+
+    const handleDelete = () => {
+      if (messageId == null) return;
+      skipAutoScrollRef.current = true;
+      setDeleteChoice({ open: true, messageId, data, onUpdate: onUpdateMessage, prompt });
+    };
+
+    const handlePrev = async () => {
+      if (messageId == null) return;
+      skipAutoScrollRef.current = true;
+      try {
+        const r = await fetch(`/api/messages/${messageId}/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'prev' }) });
+        const j = await r.json().catch(() => null);
+        if (r.ok && j) {
+          if (j.newContent && onUpdateMessage) onUpdateMessage(messageId, j.newContent);
+          if (j.metadata && Array.isArray(j.metadata.urls)) setLocalUrls(j.metadata.urls.map(String));
+          if (j.metadata && typeof j.metadata.current === 'number') setLocalCurrent(j.metadata.current);
+        }
+      } catch (e) { console.warn('handlePrev failed', e); }
+    };
+
+    const handleNext = async () => {
+      // handleNext invoked
+      try { console.info('handleNext invoked', { messageId, localCurrent, localUrlsLength: localUrls.length, scene: selectedScene }); } catch (e) {}
+      // Prevent duplicate rapid clicks for the same message
+      try {
+        const now = Date.now();
+        const last = lastNextClickRef.current[messageId || -1] || 0;
+        if (now - last < 700) {
+          try { console.info('handleNext debounced', { messageId }); } catch (e) {}
+          return;
+        }
+        lastNextClickRef.current[messageId || -1] = now;
+      } catch (e) {}
+      // If a regen is already pending for this message, ignore
+      if (messageId != null && regenPendingIds.includes(messageId)) return;
+      if (messageId == null) return;
+      const nextIdx = findNextAvailable(localCurrent + 1);
+      // computed nextIdx
+      // If nextIdx resolves to the same URL as currently shown (wrap-around or single-item list),
+      // treat it as "no next" and fallthrough to regen.
+      const nextUrl = (nextIdx >= 0 && localUrls[nextIdx]) ? normalizeUrl(localUrls[nextIdx]) : null;
+      const curUrlNorm = normalizeUrl(currentUrl || '');
+      const visible = localUrls.filter(u => !failedUrlsRef.current.has(u));
+      if (nextIdx >= 0 && nextIdx !== localCurrent && nextUrl && curUrlNorm !== nextUrl && visible.length > 1) {
+        // delegate to server to advance index
+        try {
+          const r = await fetch(`/api/messages/${messageId}/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'next' }) });
+          const j = await r.json().catch(() => null);
+          if (r.ok && j) {
+            if (j.newContent && onUpdateMessage) onUpdateMessage(messageId, j.newContent);
+            if (j.metadata && Array.isArray(j.metadata.urls)) setLocalUrls(j.metadata.urls.map(String));
+            if (j.metadata && typeof j.metadata.current === 'number') setLocalCurrent(j.metadata.current);
+            return;
+          }
+        } catch (e) { console.warn('server next failed', e); }
+        // fallback to client-side update if server call failed
+        skipAutoScrollRef.current = true;
+        setLocalCurrent(nextIdx);
+        const newData = (() => {
+          const flat: any = {};
+          let p: any = data;
+          try {
+            while (p && typeof p === 'object' && 'prompt' in p) p = p.prompt;
+            let attempts = 0;
+            while (typeof p === 'string' && attempts < 8) {
+              const parsed = tryParse(p);
+              if (parsed === p) break;
+              p = parsed;
+              attempts++;
+            }
+          } catch (e) { /* noop */ }
+          flat.prompt = (typeof p === 'string') ? p : String(p || '');
+          flat.urls = Array.isArray(localUrls) ? localUrls : [String(localUrls || src)];
+          flat.current = Math.max(0, Math.min(nextIdx, (flat.urls || []).length - 1));
+          return flat;
+        })();
+        // calling onUpdateMessage for next (client fallback)
+        onUpdateMessage(messageId, `![${JSON.stringify(newData)}](${newData.urls[newData.current]})`);
+        return;
+      }
+      // No available next image -> trigger regen
+      skipAutoScrollRef.current = true;
+      setRegenPendingIds(prev => Array.from(new Set([...(prev||[]), messageId])));
+      setRegenErrors(prev => { const n = { ...prev }; delete n[messageId]; return n; });
+      try { console.debug('Emitting regenImage (raw prompt)', { messageId, prompt, sceneId: selectedScene }); } catch (e) {}
+      if (!selectedScene) {
+        console.warn('Cannot regen image: no selectedScene');
+      } else {
+        // Build a cleaned prompt: unwrap nested prompt objects/strings to the innermost prompt string
+        let cleanPrompt: any = data;
+        try {
+          // if data is nested, walk down
+          while (cleanPrompt && typeof cleanPrompt === 'object' && 'prompt' in cleanPrompt) cleanPrompt = cleanPrompt.prompt;
+          // repeatedly try to parse if it's a stringified JSON
+          let attempts = 0;
+          while (typeof cleanPrompt === 'string' && attempts < 8) {
+            const parsed = tryParse(cleanPrompt);
+            if (parsed === cleanPrompt) break;
+            cleanPrompt = parsed;
+            attempts++;
+          }
+        } catch (e) { /* noop */ }
+        if (typeof cleanPrompt !== 'string') cleanPrompt = String(cleanPrompt || prompt || '');
+        // final trim
+        cleanPrompt = cleanPrompt.trim();
+        try {
+          // small debug trace to help diagnose missing emits
+           
+          console.info('Emitting regenImage', { messageId, promptLength: (cleanPrompt || '').length, socketConnected: Boolean(socket && socket.connected), sceneId: selectedScene });
+        } catch (e) {}
+        // Ask server to regenerate (server will handle calling VisualAgent and storing result)
+        try {
+          const r = await fetch(`/api/messages/${messageId}/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'regen', prompt: cleanPrompt }) });
+          const j = await r.json().catch(() => null);
+          if (r.ok && j) {
+            if (j.newContent && onUpdateMessage) onUpdateMessage(messageId, j.newContent);
+            if (j.metadata && Array.isArray(j.metadata.urls)) setLocalUrls(j.metadata.urls.map(String));
+            if (j.metadata && typeof j.metadata.current === 'number') setLocalCurrent(j.metadata.current);
+          } else {
+            console.warn('Regenerate failed', j);
+          }
+        } catch (e) { console.warn('Regenerate request failed', e); }
+      }
+    };
+
+    return (
+      <span className="image-card" style={{ display: 'inline-block', lineHeight: 0, position: 'relative', ...(imgSize ? ({ ['--img-w' as any]: `${imgSize.w}px`, ['--img-h' as any]: `${imgSize.h}px` }) : {}) } as React.CSSProperties}>
+        <img ref={imgRef} className="image-card-img" src={currentUrl} alt={prompt} onError={() => handleImgError(currentUrl)} onClick={() => { setImageModalUrl(currentUrl); setImageModalPrompt(prompt); }} style={{ display: 'block', cursor: 'pointer' }} />
+
+        <span className="image-overlay" aria-hidden>
+          <span style={{ width: '100%', pointerEvents: 'none' }} />
+        </span>
+
+        <span className="image-controls">
+          <span className="controls-left">
+            {(() => {
+              const visible = localUrls.filter(u => !failedUrlsRef.current.has(u));
+              const visibleIdx = visible.indexOf(currentUrl);
+              return (visible.length > 1 && visibleIdx > 0) ? (
+                <button className="icon small" onClick={handlePrev} disabled={regenPendingIds.includes(messageId || -1)} title="Previous">⬅️</button>
+              ) : null;
+            })()}
+          </span>
+          <span className="controls-center">
+              {
+                (() => {
+                  const visible = localUrls.filter(u => !failedUrlsRef.current.has(u));
+                  const visibleIdx = visible.indexOf(currentUrl);
+                  const displayIndex = visibleIdx >= 0 ? (visibleIdx + 1) : (visible.length > 0 ? 1 : 0);
+                  return <span className="counter">{visible.length > 0 ? `${displayIndex}/${visible.length}` : '0/0'}</span>;
+                })()
+              }
+          </span>
+          <span className="controls-right">
+            <button className="icon small" onClick={() => { setImageModalUrl(currentUrl); setImageModalPrompt(prompt); }} title="View larger">🔍</button>
+            <button className="icon small" onClick={() => { navigator.clipboard?.writeText(currentUrl).catch(()=>{}); }} title="Copy URL">📋</button>
+            <button className="icon small" onClick={handleDelete} disabled={regenPendingIds.includes(messageId || -1)} title="Delete">🗑️</button>
+            <button className="icon small regen" onClick={handleNext} disabled={regenPendingIds.includes(messageId || -1)} title={(() => { const next = findNextAvailable(localCurrent+1); return next >=0 && next !== localCurrent ? 'Next' : 'Regenerate'; })()}>{regenPendingIds.includes(messageId || -1) ? <span aria-hidden>⏳</span> : '➡️'}</button>
+          </span>
+        </span>
+
+        <span className="hidden-prompt" style={{ position: 'absolute', left: 0, bottom: '-1.5em', width: '100%', textAlign: 'center', color: 'transparent', userSelect: 'text', pointerEvents: 'none' }}>{prompt}</span>
+
+        {messageId != null && regenPendingIds.includes(messageId) && (
+          <span role="status" aria-live="polite" className="regen-overlay" style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.25)', zIndex: 25, borderRadius: 6 }}>
+            <Spinner size={48} title="Regenerating image" />
+          </span>
+        )}
+      </span>
+    );
+  };
+
+  const highlightInlineQuotes = (s: string) => {
+    try {
+      return s.replace(/\"([^\\\"]+)\"/g, '<span class="inline-quote">"$1"</span>');
+    } catch (e) {
+      return s;
+    }
+  };
+
+  const renderMessage = (msg: Message) => {
+
+      const getAvatarForSender = (sender: string) => {
+      const namePart = sender && sender.includes(':') ? sender.split(':').pop() || sender : sender;
+      // First check personas (user-selected profiles), then characters
+      const p = personas.find((pp: any) => (pp.name || '').toString() === namePart);
+      if (p && p.avatarUrl) return p.avatarUrl;
+      const ch = characters.find((c: any) => (c.name || '').toString() === namePart);
+      return ch?.avatarUrl || null;
+    };
+    const visualMatch = msg.content.match(/\[VISUAL: ([^\]]+)\]/);
+    if (visualMatch) {
+      const textPart = msg.content.replace(/\[VISUAL: [^\]]+\]/, '').trim();
+      const visualPrompt = visualMatch[1];
+      return (
+        <div className="message-row">
+          <div className="avatar">{getAvatarForSender(msg.sender) ? <img src={getAvatarForSender(msg.sender)!} alt="avatar" className="avatar-img" /> : (msg.sender || 'AI').toString().split(':').pop()?.slice(0,2)}</div>
+          <div className="message-body">
+            <div className="message-meta"><strong>{msg.sender}</strong> {msg.timestamp ? <span className="ts">{new Date(msg.timestamp).toLocaleTimeString()}</span> : null}</div>
+            <div className="message-text"><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{highlightInlineQuotes(textPart)}</ReactMarkdown></div>
+            <div className="visual-tag">[Image: {visualPrompt}]</div>
+          </div>
+        </div>
+      );
+    }
+    const displayName = msg.sender && msg.sender.includes(':') ? msg.sender.split(':').pop() : msg.sender;
+    const onEditStart = () => {
+      if (!msg.id) return; // only edit persisted messages
+      setEditingMessageId(msg.id || null);
+      setEditingText(msg.content);
+    };
+
+    const onCancelEdit = () => {
+      setEditingMessageId(null);
+      setEditingText('');
+    };
+
+    const onSaveEdit = async () => {
+      if (!msg.id) return;
+      setEditingSaving(true);
+      try {
+        await fetch(`/api/messages/${msg.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: editingText }) });
+        // refresh messages for selected scene
+        if (selectedScene) await loadMessages(selectedScene);
+      } catch (e) {
+        console.warn('Failed to save message edit', e);
+      } finally {
+        setEditingSaving(false);
+        onCancelEdit();
+      }
+    };
+
+    const onDelete = async () => {
+      if (!msg.id) return;
+      if (!confirm('Delete this message? This will reorder subsequent messages.')) return;
+      try {
+        await fetch(`/api/messages/${msg.id}`, { method: 'DELETE' });
+        if (selectedScene) await loadMessages(selectedScene);
+      } catch (e) { console.warn('Failed to delete message', e); }
+    };
+
+    const onMove = async (direction: 'up' | 'down') => {
+      if (!msg.id) return;
+      try {
+        await fetch(`/api/messages/${msg.id}/move`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ direction }) });
+        if (selectedScene) await loadMessages(selectedScene);
+      } catch (e) { console.warn('Failed to move message', e); }
+    };
+
+    return (
+      <div className="message-row" onDoubleClick={onEditStart}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+          <div className="avatar">{getAvatarForSender(msg.sender) ? <img src={getAvatarForSender(msg.sender)!} alt="avatar" className="avatar-img" /> : (displayName || 'AI').toString().slice(0,2)}</div>
+          <div className="avatar-meta">
+            {msg.messageNumber ? <div className="msg-num">#{msg.messageNumber}</div> : null}
+            {msg.tokenCount !== undefined && msg.tokenCount !== null ? <div className="token-count">{msg.tokenCount}t</div> : null}
+          </div>
+        </div>
+        <div className="message-body">
+          <div className="message-meta"><strong>{displayName}</strong> {msg.timestamp ? <span className="ts">{new Date(msg.timestamp).toLocaleTimeString()}</span> : null}</div>
+          {editingMessageId === msg.id ? (
+            <div className="message-edit-inline">
+              <textarea value={editingText} onChange={e => setEditingText(e.target.value)} rows={4} style={{ width: '100%', padding: 8, borderRadius: 6, background: 'transparent', color: '#e6eef2', border: '1px solid rgba(255,255,255,0.06)' }} />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button className="icon-btn" onClick={onSaveEdit} disabled={editingSaving} title="Save">✅</button>
+                <button className="icon-btn" onClick={onCancelEdit} title="Cancel">❌</button>
+                <button className="icon-btn" onClick={onDelete} title="Delete">🗑️</button>
+                <button className="icon-btn" onClick={() => onMove('up')} title="Move up">⬆️</button>
+                <button className="icon-btn" onClick={() => onMove('down')} title="Move down">⬇️</button>
+              </div>
+            </div>
+          ) : (
+            <div className="message-text">
+              {(() => {
+                // Avoid mutating image alt JSON by not running quote-highlighting on content that contains images
+                const markdownContent = msg.content && msg.content.includes('![') ? msg.content : highlightInlineQuotes(msg.content);
+                return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={{ img: (props) => <ImageCard {...props} messageId={msg.id} onUpdateMessage={updateMessageContent} selectedScene={selectedScene} /> }}>{markdownContent}</ReactMarkdown>;
+              })()}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const handleSceneChange = async (sceneId: number) => {
+    console.debug('handleSceneChange -> requested', sceneId, 'current selectedScene', selectedScene);
+    setSelectedScene(sceneId);
+    loadMessages(sceneId);
+
+    try {
+      const res = await fetch(`/api/scenes/${sceneId}/session`);
+      if (res.ok) {
+        const session = await res.json();
+        setSessionContext(session);
+
+        // cascade selections to reflect session
+        if (session.world && session.world.id) {
+          setSelectedWorld(session.world.id);
+          await fetchCampaigns(session.world.id);
+        }
+        if (session.campaign && session.campaign.id) {
+          setSelectedCampaign(session.campaign.id);
+          await fetchArcs(session.campaign.id);
+        }
+        if (session.arc && session.arc.id) {
+          setSelectedArc(session.arc.id);
+          await fetchScenes(session.arc.id);
+        }
+        if (session.scene && session.scene.id) setSelectedScene(session.scene.id);
+          console.debug('handleSceneChange -> session.scene.id', session?.scene?.id);
+
+        // active characters names
+        const names = (session.activeCharacters || []).map((c: any) => c.name || c.slug || c.id || c.title).filter(Boolean);
+        setActiveCharacters(names);
+        localStorage.setItem('activeCharacters', JSON.stringify(names));
+      }
+    } catch (e) {
+      console.warn('Failed to load session for scene', sceneId, e);
+    }
+  };
+
+  // Modal handlers
+  const openNewWorld = () => { setModalType('world-new'); setModalInitial(null); };
+  const openEditWorld = () => { const w = worlds.find(w => w.id === selectedWorld); setModalType('world-edit'); setModalInitial(w); };
+  const openNewCampaign = () => { setModalType('campaign-new'); setModalInitial(null); };
+  const openEditCampaign = () => { const c = campaigns.find(c => c.id === selectedCampaign); setModalType('campaign-edit'); setModalInitial(c); };
+  const openNewArc = () => { setModalType('arc-new'); setModalInitial(null); };
+  const openEditArc = () => { const a = arcs.find(a => a.id === selectedArc); setModalType('arc-edit'); setModalInitial(a); };
+  const openNewScene = () => { setModalType('scene-new'); setModalInitial(null); };
+  const openEditScene = () => { const s = scenes.find(s => s.id === selectedScene); setModalType('scene-edit'); setModalInitial(s); };
+
+  const closeModal = () => { setModalType(null); setModalInitial(null); };
+
+  const saveWorld = async (payload: any) => {
+    if (modalType === 'world-new') {
+      const res = await fetch('/api/worlds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const created = await res.json();
+      await fetchWorlds(); setSelectedWorld(created.id);
+    } else if (modalType === 'world-edit' && selectedWorld) {
+      await fetch(`/api/worlds/${selectedWorld}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      await fetchWorlds();
+    }
+    closeModal();
+  };
+
+  const saveCampaign = async (payload: any) => {
+    if (!selectedWorld) return alert('Select a world first');
+    if (modalType === 'campaign-new') {
+      const res = await fetch(`/api/worlds/${selectedWorld}/campaigns`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const created = await res.json(); await fetchCampaigns(selectedWorld); setSelectedCampaign(created.id);
+    } else if (modalType === 'campaign-edit' && selectedCampaign) {
+      await fetch(`/api/campaigns/${selectedCampaign}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); await fetchCampaigns(selectedWorld);
+    }
+    closeModal();
+  };
+
+  const saveArc = async (payload: any) => {
+    if (!selectedCampaign) return alert('Select a campaign first');
+    if (modalType === 'arc-new') {
+      const res = await fetch(`/api/campaigns/${selectedCampaign}/arcs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const created = await res.json(); await fetchArcs(selectedCampaign); setSelectedArc(created.id);
+    } else if (modalType === 'arc-edit' && selectedArc) {
+      await fetch(`/api/arcs/${selectedArc}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); await fetchArcs(selectedCampaign!);
+    }
+    closeModal();
+  };
+
+  const saveScene = async (payload: any) => {
+    if (!selectedArc) return alert('Select an arc first');
+    if (modalType === 'scene-new') {
+      const res = await fetch(`/api/arcs/${selectedArc}/scenes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const created = await res.json(); await fetchScenes(selectedArc); handleSceneChange(created.id);
+    } else if (modalType === 'scene-edit' && selectedScene) {
+      await fetch(`/api/scenes/${selectedScene}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); await fetchScenes(selectedArc!);
+    }
+    closeModal();
+  };
+
+  return (
+    <ToastProvider>
+    <div className="app">
+      <div className="app-panel">
+      <div className="tabs">
+        <button className="icon-btn sidebar-toggle" onClick={() => setShowSidebar(s => !s)}>☰</button>
+        <div className="left-tabs">
+          <button onClick={() => setCurrentTab('chat')} className={currentTab === 'chat' ? 'active' : ''}>Chat</button>
+        </div>
+        <div className="right-tabs">
+          <div className="persona-select">
+            <div className="persona-selected" onClick={() => setPersonaOpen(open => !open)}>
+              {(() => {
+                const p = personas.find((x: any) => x.name === selectedPersona);
+                return (
+                  <>
+                    {p?.avatarUrl ? <img src={p.avatarUrl} className="persona-thumb" alt="p" /> : <div className="persona-thumb placeholder">{(p?.name||'').slice(0,2)}</div>}
+                    <span className="persona-name">{selectedPersona}</span>
+                    <span className="persona-caret">▾</span>
+                  </>
+                );
+              })()}
+            </div>
+            {typeof personaOpen !== 'undefined' && personaOpen && (
+              <div className="persona-options">
+                {personas.map((p: any) => (
+                  <div key={p.id} className="persona-option" onPointerDown={(e) => { e.preventDefault(); setSelectedPersona(p.name); setPersonaOpen(false); }}>
+                    {p.avatarUrl ? <img src={p.avatarUrl} className="persona-thumb" alt={p.name} /> : <div className="persona-thumb placeholder">{(p.name||'').slice(0,2)}</div>}
+                    <span className="persona-name">{p.name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button className="icon-edit" title="Edit personas" onClick={() => setCurrentTab('personas')}>✎</button>
+          </div>
+
+          <div className="active-characters-area">
+            <span className="active-characters">Active: {activeCharacters.join(', ') || 'None'}</span>
+            <button className="icon-btn" title="Select active characters" onClick={() => setModalOpen(true)}>👥+</button>
+            <button className="icon-edit" title="Edit characters" onClick={() => setCurrentTab('characters')}>✎</button>
+          </div>
+
+          <button className="icon-btn lore-btn" title="Lore">📖</button>
+          <button className="icon-btn" title="ComfyUI" onClick={() => setModalType('comfyui')}>🖼️</button>
+        </div>
+      </div>
+      {/* Sidebar for world/campaign/arc/scene selection and CRUD */}
+      <div className={`sidebar ${showSidebar ? 'open' : ''}`}>
+        <div className="sidebar-header">
+          <strong>Hierarchy</strong>
+          <button className="icon-btn" onClick={() => setShowSidebar(false)}>✕</button>
+        </div>
+        <div className="sidebar-body">
+        <div className="hierarchy-block">
+          <div>
+            <label>World</label>
+            <div className="selector-row">
+              <select value={selectedWorld ?? ''} onChange={(e) => { const id = Number(e.target.value); setSelectedWorld(id); fetchCampaigns(id); }}>
+                {worlds.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+              <button onClick={openNewWorld}>New</button>
+              <button onClick={openEditWorld}>Edit</button>
+              <button onClick={async () => { if (!selectedWorld) return alert('Select a world'); if (!confirm('Delete world and all child campaigns/arcs/scenes?')) return; await fetch(`/api/worlds/${selectedWorld}`, { method: 'DELETE' }); await fetchWorlds(); setSelectedWorld(null); }}>Delete</button>
+            </div>
+          </div>
+          <div>
+            <label>Campaign</label>
+            <div className="selector-row">
+              <select value={selectedCampaign ?? ''} onChange={(e) => { const id = Number(e.target.value); setSelectedCampaign(id); fetchArcs(id); }}>
+                {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button onClick={openNewCampaign}>New</button>
+              <button onClick={openEditCampaign}>Edit</button>
+              <button onClick={async () => { if (!selectedCampaign) return alert('Select a campaign'); if (!confirm('Delete campaign and all child arcs/scenes?')) return; await fetch(`/api/campaigns/${selectedCampaign}`, { method: 'DELETE' }); await fetchCampaigns(selectedWorld!); setSelectedCampaign(null); }}>Delete</button>
+            </div>
+          </div>
+          <div>
+            <label>Arc</label>
+            <div className="selector-row">
+              <select value={selectedArc ?? ''} onChange={(e) => { const id = Number(e.target.value); setSelectedArc(id); fetchScenes(id); }}>
+                {arcs.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              <button onClick={openNewArc}>New</button>
+              <button onClick={openEditArc}>Edit</button>
+              <button onClick={async () => { if (!selectedArc) return alert('Select an arc'); if (!confirm('Delete arc and all child scenes?')) return; await fetch(`/api/arcs/${selectedArc}`, { method: 'DELETE' }); await fetchArcs(selectedCampaign!); setSelectedArc(null); }}>Delete</button>
+            </div>
+          </div>
+          <div>
+            <label>Scene</label>
+            <div className="selector-row">
+              <select value={selectedScene ?? ''} onChange={(e) => { const id = Number(e.target.value); handleSceneChange(id); }}>
+                {scenes.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+              </select>
+              <button onClick={openNewScene}>New</button>
+              <button onClick={openEditScene}>Edit</button>
+              <button onClick={async () => { if (!selectedScene) return alert('Select a scene'); if (!confirm('Delete scene?')) return; await fetch(`/api/scenes/${selectedScene}`, { method: 'DELETE' }); await fetchScenes(selectedArc!); setSelectedScene(null); }}>Delete</button>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+      {showSidebar && <div className="sidebar-backdrop" onClick={() => setShowSidebar(false)}></div>}
+
+      {sessionContext && (
+        <div className="session-badge">Session: {sessionContext.scene?.title || sessionContext.scene?.id}</div>
+      )}
+
+      {/* Modal editors */}
+      <WorldEditor visible={modalType === 'world-new' || modalType === 'world-edit'} initial={modalInitial} onClose={closeModal} onSave={saveWorld} />
+      <CampaignEditor visible={modalType === 'campaign-new' || modalType === 'campaign-edit'} initial={modalInitial} onClose={closeModal} onSave={saveCampaign} />
+      <ArcEditor visible={modalType === 'arc-new' || modalType === 'arc-edit'} initial={modalInitial} onClose={closeModal} onSave={saveArc} />
+      <SceneEditor visible={modalType === 'scene-new' || modalType === 'scene-edit'} initial={modalInitial} onClose={closeModal} onSave={saveScene} />
+      <ComfyConfigModal visible={modalType === 'comfyui'} onClose={() => setModalType(null)} />
+      {currentTab === 'chat' && (
+        <div className="chat-window">
+              {selectedScene ? (
+                <div ref={chatWindowRef} onScroll={(e) => {
+                  const el = e.target as HTMLDivElement;
+                  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 50;
+                  setUserScrolledUp(!atBottom);
+                }}>
+                  {messages.map((msg, i) => (
+                    <div key={i} className={msg.role === 'user' ? 'user' : 'ai'}>
+                      {renderMessage(msg)}
+                    </div>
+                  ))}
+                  {isStreaming && (
+                    <div className="typing-indicator">AI is typing...</div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+              ) : (
+                <div className="empty-chat">No scene selected. Select a scene to load chat.</div>
+              )}
+        </div>
+      )}
+      {currentTab === 'characters' && <CharacterManager onRefresh={fetchCharacters} />}
+      {currentTab === 'lore' && <LoreManager />}
+      {currentTab === 'personas' && <PersonaManager />}
+      {currentTab === 'chat' && (
+        <div className="chat-area">
+          <div className="input-area">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+              }}
+              placeholder={selectedScene ? 'Type your message... (Shift+Enter for newline)' : 'Select a scene to enable chat'}
+              disabled={!selectedScene}
+              rows={2}
+            />
+            <button onClick={sendMessage} disabled={!selectedScene || !input.trim()}>Send</button>
+          </div>
+        </div>
+      )}
+      {modalOpen && (
+        <div className="modal-overlay" onClick={() => setModalOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Select Active Characters</h3>
+            <div className="character-list">
+              {characters.map((c) => (
+                <label key={c.id}>
+                  <input
+                    type="checkbox"
+                    checked={activeCharacters.includes(c.name)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        updateActiveCharacters([...activeCharacters, c.name]);
+                      } else {
+                        updateActiveCharacters(activeCharacters.filter(name => name !== c.name));
+                      }
+                    }}
+                  />
+                  {c.name}
+                </label>
+              ))}
+            </div>
+            <div className="modal-buttons">
+              <button onClick={() => { updateActiveCharacters([]); }}>Clear All</button>
+              <button onClick={() => setModalOpen(false)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {imageModalUrl && (
+        <div className="modal-overlay" onClick={() => { setImageModalUrl(null); setImageModalPrompt(null); }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90%', maxHeight: '90%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong>Image</strong>
+              <button className="icon-btn" onClick={() => { setImageModalUrl(null); setImageModalPrompt(null); }}>✕</button>
+            </div>
+            <div style={{ marginTop: 12, textAlign: 'center' }}>
+              <img src={imageModalUrl} alt={imageModalPrompt || 'image'} style={{ maxWidth: '100%', maxHeight: '70vh' }} />
+              {imageModalPrompt && <div style={{ marginTop: 8, color: '#cfd8dc' }}>{imageModalPrompt}</div>}
+            </div>
+          </div>
+        </div>
+      )}
+        <ConfirmModal
+          open={!!(deleteChoice && deleteChoice.open)}
+          title="Delete image"
+          message={deleteChoice?.prompt || 'Remove image versions?'}
+          confirmLabel="Delete All"
+          cancelLabel="Cancel"
+          onCancel={() => setDeleteChoice({ open: false })}
+          secondary={{ label: 'Delete Current', onClick: () => {
+            const { messageId, data, onUpdate, prompt } = deleteChoice || {};
+            if (!messageId) { setDeleteChoice({ open: false }); return; }
+            const newUrls = (data.urls || []).slice();
+            newUrls.splice(data.current, 1);
+            if (newUrls.length === 0) {
+              onUpdate(messageId, prompt);
+            } else {
+              const newCurrent = Math.min(data.current, newUrls.length - 1);
+              const newData = { ...data, urls: newUrls, current: newCurrent };
+              onUpdate(messageId, `![${JSON.stringify(newData)}](${newData.urls[newData.current]})`);
+            }
+            setDeleteChoice({ open: false });
+          } }}
+          onConfirm={() => {
+            const { messageId, data, onUpdate, prompt } = deleteChoice || {};
+            if (!messageId) { setDeleteChoice({ open: false }); return; }
+            onUpdate(messageId, prompt);
+            setDeleteChoice({ open: false });
+          }}
+        />
+      </div>
+    </div>
+    </ToastProvider>
+  );
+}
+
+export default App;
