@@ -144,5 +144,11 @@ backend/roleforge.db
 backend/public/avatars/
 # Generated images stored by the server (ComfyUI outputs)
 backend/public/generated/
+frontend/public/avatars/
 
 /roleforge.db
+roleforge.db-wal
+roleforge.db-shm
+*.db-wal
+*.db-shm
+

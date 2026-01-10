@@ -4,18 +4,18 @@ import * as path from 'path';
 import { countTokens } from '../utils/tokenCounter.js';
 
 export const MessageService = {
-  logMessage(sceneId: number, sender: string, message: string, charactersPresent: any[] = [], metadata: any = {}) {
+  logMessage(sceneId: number, sender: string, message: string, charactersPresent: any[] = [], metadata: any = {}, source: string = '') {
     const row = db.prepare('SELECT MAX(messageNumber) as maxNum FROM Messages WHERE sceneId = ?').get(sceneId) as any;
     const next = (row?.maxNum ?? 0) + 1;
     const tokenCount = countTokens(message);
-    const stmt = db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, charactersPresent, tokenCount, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)');
-    const result = stmt.run(sceneId, next, message, sender, JSON.stringify(charactersPresent), tokenCount, JSON.stringify(metadata || {}));
+    const stmt = db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, charactersPresent, tokenCount, metadata, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    const result = stmt.run(sceneId, next, message, sender, JSON.stringify(charactersPresent), tokenCount, JSON.stringify(metadata || {}), source);
     const inserted = db.prepare('SELECT * FROM Messages WHERE id = ?').get(result.lastInsertRowid) as any;
     if (inserted) {
       inserted.charactersPresent = JSON.parse(inserted.charactersPresent || '[]');
       try { inserted.metadata = JSON.parse(inserted.metadata || '{}'); } catch { inserted.metadata = inserted.metadata || {}; }
     }
-    return inserted || { id: result.lastInsertRowid, sceneId, messageNumber: next, message, sender, tokenCount };
+    return inserted || { id: result.lastInsertRowid, sceneId, messageNumber: next, message, sender, tokenCount, source };
   },
 
   getMessages(sceneId: number, limit = 100, offset = 0) {

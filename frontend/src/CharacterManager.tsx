@@ -684,7 +684,13 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
             {characters.map((char) => (
               <div key={char.id} style={{ border: '1px solid #ccc', padding: 16, borderRadius: 8 }}>
-                <img src={char.avatar || char.avatarUrl || '/placeholder-avatar.png'} style={{ width: 64, height: 64, borderRadius: 6, objectFit: 'cover', marginBottom: 8 }} alt="avatar" />
+                {(char.avatar || char.avatarUrl) ? (
+                  <img src={char.avatar || char.avatarUrl} style={{ width: 64, height: 64, borderRadius: 6, objectFit: 'cover', marginBottom: 8 }} alt="avatar" />
+                ) : (
+                  <div style={{ width: 64, height: 64, borderRadius: 6, background: '#333', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 'bold', marginBottom: 8 }}>
+                    {char.name.slice(0, 2).toUpperCase()}
+                  </div>
+                )}
                 <h3>{char.name}</h3>
                 <p>{char.description || 'No description'}</p>
                 <div style={{ marginTop: 8 }}>
@@ -716,26 +722,6 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
               <button onClick={() => setShowCropper(false)}>Cancel</button>
               <button onClick={applyCropAndUpload}>Apply & Upload</button>
             </div>
-          </div>
-        </div>
-      )}
-      {!editing && (
-        <div>
-          <button onClick={() => setEditing('new')}>Create New</button>
-          <button onClick={() => setShowImportModal(true)}>Import Card</button>
-          <button onClick={() => setShowGenerateDialog(true)}>Generate New</button>
-          <div style={{ marginTop: 20 }}>
-            {characters.map(c => (
-              <div key={c.id} style={{ border: '1px solid #ccc', padding: 10, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-                {(c.avatar || c.avatarUrl) && <img src={c.avatar || c.avatarUrl} alt="avatar" style={{ width: 64, height: 64, border: '1px solid black' }} />}
-                <div>
-                  <h3>{c.name}</h3>
-                  <p>{c.description}</p>
-                  <button onClick={() => { setEditing(c); setForm(c); }}>Edit</button>
-                  <button onClick={() => handleDelete(c.id)}>Delete</button>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       )}

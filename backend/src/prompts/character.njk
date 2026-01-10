@@ -38,4 +38,4 @@ Respond to the latest events as {{ character.name }} would. Keep your response S
 
 Based on the conversation and user actions, update your characterState if any changes occurred to your clothingWorn, mood, activity, location, or position.
 
-Output your response in JSON format: {"response": "your dialogue and actions in first-person", "characterState": {"clothingWorn": "...", "mood": "...", "activity": "...", "location": "...", "position": "..."}} Do not use double quotes (") in the response text - use single quotes (') for dialogue or omit quote marks entirely to ensure valid JSON.
+Output your response in JSON format: {"response": "your dialogue and actions in first-person", "characterState": {"clothingWorn": "...", "mood": "...", "activity": "...", "location": "...", "position": "..."}} In the response text use escaped double quotes (\") to ensure valid JSON.

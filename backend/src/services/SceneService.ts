@@ -37,6 +37,10 @@ export const SceneService = {
   },
 
   delete(id: number) {
+    // First, clear any references to this scene in CampaignState
+    const clearStmt = db.prepare('UPDATE CampaignState SET currentSceneId = NULL WHERE currentSceneId = ?');
+    clearStmt.run(id);
+    
     const stmt = db.prepare('DELETE FROM Scenes WHERE id = ?');
     const result = stmt.run(id);
     return { changes: result.changes };

@@ -855,7 +855,13 @@ app.put('/api/characters/:id', (req, res) => {
   const id = req.params.id;
   const data = req.body;
   const { name, avatarUrl, ...rest } = data;
-  charactersDb.prepare('UPDATE Characters SET name = ?, avatar = ?, data = ? WHERE id = ?').run(name, avatarUrl, JSON.stringify(rest), id);
+  let updateFields = 'name = ?, data = ?';
+  let params = [name, JSON.stringify(rest)];
+  if (avatarUrl !== undefined) {
+    updateFields += ', avatar = ?';
+    params.push(avatarUrl);
+  }
+  charactersDb.prepare(`UPDATE Characters SET ${updateFields} WHERE id = ?`).run(...params, id);
   res.json({ success: true });
 });
 
@@ -1625,7 +1631,7 @@ io.on('connection', (socket) => {
       console.log('User:', input);
 
       // Log user message if scene provided
-      if (sceneId) {
+      if (sceneId && !input.startsWith('/')) {
         try { MessageService.logMessage(sceneId, `user:${persona}`, input, activeCharacters || [], {}); } catch (e) { console.warn('Failed to log user message', e); }
       }
 
@@ -1663,14 +1669,20 @@ io.on('connection', (socket) => {
                 // Save message content and metadata separately
                 let metaObj: any = null;
                 try { metaObj = altData && typeof altData === 'object' ? altData : null; } catch { metaObj = null; }
-                const saved = MessageService.logMessage(sceneId, r.sender, `![](${stored.localUrl})`, [], metaObj || { prompt: imgMatch[1], urls: [stored.localUrl], current: 0 });
+                const saved = MessageService.logMessage(sceneId, r.sender, `![](${stored.localUrl})`, [], metaObj || { prompt: imgMatch[1], urls: [stored.localUrl], current: 0 }, 'image');
                 try { io.to(`scene-${sceneId}`).emit('imageStored', { message: saved, originalUrl: origUrl, localUrl: stored.localUrl, size: stored.size, width: stored.width, height: stored.height }); } catch (e) { console.warn('Failed to emit imageStored', e); }
                 continue;
               }
             } catch (e) {
               console.warn('Failed to download/replace image for message logging', e);
             }
-            MessageService.logMessage(sceneId, r.sender, content, [], {});
+            let source = '';
+            if (r.sender !== 'System' && r.sender !== 'Narrator') {
+              source = 'character';
+            } else if (r.sender === 'Narrator') {
+              source = 'narrator';
+            }
+            MessageService.logMessage(sceneId, r.sender, content, [], {}, source);
           } catch (e) { console.warn('Failed to log AI response', e); }
         }
       }

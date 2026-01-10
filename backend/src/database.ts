@@ -244,6 +244,17 @@ try {
   console.warn('Could not ensure Messages.metadata column exists:', e);
 }
 
+// Ensure Messages.source column exists
+try {
+  const mcols3 = db.prepare("PRAGMA table_info('Messages')").all();
+  const hasSource = mcols3.some((c: any) => c.name === 'source');
+  if (!hasSource) {
+    db.exec(`ALTER TABLE Messages ADD COLUMN source TEXT DEFAULT '';`);
+  }
+} catch (e) {
+  console.warn('Could not ensure Messages.source column exists:', e);
+}
+
 // Ensure Scenes.summary column exists for summarization
 try {
   const scols = db.prepare("PRAGMA table_info('Scenes')").all();
