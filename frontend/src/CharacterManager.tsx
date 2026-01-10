@@ -32,6 +32,9 @@ interface Character {
   dislikes: string;
   turnOffs: string;
   kinks: string;
+  familyMembers?: string[];
+  secrets?: string[];
+  goals?: string[];
   backstory?: string;
   scenario?: string;
   description?: string;
@@ -64,6 +67,9 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
   const [showFieldRegenDialog, setShowFieldRegenDialog] = useState(false);
   const [regenField, setRegenField] = useState<string | null>(null);
   const [regenInstructions, setRegenInstructions] = useState('');
+  const [newFamilyMember, setNewFamilyMember] = useState('');
+  const [newSecret, setNewSecret] = useState('');
+  const [newGoal, setNewGoal] = useState('');
 
   async function fetchCharacters() {
     const res = await fetch('/api/characters');
@@ -111,6 +117,9 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
   const handleEdit = (char: Character) => {
     setEditing(char);
     setForm(char);
+    setNewFamilyMember('');
+    setNewSecret('');
+    setNewGoal('');
   };
 
   const removeAvatar = async (id: number) => {
@@ -263,11 +272,18 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
       });
       if (res.ok) {
         const data = await res.json();
-        const updated = await fetch(`/api/characters/${data.id}`).then(r => r.json());
-        setEditing(updated);
-        setForm(updated);
-        await fetchCharacters();
-        onRefresh();
+        const generatedValue = data.value;
+        
+        // Update local form state
+        if (regenField === 'familyMembers' || regenField === 'secrets' || regenField === 'goals') {
+          // For array fields, add the generated value to the array
+          const currentArray = form[regenField] || [];
+          setForm({ ...form, [regenField]: [...currentArray, generatedValue] });
+        } else {
+          // For other fields, replace the value
+          setForm({ ...form, [regenField]: generatedValue });
+        }
+        
         setShowFieldRegenDialog(false);
         setRegenField(null);
         setRegenInstructions('');
@@ -280,7 +296,7 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
   };
 
   const allFields = [
-    'name', 'species', 'race', 'gender', 'appearance', 'aesthetic', 'currentOutfit', 'personality', 'skills', 'powers', 'occupation', 'workplace', 'sexualOrientation', 'relationshipStatus', 'relationshipPartner', 'likes', 'turnOns', 'dislikes', 'turnOffs', 'kinks', 'backstory', 'scenario', 'description'
+    'name', 'species', 'race', 'gender', 'appearance', 'aesthetic', 'currentOutfit', 'personality', 'skills', 'powers', 'occupation', 'workplace', 'sexualOrientation', 'relationshipStatus', 'relationshipPartner', 'likes', 'turnOns', 'dislikes', 'turnOffs', 'kinks', 'familyMembers', 'secrets', 'goals', 'backstory', 'scenario', 'description'
   ];
 
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -366,7 +382,7 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
       {editing ? (
         // Edit/Create Form
         <>
-          <button onClick={() => { setEditing(null); setForm({}); }}>Back to List</button>
+          <button onClick={() => { setEditing(null); setForm({}); setNewFamilyMember(''); setNewSecret(''); setNewGoal(''); }}>Back to List</button>
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: 8 }}>
               <label>Upload Avatar: </label>
@@ -639,6 +655,123 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
               />
               {editing !== 'new' && <button type="button" onClick={() => { setRegenField('kinks'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
             </div>
+            <fieldset style={{ marginBottom: 8 }}>
+              <legend>Family Members: List of family members</legend>
+              {(form.familyMembers || []).map((member, index) => (
+                <div key={index} style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+                  <input
+                    type="text"
+                    value={member}
+                    onChange={(e) => {
+                      const newMembers = [...(form.familyMembers || [])];
+                      newMembers[index] = e.target.value;
+                      setForm({ ...form, familyMembers: newMembers });
+                    }}
+                    style={{ flex: 1 }}
+                  />
+                  <button type="button" onClick={() => {
+                    const newMembers = [...(form.familyMembers || [])];
+                    newMembers.splice(index, 1);
+                    setForm({ ...form, familyMembers: newMembers });
+                  }}>Remove</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', alignItems: 'center', marginTop: 8 }}>
+                <input
+                  type="text"
+                  value={newFamilyMember}
+                  onChange={(e) => setNewFamilyMember(e.target.value)}
+                  placeholder="Enter family member name"
+                  style={{ flex: 1, marginRight: 8 }}
+                />
+                <button type="button" onClick={() => {
+                  if (newFamilyMember.trim()) {
+                    const newMembers = [...(form.familyMembers || []), newFamilyMember.trim()];
+                    setForm({ ...form, familyMembers: newMembers });
+                    setNewFamilyMember('');
+                  }
+                }}>Add</button>
+                {editing !== 'new' && <button type="button" onClick={() => { setRegenField('familyMembers'); setShowFieldRegenDialog(true); }}>Generate</button>}
+              </div>
+            </fieldset>
+            <fieldset style={{ marginBottom: 8 }}>
+              <legend>Secrets: List of secrets the character holds</legend>
+              {(form.secrets || []).map((secret, index) => (
+                <div key={index} style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+                  <input
+                    type="text"
+                    value={secret}
+                    onChange={(e) => {
+                      const newSecrets = [...(form.secrets || [])];
+                      newSecrets[index] = e.target.value;
+                      setForm({ ...form, secrets: newSecrets });
+                    }}
+                    style={{ flex: 1 }}
+                  />
+                  <button type="button" onClick={() => {
+                    const newSecrets = [...(form.secrets || [])];
+                    newSecrets.splice(index, 1);
+                    setForm({ ...form, secrets: newSecrets });
+                  }}>Remove</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', alignItems: 'center', marginTop: 8 }}>
+                <input
+                  type="text"
+                  value={newSecret}
+                  onChange={(e) => setNewSecret(e.target.value)}
+                  placeholder="Enter secret"
+                  style={{ flex: 1, marginRight: 8 }}
+                />
+                <button type="button" onClick={() => {
+                  if (newSecret.trim()) {
+                    const newSecrets = [...(form.secrets || []), newSecret.trim()];
+                    setForm({ ...form, secrets: newSecrets });
+                    setNewSecret('');
+                  }
+                }}>Add</button>
+                {editing !== 'new' && <button type="button" onClick={() => { setRegenField('secrets'); setShowFieldRegenDialog(true); }}>Generate</button>}
+              </div>
+            </fieldset>
+            <fieldset style={{ marginBottom: 8 }}>
+              <legend>Goals: List of goals the character has</legend>
+              {(form.goals || []).map((goal, index) => (
+                <div key={index} style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+                  <input
+                    type="text"
+                    value={goal}
+                    onChange={(e) => {
+                      const newGoals = [...(form.goals || [])];
+                      newGoals[index] = e.target.value;
+                      setForm({ ...form, goals: newGoals });
+                    }}
+                    style={{ flex: 1 }}
+                  />
+                  <button type="button" onClick={() => {
+                    const newGoals = [...(form.goals || [])];
+                    newGoals.splice(index, 1);
+                    setForm({ ...form, goals: newGoals });
+                  }}>Remove</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', alignItems: 'center', marginTop: 8 }}>
+                <input
+                  type="text"
+                  value={newGoal}
+                  onChange={(e) => setNewGoal(e.target.value)}
+                  placeholder="Enter goal"
+                  style={{ flex: 1, marginRight: 8 }}
+                />
+                <button type="button" onClick={() => {
+                  if (newGoal.trim()) {
+                    const newGoals = [...(form.goals || []), newGoal.trim()];
+                    setForm({ ...form, goals: newGoals });
+                    setNewGoal('');
+                  }
+                }}>Add</button>
+                {editing !== 'new' && <button type="button" onClick={() => { setRegenField('goals'); setShowFieldRegenDialog(true); }}>Generate</button>}
+              </div>
+            </fieldset>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
               <label style={{ flex: 1 }}>Backstory: The character's history and background</label>
               <textarea
@@ -678,7 +811,7 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
         <>
           <div style={{ marginBottom: 16 }}>
             <input type="file" accept=".json" onChange={handleImport} />
-            <button onClick={() => { setEditing('new'); setForm({}); }}>New Character</button>
+            <button onClick={() => { setEditing('new'); setForm({}); setNewFamilyMember(''); setNewSecret(''); setNewGoal(''); }}>New Character</button>
             <button onClick={() => setShowGenerateDialog(true)}>Generate Character</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>

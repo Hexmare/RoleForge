@@ -28,13 +28,16 @@ The output must be a valid JSON object with exactly these top-level fields:
 - dislikes: string (comma-separated)
 - turnOffs: string (comma-separated)
 - kinks: string (comma-separated)
+- familyMembers: array of strings (optional - only include if description or instructions mention family members)
+- secrets: array of strings (optional - only include if description or instructions mention secrets)
+- goals: array of strings (optional - only include if description or instructions mention goals)
 - backstory: string (optional)
 - scenario: string (optional)
 - description: string
 - avatarUrl: string (optional)
 - extensions: object (optional)
 
-Create a complete character object filling all fields logically based on the name, description, and instructions. Ensure the output is valid JSON matching this structure exactly.
+Create a complete character object filling all fields logically based on the name, description, and instructions. Only include familyMembers, secrets, and goals arrays if they are explicitly mentioned or implied in the description or instructions. Ensure the output is valid JSON matching this structure exactly.
 
 Output only the JSON object, no additional text.
 {% elif mode == 'update' %}
@@ -64,7 +67,11 @@ Instructions: {{ instructions }}
 The character must follow this JSON schema structure (do not output the schema itself):
 {{ schema }}
 
+{% if field == 'familyMembers' or field == 'secrets' or field == 'goals' %}
+Generate a single new entry for the {{ field }} array based on the instructions and existing character. Output only the entry as a string (do not include quotes unless they are part of the entry).
+{% else %}
 Generate the value for the specified field based on the instructions and existing character. Output only the value as a string (or JSON if the field is an object/array).
+{% endif %}
 {% else %}
 Imported Card Data:
 {{ cardData }}
@@ -95,6 +102,9 @@ The output must be a valid JSON object with exactly these top-level fields:
 - dislikes: string (comma-separated)
 - turnOffs: string (comma-separated)
 - kinks: string (comma-separated)
+- familyMembers: array of strings (optional - only include if card data or user directions mention family members)
+- secrets: array of strings (optional - only include if card data or user directions mention secrets)
+- goals: array of strings (optional - only include if card data or user directions mention goals)
 - backstory: string (optional)
 - scenario: string (optional)
 - description: string

@@ -64,10 +64,35 @@ export const CharacterService = {
     return result;
   },
 
-  saveBaseCharacter(name: string, data: any, avatar?: string) {
-    const id = crypto.randomUUID();
-    const stmt = charactersDb.prepare('INSERT INTO Characters (id, name, avatar, data) VALUES (?, ?, ?, ?)');
-    stmt.run(id, name, avatar || null, JSON.stringify(data));
+  saveBaseCharacter(idOrName: string, dataOrName: any, avatarOrData?: string, dataIfAvatar?: any) {
+    // Handle both create and update cases
+    let id: string, name: string, data: any, avatar: string | undefined;
+    
+    if (typeof dataOrName === 'string') {
+      // Create new: saveBaseCharacter(name, data, avatar?)
+      id = crypto.randomUUID();
+      name = idOrName;
+      data = dataOrName;
+      avatar = avatarOrData;
+    } else {
+      // Update existing: saveBaseCharacter(id, data, avatar?)
+      id = idOrName;
+      const existing = this.getBaseById(id);
+      name = existing?.name || 'Unknown';
+      data = dataOrName;
+      avatar = avatarOrData;
+    }
+    
+    const existing = this.getBaseById(id);
+    if (existing) {
+      // Update existing
+      const stmt = charactersDb.prepare('UPDATE Characters SET name = ?, avatar = ?, data = ? WHERE id = ?');
+      stmt.run(name, avatar || null, JSON.stringify(data), id);
+    } else {
+      // Create new
+      const stmt = charactersDb.prepare('INSERT INTO Characters (id, name, avatar, data) VALUES (?, ?, ?, ?)');
+      stmt.run(id, name, avatar || null, JSON.stringify(data));
+    }
     return { id, name, avatar };
   },
 

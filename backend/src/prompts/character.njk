@@ -15,6 +15,9 @@ Turn Ons: {{ character.turnOns }}
 Dislikes: {{ character.dislikes }}
 Turn Offs: {{ character.turnOffs }}
 Kinks: {{ character.kinks }}
+{% if character.familyMembers %}Family Members: {{ character.familyMembers | join(', ') }}{% endif %}
+{% if character.secrets %}Secrets: {{ character.secrets | join(', ') }}{% endif %}
+{% if character.goals %}Goals: {{ character.goals | join(', ') }}{% endif %}
 {% if character.backstory %}Backstory: {{ character.backstory }}{% endif %}
 {% if character.scenario %}Scenario: {{ character.scenario }}{% endif %}
 

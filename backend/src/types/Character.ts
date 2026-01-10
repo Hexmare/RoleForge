@@ -29,6 +29,9 @@ export interface RoleForgeCharacter {
   dislikes: string;
   turnOffs: string;
   kinks: string;
+  familyMembers?: string[];
+  secrets?: string[];
+  goals?: string[];
   backstory?: string;
   scenario?: string;
   description?: string;

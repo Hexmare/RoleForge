@@ -89,6 +89,21 @@
       "type": "string",
       "description": "Comma-separated"
     },
+    "familyMembers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Array of family member names"
+    },
+    "secrets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Array of character secrets"
+    },
+    "goals": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Array of character goals"
+    },
     "backstory": {
       "type": "string"
     },
