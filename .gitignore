@@ -151,4 +151,4 @@ roleforge.db-wal
 roleforge.db-shm
 *.db-wal
 *.db-shm
-
+*.db
