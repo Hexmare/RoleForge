@@ -21,6 +21,7 @@ export interface AgentContext {
   character?: any; // For CharacterAgent
   characterState?: any; // For CharacterAgent - current state of the character
   creationRequest?: string; // For CreatorAgent
+  mode?: string; // For CreatorAgent - 'create', 'update', 'field'
   narration?: string; // For VisualAgent
   sceneElements?: string[]; // For VisualAgent
   visualStyle?: string; // For VisualAgent
@@ -47,6 +48,9 @@ export abstract class BaseAgent {
   }
 
   protected getProfile(): LLMProfile {
+    // Reload config to ensure latest changes are applied
+    this.configManager.reload();
+
     // Get agent-specific profile or default
     const agentConfig = this.configManager.getConfig().agents?.[this.agentName];
     let profileName = agentConfig?.llmProfile || this.configManager.getConfig().defaultProfile;
@@ -56,7 +60,7 @@ export abstract class BaseAgent {
 
     const baseProfile = this.configManager.getProfile(profileName);
 
-    // Merge agent-specific overrides (sampler and format)
+    // Merge agent-specific overrides (all possible profile fields)
     const mergedProfile = { ...baseProfile };
     
     if (agentConfig?.sampler) {
@@ -68,6 +72,22 @@ export abstract class BaseAgent {
     
     if (agentConfig?.format) {
       mergedProfile.format = agentConfig.format;
+    }
+
+    if (agentConfig?.apiKey) {
+      mergedProfile.apiKey = agentConfig.apiKey;
+    }
+
+    if (agentConfig?.baseURL) {
+      mergedProfile.baseURL = agentConfig.baseURL;
+    }
+
+    if (agentConfig?.model) {
+      mergedProfile.model = agentConfig.model;
+    }
+
+    if (agentConfig?.template) {
+      mergedProfile.template = agentConfig.template;
     }
 
     return mergedProfile;
@@ -103,13 +123,21 @@ export abstract class BaseAgent {
   }
 
   protected cleanResponse(response: string): string {
+    let cleaned = response;
+    
+    // Remove markdown code blocks (e.g., ```json ... ```)
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+    
     // First, try to split on --- (common separator for thinking)
-    const parts = response.split('---');
+    const parts = cleaned.split('---');
     if (parts.length > 1) {
-      return parts.slice(1).join('---').trim();
+      cleaned = parts.slice(1).join('---').trim();
     }
+    
     // Fallback: remove <thinking> tags
-    return response.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+    cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+    
+    return cleaned;
   }
 
   protected renderTemplate(templateName: string, context: AgentContext): string {

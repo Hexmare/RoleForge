@@ -11,15 +11,15 @@
     },
     "species": {
       "type": "string",
-      "description": "e.g., 'Human', 'Elf', 'Succubus'"
+      "description": "e.g., 'Human', 'Elf'"
     },
     "race": {
       "type": "string",
-      "description": "e.g., 'Caucasian', 'Dark Elf'"
+      "description": "e.g., 'Caucasian'"
     },
     "gender": {
       "type": "string",
-      "description": "e.g., 'Female', 'Male', 'Non-binary'"
+      "description": "e.g., 'Female', 'Male'"
     },
     "appearance": {
       "type": "object",

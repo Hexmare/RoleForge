@@ -34,6 +34,10 @@ export interface AgentConfig {
   llmProfile?: string;
   sampler?: SamplerSettings;
   format?: string;
+  apiKey?: string;
+  baseURL?: string;
+  model?: string;
+  template?: string;
 }
 
 export interface Config {

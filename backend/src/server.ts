@@ -8,10 +8,11 @@ import * as nunjucks from 'nunjucks';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
 import { dirname } from 'path';
 import { Orchestrator } from './agents/Orchestrator';
-import db from './database';
-import multer from 'multer';
+import { AgentContext } from './agents/BaseAgent';
+import db, { charactersDb } from './database';
 import sharp from 'sharp';
 import WorldService from './services/WorldService';
 import CampaignService from './services/CampaignService';
@@ -27,6 +28,15 @@ import { countTokens } from './utils/tokenCounter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Multer setup for avatar uploads
+const avatarStorage = multer.diskStorage({
+  destination: path.join(__dirname, '..', '..', 'frontend', 'public', 'avatars'),
+  filename: (req: any, file: any, cb: any) => {
+    cb(null, `avatar-${req.params.id}.png`);
+  }
+});
+const uploadAvatar = multer({ storage: avatarStorage });
 
 // Configure Nunjucks
 const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(__dirname, 'prompts')), { autoescape: false });
@@ -48,7 +58,7 @@ app.use(express.json());
 app.use('/public', express.static(path.join(process.cwd(), 'public')));
 
 // Ensure avatars folder exists
-const avatarsDir = path.join(process.cwd(), 'public', 'avatars');
+const avatarsDir = path.join(process.cwd(), 'frontend', 'public', 'avatars');
 try { fs.mkdirSync(avatarsDir, { recursive: true }); } catch (e) { /* ignore */ }
 
 const storage = multer.diskStorage({
@@ -86,8 +96,13 @@ app.delete('/api/worlds/:id', (req, res) => {
 
 // Campaigns
 app.get('/api/worlds/:worldId/campaigns', (req, res) => {
-  const { worldId } = req.params;
-  res.json(CampaignService.listByWorld(Number(worldId)));
+  try {
+    const { worldId } = req.params;
+    res.json(CampaignService.listByWorld(Number(worldId)));
+  } catch (error) {
+    console.error('Error fetching campaigns:', error);
+    res.status(500).json({ error: 'Failed to fetch campaigns' });
+  }
 });
 
 app.post('/api/worlds/:worldId/campaigns', (req, res) => {
@@ -531,6 +546,29 @@ app.get('/api/scenes/:sceneId/session', async (req, res) => {
   }
 });
 
+// Update active characters for a scene
+app.put('/api/scenes/:sceneId/active-characters', (req, res) => {
+  const { sceneId } = req.params;
+  const { activeCharacters } = req.body;
+  console.log(`Updating active characters for scene ${sceneId} to:`, activeCharacters);
+  try {
+    const stmt = db.prepare('UPDATE Scenes SET activeCharacters = ? WHERE id = ?');
+    const result = stmt.run(JSON.stringify(activeCharacters || []), Number(sceneId));
+    if (result.changes > 0) {
+      console.log('Successfully updated active characters in database');
+      // Emit update
+      try { io.emit('activeCharactersUpdated', { sceneId: Number(sceneId), activeCharacters }); } catch (e) { console.warn('Failed to emit activeCharactersUpdated', e); }
+      res.json({ success: true });
+    } else {
+      console.log('No scene found with id:', sceneId);
+      res.status(404).json({ error: 'Scene not found' });
+    }
+  } catch (e) {
+    console.error('Error updating active characters:', e);
+    res.status(500).json({ error: 'Failed to update active characters' });
+  }
+});
+
 // Workflows listing - read backend/workflows for available .json workflows
 app.get('/api/workflows', (req, res) => {
   try {
@@ -767,7 +805,7 @@ app.get('/api/characters/merged', (req, res) => {
   const worldId = req.query.worldId ? Number(req.query.worldId) : undefined;
   const campaignId = req.query.campaignId ? Number(req.query.campaignId) : undefined;
   const slug = String(req.query.slug || '');
-  const merged = CharacterService.getMergedCharacter({ worldId, campaignId, characterSlug: slug });
+  const merged = CharacterService.getMergedCharacter({ worldId, campaignId, characterId: slug });
   if (!merged) return res.status(404).json({ error: 'Character not found' });
   res.json(merged);
 });
@@ -793,28 +831,175 @@ app.put('/api/settings/persona', (req, res) => {
 
 // Characters CRUD
 app.get('/api/characters', (req, res) => {
-  const characters = db.prepare('SELECT * FROM characters').all();
+  const characters = CharacterService.getAllCharacters();
   res.json(characters);
 });
 
+app.get('/api/characters/:id', (req, res) => {
+  const id = req.params.id;
+  const character = CharacterService.getBaseById(id);
+  if (character) {
+    res.json(character);
+  } else {
+    res.status(404).json({ error: 'Character not found' });
+  }
+});
+
 app.post('/api/characters', (req, res) => {
-  const { name, avatarUrl, description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, alternate_greetings, tags, creator, character_version, extensions, character_book } = req.body;
-  const stmt = db.prepare(`
-    INSERT INTO characters (name, avatarUrl, description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, alternate_greetings, tags, creator, character_version, extensions, character_book)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const result = stmt.run(name, avatarUrl || null, description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, JSON.stringify(alternate_greetings), JSON.stringify(tags), creator, character_version, JSON.stringify(extensions), JSON.stringify(character_book));
-  res.json({ id: result.lastInsertRowid });
+  const characterData = req.body;
+  const id = CharacterService.saveBaseCharacter(characterData.name, characterData, characterData.avatarUrl || characterData.avatar);
+  res.json({ id });
+});
+
+app.put('/api/characters/:id', (req, res) => {
+  const id = req.params.id;
+  const data = req.body;
+  const { name, avatarUrl, ...rest } = data;
+  charactersDb.prepare('UPDATE Characters SET name = ?, avatar = ?, data = ? WHERE id = ?').run(name, avatarUrl, JSON.stringify(rest), id);
+  res.json({ success: true });
+});
+
+app.post('/api/characters/import', async (req, res) => {
+  const { card, directions } = req.body;
+  try {
+    // Call CreatorAgent
+    const orchestrator = new Orchestrator(configManager, env, db, io);
+    const context: AgentContext = {
+      userInput: '',
+      history: [],
+      worldState: {},
+      character: card,
+      creationRequest: directions,
+      maxCompletionTokens: 2000
+    };
+    const result = await orchestrator.createCharacter(context);
+    const generatedChar = JSON.parse(result);
+    // Save to charactersDb
+    const id = generatedChar.id || `char-${Date.now()}`;
+    CharacterService.saveBaseCharacter(id, generatedChar);
+    res.json({ id });
+  } catch (error) {
+    console.error('Import error:', error);
+    res.status(500).json({ error: 'Failed to import character' });
+  }
+});
+
+app.post('/api/characters/generate', async (req, res) => {
+  const { name, description, instructions } = req.body;
+  try {
+    const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'Character_Schema.json'), 'utf8'));
+    const orchestrator = new Orchestrator(configManager, env, db, io);
+    const context = {
+      mode: 'create',
+      name,
+      description,
+      instructions,
+      schema: JSON.stringify(schema),
+      maxCompletionTokens: 2000,
+      userInput: '',
+      history: [],
+      worldState: {}
+    };
+    const result = await orchestrator.createCharacter(context);
+    const generatedChar = JSON.parse(result);
+    const id = CharacterService.saveBaseCharacter(generatedChar.name, generatedChar, generatedChar.avatarUrl || generatedChar.avatar);
+    res.json({ id });
+  } catch (error) {
+    console.error('Generate error:', error);
+    res.status(500).json({ error: 'Failed to generate character' });
+  }
+});
+
+app.post('/api/characters/import', async (req, res) => {
+  const { card, directions } = req.body;
+  try {
+    const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'Character_Schema.json'), 'utf8'));
+    const orchestrator = new Orchestrator(configManager, env, db, io);
+    const context = {
+      mode: 'import',
+      cardData: JSON.stringify(card),
+      userDirections: directions,
+      schema: JSON.stringify(schema),
+      maxCompletionTokens: 2000,
+      userInput: '',
+      history: [],
+      worldState: {}
+    };
+    const result = await orchestrator.createCharacter(context);
+    const importedChar = JSON.parse(result);
+    const id = CharacterService.saveBaseCharacter(importedChar.name, importedChar, importedChar.avatarUrl || importedChar.avatar);
+    res.json({ id });
+  } catch (error) {
+    console.error('Import error:', error);
+    res.status(500).json({ error: 'Failed to import character' });
+  }
+});
+
+app.post('/api/characters/:id/update', async (req, res) => {
+  const { instructions, selectedFields } = req.body;
+  const id = req.params.id;
+  try {
+    const existing = CharacterService.getBaseById(id);
+    if (!existing) return res.status(404).json({ error: 'Character not found' });
+    const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'Character_Schema.json'), 'utf8'));
+    const orchestrator = new Orchestrator(configManager, env, db, io);
+    const context = {
+      mode: 'update',
+      existingData: existing,
+      selectedFields: selectedFields || [],
+      instructions,
+      schema: JSON.stringify(schema),
+      maxCompletionTokens: 2000,
+      userInput: '',
+      history: [],
+      worldState: {}
+    };
+    const result = await orchestrator.createCharacter(context);
+    const updatedChar = JSON.parse(result);
+    CharacterService.saveBaseCharacter(id, updatedChar);
+    res.json({ id });
+  } catch (error) {
+    console.error('Update error:', error);
+    res.status(500).json({ error: 'Failed to update character' });
+  }
+});
+
+app.post('/api/characters/:id/field', async (req, res) => {
+  const { field, instructions } = req.body;
+  const id = req.params.id;
+  try {
+    const existing = CharacterService.getBaseById(id);
+    if (!existing) return res.status(404).json({ error: 'Character not found' });
+    const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'Character_Schema.json'), 'utf8'));
+    const orchestrator = new Orchestrator(configManager, env, db, io);
+    const context = {
+      mode: 'field',
+      existingData: existing,
+      field,
+      instructions,
+      schema: JSON.stringify(schema),
+      maxCompletionTokens: 2000,
+      userInput: '',
+      history: [],
+      worldState: {}
+    };
+    const result = await orchestrator.createCharacter(context);
+    // For field, result is the value
+    const updatedChar = { ...existing };
+    let value = result;
+    try { value = JSON.parse(result); } catch {}
+    updatedChar[field] = value;
+    CharacterService.saveBaseCharacter(id, updatedChar);
+    res.json({ id });
+  } catch (error) {
+    console.error('Field update error:', error);
+    res.status(500).json({ error: 'Failed to update field' });
+  }
 });
 
 app.get('/api/characters/:id', (req, res) => {
-  const { id } = req.params;
-  const character = db.prepare('SELECT * FROM characters WHERE id = ?').get(id) as any;
+  const character = CharacterService.getBaseById(req.params.id);
   if (character) {
-    character.alternate_greetings = JSON.parse(character.alternate_greetings || '[]');
-    character.tags = JSON.parse(character.tags || '[]');
-    character.extensions = JSON.parse(character.extensions || '{}');
-    character.character_book = JSON.parse(character.character_book || '{}');
     res.json(character);
   } else {
     res.status(404).json({ error: 'Character not found' });
@@ -822,17 +1007,13 @@ app.get('/api/characters/:id', (req, res) => {
 });
 
 app.put('/api/characters/:id', (req, res) => {
-  const { id } = req.params;
-  const { name, avatarUrl, description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, alternate_greetings, tags, creator, character_version, extensions, character_book } = req.body;
-  const stmt = db.prepare(`
-    UPDATE characters SET name = ?, avatarUrl = ?, description = ?, personality = ?, scenario = ?, first_mes = ?, mes_example = ?, creator_notes = ?, system_prompt = ?, post_history_instructions = ?, alternate_greetings = ?, tags = ?, creator = ?, character_version = ?, extensions = ?, character_book = ? WHERE id = ?
-  `);
-  const result = stmt.run(name, avatarUrl || null, description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, JSON.stringify(alternate_greetings), JSON.stringify(tags), creator, character_version, JSON.stringify(extensions), JSON.stringify(character_book), id);
-  res.json({ changes: result.changes });
+  const characterData = req.body;
+  CharacterService.saveBaseCharacter(req.params.id, characterData);
+  res.json({ id: req.params.id });
 });
 
 // Avatar upload endpoint - accepts multipart/form-data with field 'avatar'
-app.post('/api/characters/:id/avatar', upload.single('avatar'), (req, res) => {
+app.post('/api/characters/:id/avatar', uploadAvatar.single('avatar'), (req, res) => {
   const { id } = req.params;
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   const filepath = req.file.path;
@@ -845,31 +1026,26 @@ app.post('/api/characters/:id/avatar', upload.single('avatar'), (req, res) => {
     } catch (e) {
       console.warn('Sharp processing failed, continuing with original file', e);
     }
-    const avatarUrl = `${req.protocol}://${req.get('host')}/public/avatars/${req.file.filename}`;
-    const stmt = db.prepare('UPDATE characters SET avatarUrl = ? WHERE id = ?');
-    const result = stmt.run(avatarUrl, id);
-    res.json({ avatarUrl, changes: result.changes });
+    const avatarPath = `/avatars/${req.file.filename}`;
+    charactersDb.prepare('UPDATE Characters SET avatar = ? WHERE id = ?').run(avatarPath, id);
+    res.json({ avatar: avatarPath });
   })();
 });
 
 // Remove avatar for character
 app.delete('/api/characters/:id/avatar', (req, res) => {
   const { id } = req.params;
-  const char = db.prepare('SELECT avatarUrl FROM characters WHERE id = ?').get(id) as any;
-  if (!char || !char.avatarUrl) return res.status(404).json({ error: 'No avatar' });
-  // avatarUrl may be absolute (http://host/public/avatars/...) - parse pathname
-  let relPath = char.avatarUrl;
-  try {
-    const parsed = new URL(char.avatarUrl);
-    relPath = parsed.pathname.replace(/^\//, '');
-  } catch (e) {
-    relPath = char.avatarUrl.replace(/^\//, '');
+  const char = charactersDb.prepare('SELECT avatar FROM Characters WHERE id = ?').get(id) as any;
+  if (!char || !char.avatar) return res.status(404).json({ error: 'No avatar' });
+  // avatar is /avatars/filename - parse
+  let relPath = char.avatar;
+  if (relPath.startsWith('/')) {
+    relPath = relPath.substring(1);
   }
-  const fp = path.join(process.cwd(), relPath);
+  const fp = path.join(__dirname, '..', '..', 'frontend', 'public', relPath);
   try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (e) { console.warn('Failed to delete avatar file', e); }
-  const stmt = db.prepare('UPDATE characters SET avatarUrl = NULL WHERE id = ?');
-  const result = stmt.run(id);
-  res.json({ changes: result.changes });
+  charactersDb.prepare('UPDATE Characters SET avatar = NULL WHERE id = ?').run(id);
+  res.json({ success: true });
 });
 
 // Persona avatar upload
@@ -906,10 +1082,266 @@ app.delete('/api/personas/:id/avatar', (req, res) => {
 });
 
 app.delete('/api/characters/:id', (req, res) => {
-  const { id } = req.params;
-  const stmt = db.prepare('DELETE FROM characters WHERE id = ?');
-  const result = stmt.run(id);
-  res.json({ changes: result.changes });
+  CharacterService.deleteCharacter(req.params.id);
+  res.json({ id: req.params.id });
+});
+
+// Worlds CRUD
+app.get('/api/worlds', (req, res) => {
+  try {
+    const worlds = WorldService.getAll();
+    res.json(worlds);
+  } catch (error) {
+    console.error('Error fetching worlds:', error);
+    res.status(500).json({ error: 'Failed to fetch worlds' });
+  }
+});
+
+app.post('/api/worlds', (req, res) => {
+  try {
+    const { name, description } = req.body;
+    const world = WorldService.create(name, description);
+    res.json(world);
+  } catch (error) {
+    console.error('Error creating world:', error);
+    res.status(500).json({ error: 'Failed to create world' });
+  }
+});
+
+app.get('/api/worlds/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const world = WorldService.getById(Number(id));
+    if (world) {
+      res.json(world);
+    } else {
+      res.status(404).json({ error: 'World not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching world:', error);
+    res.status(500).json({ error: 'Failed to fetch world' });
+  }
+});
+
+app.put('/api/worlds/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description } = req.body;
+    const result = WorldService.update(Number(id), { name, description });
+    res.json(result);
+  } catch (error) {
+    console.error('Error updating world:', error);
+    res.status(500).json({ error: 'Failed to update world' });
+  }
+});
+
+app.delete('/api/worlds/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = WorldService.delete(Number(id));
+    res.json(result);
+  } catch (error) {
+    console.error('Error deleting world:', error);
+    res.status(500).json({ error: 'Failed to delete world' });
+  }
+});
+
+// Campaigns CRUD
+app.get('/api/worlds/:worldId/campaigns', (req, res) => {
+  try {
+    const { worldId } = req.params;
+    const campaigns = CampaignService.listByWorld(Number(worldId));
+    res.json(campaigns);
+  } catch (error) {
+    console.error('Error fetching campaigns:', error);
+    res.status(500).json({ error: 'Failed to fetch campaigns' });
+  }
+});
+
+app.post('/api/worlds/:worldId/campaigns', (req, res) => {
+  try {
+    const { worldId } = req.params;
+    const { name, description } = req.body;
+    const campaign = CampaignService.create(Number(worldId), name, description);
+    res.json(campaign);
+  } catch (error) {
+    console.error('Error creating campaign:', error);
+    res.status(500).json({ error: 'Failed to create campaign' });
+  }
+});
+
+app.get('/api/campaigns/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const campaign = CampaignService.getById(Number(id));
+    if (campaign) {
+      res.json(campaign);
+    } else {
+      res.status(404).json({ error: 'Campaign not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching campaign:', error);
+    res.status(500).json({ error: 'Failed to fetch campaign' });
+  }
+});
+
+app.put('/api/campaigns/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description } = req.body;
+    const result = CampaignService.update(Number(id), { name, description });
+    res.json(result);
+  } catch (error) {
+    console.error('Error updating campaign:', error);
+    res.status(500).json({ error: 'Failed to update campaign' });
+  }
+});
+
+app.delete('/api/campaigns/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = CampaignService.delete(Number(id));
+    res.json(result);
+  } catch (error) {
+    console.error('Error deleting campaign:', error);
+    res.status(500).json({ error: 'Failed to delete campaign' });
+  }
+});
+
+// Campaign state
+app.get('/api/campaigns/:campaignId/state', (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const state = CampaignService.getState(Number(campaignId));
+    res.json(state);
+  } catch (error) {
+    console.error('Error fetching campaign state:', error);
+    res.status(500).json({ error: 'Failed to fetch campaign state' });
+  }
+});
+
+// Arcs CRUD
+app.get('/api/campaigns/:campaignId/arcs', (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const arcs = ArcService.listByCampaign(Number(campaignId));
+    res.json(arcs);
+  } catch (error) {
+    console.error('Error fetching arcs:', error);
+    res.status(500).json({ error: 'Failed to fetch arcs' });
+  }
+});
+
+app.post('/api/campaigns/:campaignId/arcs', (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const { name, description } = req.body;
+    const arc = ArcService.create(Number(campaignId), name, description);
+    res.json(arc);
+  } catch (error) {
+    console.error('Error creating arc:', error);
+    res.status(500).json({ error: 'Failed to create arc' });
+  }
+});
+
+app.get('/api/arcs/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const arc = ArcService.getById(Number(id));
+    if (arc) {
+      res.json(arc);
+    } else {
+      res.status(404).json({ error: 'Arc not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching arc:', error);
+    res.status(500).json({ error: 'Failed to fetch arc' });
+  }
+});
+
+app.put('/api/arcs/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description } = req.body;
+    const result = ArcService.update(Number(id), { name, description });
+    res.json(result);
+  } catch (error) {
+    console.error('Error updating arc:', error);
+    res.status(500).json({ error: 'Failed to update arc' });
+  }
+});
+
+app.delete('/api/arcs/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = ArcService.delete(Number(id));
+    res.json(result);
+  } catch (error) {
+    console.error('Error deleting arc:', error);
+    res.status(500).json({ error: 'Failed to delete arc' });
+  }
+});
+
+// Scenes CRUD
+app.get('/api/arcs/:arcId/scenes', (req, res) => {
+  try {
+    const { arcId } = req.params;
+    const scenes = SceneService.listByArc(Number(arcId));
+    res.json(scenes);
+  } catch (error) {
+    console.error('Error fetching scenes:', error);
+    res.status(500).json({ error: 'Failed to fetch scenes' });
+  }
+});
+
+app.post('/api/arcs/:arcId/scenes', (req, res) => {
+  try {
+    const { arcId } = req.params;
+    const { title, description, location } = req.body;
+    const scene = SceneService.create(Number(arcId), title, description, location);
+    res.json(scene);
+  } catch (error) {
+    console.error('Error creating scene:', error);
+    res.status(500).json({ error: 'Failed to create scene' });
+  }
+});
+
+app.get('/api/scenes/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const scene = SceneService.getById(Number(id));
+    if (scene) {
+      res.json(scene);
+    } else {
+      res.status(404).json({ error: 'Scene not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching scene:', error);
+    res.status(500).json({ error: 'Failed to fetch scene' });
+  }
+});
+
+app.put('/api/scenes/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, location } = req.body;
+    const result = SceneService.update(Number(id), { title, description, location });
+    res.json(result);
+  } catch (error) {
+    console.error('Error updating scene:', error);
+    res.status(500).json({ error: 'Failed to update scene' });
+  }
+});
+
+app.delete('/api/scenes/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = SceneService.delete(Number(id));
+    res.json(result);
+  } catch (error) {
+    console.error('Error deleting scene:', error);
+    res.status(500).json({ error: 'Failed to delete scene' });
+  }
 });
 
 // Lorebooks CRUD
@@ -960,16 +1392,16 @@ app.delete('/api/lorebooks/:id', (req, res) => {
 // Personas CRUD
 app.get('/api/personas', (req, res) => {
   const personas = db.prepare('SELECT * FROM personas').all();
-  res.json(personas);
+  res.json(personas.map((p: any) => ({ ...p, data: JSON.parse(p.data || '{}') })));
 });
 
 app.post('/api/personas', (req, res) => {
-  const { name, description, details } = req.body;
+  const personaData = req.body;
   const stmt = db.prepare(`
-    INSERT INTO personas (name, description, details)
-    VALUES (?, ?, ?)
+    INSERT INTO personas (name, data)
+    VALUES (?, ?)
   `);
-  const result = stmt.run(name, description, JSON.stringify(details));
+  const result = stmt.run(personaData.name, JSON.stringify(personaData));
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -977,7 +1409,7 @@ app.get('/api/personas/:id', (req, res) => {
   const { id } = req.params;
   const persona = db.prepare('SELECT * FROM personas WHERE id = ?').get(id) as any;
   if (persona) {
-    persona.details = JSON.parse(persona.details || '{}');
+    persona.data = JSON.parse(persona.data || '{}');
     res.json(persona);
   } else {
     res.status(404).json({ error: 'Persona not found' });
@@ -986,11 +1418,11 @@ app.get('/api/personas/:id', (req, res) => {
 
 app.put('/api/personas/:id', (req, res) => {
   const { id } = req.params;
-  const { name, description, details } = req.body;
+  const personaData = req.body;
   const stmt = db.prepare(`
-    UPDATE personas SET name = ?, description = ?, details = ? WHERE id = ?
+    UPDATE personas SET name = ?, data = ? WHERE id = ?
   `);
-  const result = stmt.run(name, description, JSON.stringify(details), id);
+  const result = stmt.run(personaData.name, JSON.stringify(personaData), id);
   res.json({ changes: result.changes });
 });
 
@@ -999,6 +1431,98 @@ app.delete('/api/personas/:id', (req, res) => {
   const stmt = db.prepare('DELETE FROM personas WHERE id = ?');
   const result = stmt.run(id);
   res.json({ changes: result.changes });
+});
+
+app.post('/api/personas/generate', async (req, res) => {
+  const { name, description, instructions } = req.body;
+  try {
+    const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'Persona_Schema.json'), 'utf8'));
+    const orchestrator = new Orchestrator(configManager, env, db, io);
+    const context = {
+      mode: 'create',
+      name,
+      description,
+      instructions,
+      schema: JSON.stringify(schema),
+      maxCompletionTokens: 2000,
+      userInput: '',
+      history: [],
+      worldState: {}
+    };
+    const result = await orchestrator.createCharacter(context);
+    const generatedPersona = JSON.parse(result);
+    const stmt = db.prepare('INSERT INTO personas (name, data) VALUES (?, ?)');
+    const dbResult = stmt.run(generatedPersona.name, JSON.stringify(generatedPersona));
+    res.json({ id: dbResult.lastInsertRowid });
+  } catch (error) {
+    console.error('Generate persona error:', error);
+    res.status(500).json({ error: 'Failed to generate persona' });
+  }
+});
+
+app.post('/api/personas/:id/update', async (req, res) => {
+  const { instructions, selectedFields } = req.body;
+  const id = req.params.id;
+  try {
+    const existing = db.prepare('SELECT * FROM personas WHERE id = ?').get(id) as any;
+    if (!existing) return res.status(404).json({ error: 'Persona not found' });
+    const existingData = JSON.parse(existing.data || '{}');
+    const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'Persona_Schema.json'), 'utf8'));
+    const orchestrator = new Orchestrator(configManager, env, db, io);
+    const context = {
+      mode: 'update',
+      existingData,
+      selectedFields: selectedFields || [],
+      instructions,
+      schema: JSON.stringify(schema),
+      maxCompletionTokens: 2000,
+      userInput: '',
+      history: [],
+      worldState: {}
+    };
+    const result = await orchestrator.createCharacter(context);
+    const updatedPersona = JSON.parse(result);
+    const stmt = db.prepare('UPDATE personas SET name = ?, data = ? WHERE id = ?');
+    const dbResult = stmt.run(updatedPersona.name, JSON.stringify(updatedPersona), id);
+    res.json({ changes: dbResult.changes });
+  } catch (error) {
+    console.error('Update persona error:', error);
+    res.status(500).json({ error: 'Failed to update persona' });
+  }
+});
+
+app.post('/api/personas/:id/field', async (req, res) => {
+  const { field, instructions } = req.body;
+  const id = req.params.id;
+  try {
+    const existing = db.prepare('SELECT * FROM personas WHERE id = ?').get(id) as any;
+    if (!existing) return res.status(404).json({ error: 'Persona not found' });
+    const existingData = JSON.parse(existing.data || '{}');
+    const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'Persona_Schema.json'), 'utf8'));
+    const orchestrator = new Orchestrator(configManager, env, db, io);
+    const context = {
+      mode: 'field',
+      existingData,
+      field,
+      instructions,
+      schema: JSON.stringify(schema),
+      maxCompletionTokens: 2000,
+      userInput: '',
+      history: [],
+      worldState: {}
+    };
+    const result = await orchestrator.createCharacter(context);
+    const updatedPersona = { ...existingData };
+    let value = result;
+    try { value = JSON.parse(result); } catch {}
+    updatedPersona[field] = value;
+    const stmt = db.prepare('UPDATE personas SET name = ?, data = ? WHERE id = ?');
+    const dbResult = stmt.run(updatedPersona.name, JSON.stringify(updatedPersona), id);
+    res.json({ changes: dbResult.changes });
+  } catch (error) {
+    console.error('Field update persona error:', error);
+    res.status(500).json({ error: 'Failed to update field' });
+  }
 });
 
 // Load config
@@ -1356,9 +1880,13 @@ io.on('connection', (socket) => {
 });
 
 const PORT = 3001;
-server.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(PORT, () => {
+    console.log(`Backend running on http://localhost:${PORT}`);
+  });
+}
+
+export { app };
 
 // Periodic cleanup job: remove orphaned generated images not referenced in Messages
 async function cleanupOrphanedGeneratedFiles() {

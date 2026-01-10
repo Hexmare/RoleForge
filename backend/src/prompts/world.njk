@@ -9,6 +9,9 @@ Current trackers (JSON):
 Recent events that may affect state:
 {% for event in recentEvents %}- {{ event }}{% endfor %}
 
+User Persona (for tracking user states):
+{{ userPersona | json }}
+
 User action: {{ userInput }}
 
 Update the world state and trackers with any changes that have occurred. This could include dynamic facts, stats, objectives, or relationships.

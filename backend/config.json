@@ -76,7 +76,10 @@
       "llmProfile": "default"
     },
     "creator": {
-      "llmProfile": "default"
+      "llmProfile": "default",
+      "sampler": {
+        "max_completion_tokens": 4096
+      }
     }
   }
 }

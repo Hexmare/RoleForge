@@ -1,11 +1,43 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
-const dbPath = path.join(process.cwd(), 'roleforge.db');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const dbPath = path.join(__dirname, '..', '..', 'roleforge.db');
 const db = new Database(dbPath) as any;
+
+const charactersDbPath = path.join(__dirname, '..', '..', 'data', 'characters.db');
+const charactersDb = new Database(charactersDbPath) as any;
 
 // Enable WAL mode for better concurrency
 db.pragma('journal_mode = WAL');
+charactersDb.pragma('journal_mode = WAL');
+
+// Create characters table in characters.db
+charactersDb.exec(`
+  CREATE TABLE IF NOT EXISTS Characters (
+    id TEXT PRIMARY KEY,
+    data TEXT NOT NULL
+  );
+`);
+
+// Ensure Characters table has required columns
+try {
+  const cols = charactersDb.prepare("PRAGMA table_info('Characters')").all();
+  const hasName = cols.some((c: any) => c.name === 'name');
+  if (!hasName) {
+    charactersDb.exec(`ALTER TABLE Characters ADD COLUMN name TEXT NOT NULL DEFAULT 'Unknown';`);
+  }
+  const hasAvatar = cols.some((c: any) => c.name === 'avatar');
+  if (!hasAvatar) {
+    charactersDb.exec(`ALTER TABLE Characters ADD COLUMN avatar TEXT;`);
+  }
+} catch (e) {
+  console.warn('Could not ensure Characters table columns:', e);
+}
 
 // Create tables
 db.exec(`
@@ -43,9 +75,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS personas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    avatarUrl TEXT,
-    description TEXT,
-    details TEXT -- JSON or text
+    data TEXT -- JSON
   );
 `);
 
@@ -115,6 +145,7 @@ db.exec(`
     worldState JSON DEFAULT '{}',
     lastWorldStateMessageNumber INTEGER DEFAULT 0,
     characterStates JSON DEFAULT '{}',
+    activeCharacters JSON DEFAULT '[]',
     UNIQUE(arcId, orderIndex)
   );
 
@@ -126,14 +157,14 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS WorldCharacterOverrides (
     worldId INTEGER REFERENCES Worlds(id) ON DELETE CASCADE,
-    characterId INTEGER REFERENCES BaseCharacters(id) ON DELETE CASCADE,
+    characterId TEXT,
     overrideData JSON NOT NULL,
     PRIMARY KEY(worldId, characterId)
   );
 
   CREATE TABLE IF NOT EXISTS CampaignCharacterOverrides (
     campaignId INTEGER REFERENCES Campaigns(id) ON DELETE CASCADE,
-    characterId INTEGER REFERENCES BaseCharacters(id) ON DELETE CASCADE,
+    characterId TEXT,
     overrideData JSON NOT NULL,
     PRIMARY KEY(campaignId, characterId)
   );
@@ -188,6 +219,17 @@ try {
   }
 } catch (e) {
   console.warn('Could not ensure Messages.tokenCount column exists:', e);
+}
+
+// Ensure Scenes.activeCharacters column exists
+try {
+  const scols = db.prepare("PRAGMA table_info('Scenes')").all();
+  const hasActive = scols.some((c: any) => c.name === 'activeCharacters');
+  if (!hasActive) {
+    db.exec(`ALTER TABLE Scenes ADD COLUMN activeCharacters JSON DEFAULT '[]';`);
+  }
+} catch (e) {
+  console.warn('Could not ensure Scenes.activeCharacters column exists:', e);
 }
 
 // Ensure Messages.metadata column exists (JSON metadata for images, etc.)
@@ -247,4 +289,5 @@ try {
   console.warn('Could not ensure Scenes world state columns exist:', e);
 }
 
+export { charactersDb };
 export default db;

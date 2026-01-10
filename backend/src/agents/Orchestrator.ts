@@ -92,37 +92,18 @@ export class Orchestrator {
       updatedAt: cs.updatedAt
     } : { campaignId: campaignRow.id, currentSceneId: null, elapsedMinutes: 0, dynamicFacts: {}, trackers: {}, updatedAt: null };
 
-    // Determine active characters: prefer scene.notes.activeCharacters if present, otherwise infer from recent messages
-    let activeCharacters: string[] = [];
-    try {
-      const notes = sceneRow.notes ? JSON.parse(sceneRow.notes) : null;
-      if (notes && Array.isArray(notes.activeCharacters) && notes.activeCharacters.length) {
-        activeCharacters = notes.activeCharacters;
-      } else {
-        const rows = this.db.prepare("SELECT DISTINCT sender FROM Messages WHERE sceneId = ? ORDER BY timestamp DESC LIMIT 50").all(sceneId) as any[];
-        activeCharacters = rows.map(r => r.sender).filter((s: string) => !!s && !s.startsWith('user:') && s.toLowerCase() !== 'system').slice(0, 10);
-      }
-    } catch (e) {
-      activeCharacters = [];
-    }
+    // Parse active characters UUIDs
+    const activeCharacters = sceneRow.activeCharacters ? JSON.parse(sceneRow.activeCharacters) : [];
 
     // Resolve merged character objects where possible
     const activeCharactersResolved: any[] = [];
-    for (const name of activeCharacters) {
-      // try slug heuristic then fallback to characters table
-      const slugGuess = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-      const merged = CharacterService.getMergedCharacter({ worldId: worldRow.id, campaignId: campaignRow.id, characterSlug: slugGuess });
+    for (const uuid of activeCharacters) {
+      const merged = CharacterService.getMergedCharacter({ characterId: uuid, worldId: worldRow.id, campaignId: campaignRow.id });
       if (merged) {
+        console.log(`Found merged character for ${uuid}`);
         activeCharactersResolved.push(merged);
       } else {
-        const charRow = this.db.prepare('SELECT * FROM characters WHERE name = ?').get(name) as any;
-        if (charRow) {
-          charRow.alternate_greetings = JSON.parse(charRow.alternate_greetings || '[]');
-          charRow.tags = JSON.parse(charRow.tags || '[]');
-          charRow.extensions = JSON.parse(charRow.extensions || '{}');
-          charRow.character_book = JSON.parse(charRow.character_book || '{}');
-          activeCharactersResolved.push(charRow);
-        }
+        console.log(`No merged character found for ${uuid}`);
       }
     }
 
@@ -189,13 +170,12 @@ export class Orchestrator {
   }
 
   private getCharacterByName(name: string): any {
-    const character = this.db.prepare('SELECT * FROM characters WHERE name = ?').get(name) as any;
+    const character = this.db.prepare('SELECT * FROM BaseCharacters WHERE json_extract(data, \'$.name\') = ?').get(name) as any;
     if (character) {
-      character.alternate_greetings = JSON.parse(character.alternate_greetings || '[]');
-      character.tags = JSON.parse(character.tags || '[]');
-      character.extensions = JSON.parse(character.extensions || '{}');
-      character.character_book = JSON.parse(character.character_book || '{}');
-      return character;
+      const parsedData = JSON.parse(character.data);
+      parsedData.id = character.id;
+      parsedData.slug = character.slug;
+      return parsedData;
     }
     return null;
   }
@@ -678,7 +658,7 @@ export class Orchestrator {
               continue;
             }
             const slugGuess = String(nm).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-            const merged = CharacterService.getMergedCharacter({ characterSlug: slugGuess });
+            const merged = CharacterService.getMergedCharacter({ characterId: slugGuess });
             if (merged) {
               desc = merged.description || merged.personality || '';
               resolvedChars.push({ name: merged.name || nm, description: desc });
@@ -760,5 +740,10 @@ export class Orchestrator {
     this.trackers = { stats: {}, objectives: [], relationships: {} };
     this.characterStates = {};
     this.sceneSummary = '';
+  }
+
+  async createCharacter(context: AgentContext): Promise<string> {
+    const creatorAgent = this.agents.get('creator')!;
+    return await creatorAgent.run(context);
   }
 }

@@ -28,6 +28,8 @@ The system emphasizes modularity, extensibility, and pure JavaScript/TypeScript 
 - User Agency: LLM responses react to inputs without railroading.
 - Visual Integration: Inline triggers for images/videos mid-chat.
 - Extensibility: Plugins folder for custom agents/tools.
+- Database Migrations: Use database migrations at all times for schema changes to ensure data integrity and version control.
+- UUID Linking: Use UUIDs instead of slugs for all entity linking to ensure uniqueness and stability.
 
 ## Sources of Inspiration
 

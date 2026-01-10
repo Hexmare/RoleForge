@@ -1,4 +1,4 @@
-import db from '../database';
+import db, { charactersDb } from '../database';
 
 function deepMerge(target: any, ...sources: any[]) {
   for (const source of sources) {
@@ -18,27 +18,25 @@ function deepMerge(target: any, ...sources: any[]) {
 }
 
 export const CharacterService = {
-  getBaseById(id: number) {
-    const row = db.prepare('SELECT * FROM BaseCharacters WHERE id = ?').get(id) as any;
-    if (!row) return null;
-    row.data = JSON.parse(row.data);
-    return row;
+  getBaseById(id: string) {
+    console.log(`CharacterService: looking for base character with id ${id}`);
+    const row = charactersDb.prepare('SELECT * FROM Characters WHERE id = ?').get(id) as any;
+    if (!row) {
+      console.log(`CharacterService: no base character found for id ${id}`);
+      return null;
+    }
+    console.log(`CharacterService: found base character for id ${id}`);
+    const parsed = JSON.parse(row.data);
+    return { id: row.id, name: row.name, ...parsed, avatar: row.avatar };
   },
 
-  getBaseBySlug(slug: string) {
-    const row = db.prepare('SELECT * FROM BaseCharacters WHERE slug = ?').get(slug) as any;
-    if (!row) return null;
-    row.data = JSON.parse(row.data);
-    return row;
-  },
-
-  getMergedCharacter({ worldId, campaignId, characterSlug }: { worldId?: number; campaignId?: number; characterSlug: string }) {
-    const base = this.getBaseBySlug(characterSlug);
+  getMergedCharacter({ characterId, worldId, campaignId }: { characterId: string; worldId?: number; campaignId?: number }) {
+    const base = this.getBaseById(characterId);
     if (!base) return null;
-    let result = JSON.parse(JSON.stringify(base.data));
+    let result = { ...base };
 
     if (worldId) {
-      const wo = db.prepare('SELECT overrideData FROM WorldCharacterOverrides WHERE worldId = ? AND characterId = ?').get(worldId, base.id) as any;
+      const wo = db.prepare('SELECT overrideData FROM WorldCharacterOverrides WHERE worldId = ? AND characterId = ?').get(worldId, characterId) as any;
       if (wo) {
         const override = JSON.parse(wo.overrideData);
         result = deepMerge(result, override);
@@ -46,7 +44,7 @@ export const CharacterService = {
     }
 
     if (campaignId) {
-      const co = db.prepare('SELECT overrideData FROM CampaignCharacterOverrides WHERE campaignId = ? AND characterId = ?').get(campaignId, base.id) as any;
+      const co = db.prepare('SELECT overrideData FROM CampaignCharacterOverrides WHERE campaignId = ? AND characterId = ?').get(campaignId, characterId) as any;
       if (co) {
         const override = JSON.parse(co.overrideData);
         result = deepMerge(result, override);
@@ -56,17 +54,23 @@ export const CharacterService = {
     return result;
   },
 
-  saveBaseCharacter(slug: string, data: any) {
-    const existing = db.prepare('SELECT id FROM BaseCharacters WHERE slug = ?').get(slug);
-    if (existing) {
-      const stmt = db.prepare('UPDATE BaseCharacters SET data = ? WHERE id = ?');
-      stmt.run(JSON.stringify(data), existing.id);
-      return { id: existing.id };
-    } else {
-      const stmt = db.prepare('INSERT INTO BaseCharacters (slug, data) VALUES (?, ?)');
-      const res = stmt.run(slug, JSON.stringify(data));
-      return { id: res.lastInsertRowid };
-    }
+  saveBaseCharacter(name: string, data: any, avatar?: string) {
+    const id = crypto.randomUUID();
+    const stmt = charactersDb.prepare('INSERT INTO Characters (id, name, avatar, data) VALUES (?, ?, ?, ?)');
+    stmt.run(id, name, avatar || null, JSON.stringify(data));
+    return { id, name, avatar };
+  },
+
+  getAllCharacters() {
+    const rows = charactersDb.prepare('SELECT * FROM Characters').all() as any[];
+    return rows.map(row => {
+      const parsed = JSON.parse(row.data);
+      return { id: row.id, name: row.name, ...parsed, avatar: row.avatar };
+    });
+  },
+
+  deleteCharacter(slug: string) {
+    charactersDb.prepare('DELETE FROM Characters WHERE id = ?').run(slug);
   }
 };
 

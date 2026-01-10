@@ -74,7 +74,7 @@ const ActiveCharacterComponent: React.FC<ActiveCharacterComponentProps> = ({
         ) : (
           <div className="space-y-3">
             <div className={`space-y-2 ${characters.length > 5 ? 'max-h-48 overflow-y-auto' : ''}`}>
-              {characters.map((character) => (
+              {characters.filter(c => c.name).map((character) => (
                 <label key={character.id} className="flex items-center space-x-3 cursor-pointer p-2 rounded hover:bg-panel-tertiary transition-colors">
                   <input
                     type="checkbox"
@@ -86,10 +86,10 @@ const ActiveCharacterComponent: React.FC<ActiveCharacterComponentProps> = ({
                     {character.avatarUrl ? (
                       <img src={character.avatarUrl} alt="avatar" className="avatar-img" />
                     ) : (
-                      character.name.slice(0, 2)
+                      (character.name || '??').slice(0, 2)
                     )}
                   </div>
-                  <span className="text-text-primary text-sm flex-1">{character.name}</span>
+                  <span className="text-text-primary text-sm flex-1">{character.name || 'Unnamed'}</span>
                 </label>
               ))}
             </div>

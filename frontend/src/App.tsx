@@ -82,11 +82,6 @@ function App() {
     fetchPersonas();
     fetchCharacters();
     fetchWorlds();
-    const saved = localStorage.getItem('activeCharacters');
-    if (saved) {
-      setActiveCharacters(JSON.parse(saved));
-    }
-
     // Fetch debug config from server so client logging behavior mirrors backend config
     (async () => {
       try {
@@ -259,10 +254,13 @@ function App() {
         const res = await fetch(`/api/scenes/${selectedScene}/session`);
         if (res.ok) {
           const session = await res.json();
+          console.log('Raw session response:', session);
           setSessionContext(session);
-          const names = (session.activeCharacters || []).map((c: any) => c.name || c.slug || c.id || c.title).filter(Boolean);
-          setActiveCharacters(names);
-          localStorage.setItem('activeCharacters', JSON.stringify(names));
+          const slugs = (session.activeCharacters || []).map((c: any) => c.name).filter(Boolean);
+          console.log('Loaded active characters from session:', slugs);
+          setActiveCharacters(slugs);
+        } else {
+          console.log('Failed to load session for scene:', selectedScene, res.status);
         }
       } catch (e) {
         console.warn('Failed to refresh session on scene change', selectedScene, e);
@@ -295,18 +293,59 @@ function App() {
   }, [selectedScene]);
 
   const fetchWorlds = async () => {
-    const res = await fetch('/api/worlds');
-    const data = await res.json();
-    setWorlds(data);
-    if (data.length > 0 && selectedWorld === null) {
-      setSelectedWorld(data[0].id);
-      fetchCampaigns(data[0].id);
+    try {
+      const res = await fetch('/api/worlds');
+      if (!res.ok) {
+        console.error('Failed to fetch worlds:', res.status, res.statusText);
+        setWorlds([]);
+        return;
+      }
+      const text = await res.text();
+      if (!text) {
+        console.warn('Empty response for worlds');
+        setWorlds([]);
+        return;
+      }
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error('Failed to parse JSON for worlds:', text, e);
+        setWorlds([]);
+        return;
+      }
+      setWorlds(data);
+      if (data.length > 0 && selectedWorld === null) {
+        setSelectedWorld(data[0].id);
+        fetchCampaigns(data[0].id);
+      }
+    } catch (e) {
+      console.error('Error fetching worlds:', e);
+      setWorlds([]);
     }
   };
 
   const fetchCampaigns = async (worldId: number) => {
     const res = await fetch(`/api/worlds/${worldId}/campaigns`);
-    const data = await res.json();
+    if (!res.ok) {
+      console.error('Failed to fetch campaigns:', res.status, res.statusText);
+      setCampaigns([]);
+      return;
+    }
+    const text = await res.text();
+    if (!text) {
+      console.warn('Empty response for campaigns');
+      setCampaigns([]);
+      return;
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      console.error('Failed to parse JSON for campaigns:', text, e);
+      setCampaigns([]);
+      return;
+    }
     setCampaigns(data);
     if (data.length > 0) {
       setSelectedCampaign(data[0].id);
@@ -314,14 +353,25 @@ function App() {
       try {
         const stateRes = await fetch(`/api/campaigns/${data[0].id}/state`);
         if (stateRes.ok) {
-          const state = await stateRes.json();
-          if (state && state.currentSceneId) {
-            setSelectedScene(state.currentSceneId);
-            selectedSceneRef.current = state.currentSceneId;
-            await loadMessages(state.currentSceneId);
-          } else {
-            // No persisted scene, load arcs normally
+          const stateText = await stateRes.text();
+          if (!stateText) {
+            // No state
             fetchArcs(data[0].id);
+          } else {
+            try {
+              const state = JSON.parse(stateText);
+              if (state && state.currentSceneId) {
+                setSelectedScene(state.currentSceneId);
+                selectedSceneRef.current = state.currentSceneId;
+                await loadMessages(state.currentSceneId);
+              } else {
+                // No persisted scene, load arcs normally
+                fetchArcs(data[0].id);
+              }
+            } catch (e) {
+              console.warn('Failed to parse campaign state JSON', e);
+              fetchArcs(data[0].id);
+            }
           }
         } else {
           // No state, load arcs normally
@@ -433,14 +483,44 @@ function App() {
   };
 
   const fetchCharacters = async () => {
-    const res = await fetch('/api/characters');
-    const data = await res.json();
-    setCharacters(data);
+    try {
+      const res = await fetch('/api/characters');
+      if (!res.ok) {
+        console.error('Failed to fetch characters:', res.status, res.statusText);
+        setCharacters([]);
+        return;
+      }
+      const data = await res.json();
+      setCharacters(data.map((c: any) => ({ ...c.data, id: c.id, avatarUrl: c.avatarUrl })));
+    } catch (e) {
+      console.error('Error fetching characters:', e);
+      setCharacters([]);
+    }
   };
 
-  const updateActiveCharacters = (newActive: string[]) => {
+  const updateActiveCharacters = async (newActive: string[]) => {
+    console.log('Updating active characters to:', newActive);
     setActiveCharacters(newActive);
-    localStorage.setItem('activeCharacters', JSON.stringify(newActive));
+    // Persist to scene if one is selected
+    if (selectedScene) {
+      console.log('Persisting to scene:', selectedScene);
+      try {
+        const response = await fetch(`/api/scenes/${selectedScene}/active-characters`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ activeCharacters: newActive })
+        });
+        if (response.ok) {
+          console.log('Successfully persisted active characters to scene');
+        } else {
+          console.error('Failed to persist active characters:', response.status, response.statusText);
+        }
+      } catch (e) {
+        console.warn('Failed to persist active characters to scene', e);
+      }
+    } else {
+      console.log('No scene selected, active characters not persisted');
+    }
   };
 
   useEffect(() => {
@@ -455,10 +535,17 @@ function App() {
       setIsStreaming(false);
     });
 
+    socket.on('activeCharactersUpdated', (data: { sceneId: number; activeCharacters: string[] }) => {
+      if (data.sceneId === selectedScene) {
+        setActiveCharacters(data.activeCharacters);
+      }
+    });
+
     return () => {
       socket.off('aiResponse');
+      socket.off('activeCharactersUpdated');
     };
-  }, []);
+  }, [selectedScene]);
 
   const sendMessage = () => {
     if (!selectedScene) return; // require a scene to send
