@@ -19,6 +19,7 @@ export interface AgentContext {
   recentEvents?: string[];
   plotArc?: string;
   character?: any; // For CharacterAgent
+  characterState?: any; // For CharacterAgent - current state of the character
   creationRequest?: string; // For CreatorAgent
   narration?: string; // For VisualAgent
   sceneElements?: string[]; // For VisualAgent
@@ -30,6 +31,8 @@ export interface AgentContext {
   existingSummary?: string; // For SummarizeAgent
   maxSummaryTokens?: number; // For SummarizeAgent
   maxCompletionTokens?: number; // For response length limits
+  previousWorldState?: Record<string, any>; // For WorldAgent - previous state
+  characterStates?: Record<string, any>; // For WorldAgent - all character states
 }
 
 export abstract class BaseAgent {

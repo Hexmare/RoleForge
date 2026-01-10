@@ -8,9 +8,9 @@ export const SceneService = {
       const maxIdx = row?.maxIdx || 0;
       orderIndex = Number(maxIdx) + 1;
     }
-    const stmt = db.prepare('INSERT INTO Scenes (arcId, orderIndex, title, description, location, timeOfDay) VALUES (?, ?, ?, ?, ?, ?)');
-    const result = stmt.run(arcId, orderIndex, title, description || null, location || null, timeOfDay || null);
-    return { id: result.lastInsertRowid, arcId, orderIndex, title, description, location, timeOfDay };
+    const stmt = db.prepare('INSERT INTO Scenes (arcId, orderIndex, title, description, location, timeOfDay, worldState, lastWorldStateMessageNumber, characterStates) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const result = stmt.run(arcId, orderIndex, title, description || null, location || null, timeOfDay || null, '{}', 0, '{}');
+    return { id: result.lastInsertRowid, arcId, orderIndex, title, description, location, timeOfDay, worldState: {}, lastWorldStateMessageNumber: 0, characterStates: {} };
   },
 
   listByArc(arcId: number) {
@@ -28,8 +28,11 @@ export const SceneService = {
     const location = fields.location ?? existing.location;
     const timeOfDay = fields.timeOfDay ?? existing.timeOfDay;
     const orderIndex = fields.orderIndex ?? existing.orderIndex;
-    const stmt = db.prepare('UPDATE Scenes SET title = ?, description = ?, location = ?, timeOfDay = ?, orderIndex = ? WHERE id = ?');
-    const result = stmt.run(title, description, location, timeOfDay, orderIndex, id);
+    const worldState = fields.worldState !== undefined ? JSON.stringify(fields.worldState) : existing.worldState;
+    const lastWorldStateMessageNumber = fields.lastWorldStateMessageNumber ?? existing.lastWorldStateMessageNumber;
+    const characterStates = fields.characterStates !== undefined ? JSON.stringify(fields.characterStates) : existing.characterStates;
+    const stmt = db.prepare('UPDATE Scenes SET title = ?, description = ?, location = ?, timeOfDay = ?, orderIndex = ?, worldState = ?, lastWorldStateMessageNumber = ?, characterStates = ? WHERE id = ?');
+    const result = stmt.run(title, description, location, timeOfDay, orderIndex, worldState, lastWorldStateMessageNumber, characterStates, id);
     return { changes: result.changes };
   },
 

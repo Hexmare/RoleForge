@@ -85,9 +85,8 @@ export async function chatCompletion(
   } : {};
 
   // Conditionally add response_format for JSON responses
-  const formatOptions = profile.format === 'json' ? {
-    response_format: { type: "json_object" as const }
-  } : {};
+  // Temporarily disabled for debugging
+  const formatOptions = {}; // profile.format === 'json' ? { response_format: { type: "json_object" as const } } : {};
 
   const baseOptions = {
     model,
@@ -98,6 +97,7 @@ export async function chatCompletion(
 
   try {
     if (options.stream) {
+      console.log(`Making streaming LLM call to ${model} with format options:`, formatOptions);
       const stream = await client.chat.completions.create({
         ...baseOptions,
         stream: true,
@@ -112,6 +112,7 @@ export async function chatCompletion(
         }
       })();
     } else {
+      console.log(`Making LLM call to ${model} with format options:`, formatOptions);
       const response = await client.chat.completions.create(baseOptions);
       return response.choices[0]?.message?.content || '';
     }

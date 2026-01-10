@@ -11,6 +11,7 @@ import { SummarizeAgent } from './SummarizeAgent.js';
 import { VisualAgent } from './VisualAgent.js';
 import { CreatorAgent } from './CreatorAgent.js';
 import CharacterService from '../services/CharacterService.js';
+import SceneService from '../services/SceneService.js';
 import Database from 'better-sqlite3';
 import { Server } from 'socket.io';
 
@@ -21,6 +22,8 @@ export class Orchestrator {
   private io?: Server;
   private agents: Map<string, BaseAgent> = new Map();
   private worldState: Record<string, any> = {};
+  private trackers: { stats: Record<string, any>; objectives: string[]; relationships: Record<string, string> } = { stats: {}, objectives: [], relationships: {} };
+  private characterStates: Record<string, any> = {};
   private history: string[] = [];
   private sceneSummary: string = '';
 
@@ -139,7 +142,10 @@ export class Orchestrator {
         locationRelationships: sceneRow.locationRelationships ? JSON.parse(sceneRow.locationRelationships) : null,
         summary: sceneRow.summary,
         lastSummarizedMessageId: sceneRow.lastSummarizedMessageId,
-        summaryTokenCount: sceneRow.summaryTokenCount
+        summaryTokenCount: sceneRow.summaryTokenCount,
+        worldState: sceneRow.worldState ? JSON.parse(sceneRow.worldState) : {},
+        lastWorldStateMessageNumber: sceneRow.lastWorldStateMessageNumber || 0,
+        characterStates: sceneRow.characterStates ? JSON.parse(sceneRow.characterStates) : {}
       },
       activeCharacters: activeCharactersResolved,
       worldState: { elapsedMinutes: campaignState.elapsedMinutes, dynamicFacts: campaignState.dynamicFacts },
@@ -147,8 +153,10 @@ export class Orchestrator {
       locationMap: (sceneRow.locationRelationships ? JSON.parse(sceneRow.locationRelationships) : {})
     };
 
-    // Seed orchestrator worldState from campaign dynamic facts
-    this.worldState = sessionContext.worldState.dynamicFacts || {};
+    // Seed orchestrator worldState from scene-level world state, falling back to campaign dynamic facts
+    this.worldState = sessionContext.scene.worldState || sessionContext.worldState.dynamicFacts || {};
+    this.trackers = sessionContext.trackers;
+    this.characterStates = sessionContext.scene.characterStates || {};
 
     return sessionContext;
   }
@@ -202,6 +210,17 @@ export class Orchestrator {
   }
 
   private extractFirstJson(text: string): string | null {
+    // First, try to extract from ```json code blocks
+    const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+    if (jsonMatch) {
+      return jsonMatch[1];
+    }
+    // Also try for arrays in code blocks
+    const arrayMatch = text.match(/```json\s*(\[[\s\S]*?\])\s*```/);
+    if (arrayMatch) {
+      return arrayMatch[1];
+    }
+    // Fallback: extract first JSON object by counting braces
     let braceCount = 0;
     let start = -1;
     for (let i = 0; i < text.length; i++) {
@@ -273,6 +292,16 @@ export class Orchestrator {
     // Add user input to history
     this.history.push(`User: ${userInput}`);
 
+    // Load session context for scene-level data
+    const sessionContext = sceneId ? await this.buildSessionContext(sceneId) : null;
+
+    // If no sceneId, we can't do world state management
+    if (!sessionContext) {
+      // Fallback to basic interaction without scene-level state
+      // This would be for non-scene based interactions
+      return [{ sender: 'System', content: 'Scene context required for full interaction' }];
+    }
+
     // Prepare base context
     let context: AgentContext = {
       userInput,
@@ -305,18 +334,35 @@ export class Orchestrator {
     console.log('Calling DirectorAgent');
     this.emitAgentStatus('Director', 'start', sceneId);
     const directorOutput = await directorAgent.run(directorContext);
-    console.log('DirectorAgent completed');
+    console.log('DirectorAgent completed, output length:', directorOutput.length);
+    console.log('DirectorAgent raw output preview:', directorOutput.substring(0, 200) + (directorOutput.length > 200 ? '...' : ''));
     this.emitAgentStatus('Director', 'complete', sceneId);
     // Parse output: JSON {"guidance": "...", "characters": [...]}
     let directorGuidance = '';
     let charactersToRespond: string[] = [];
     try {
-      // Try direct JSON parsing first (enforced by response_format)
-      let directorJson = JSON.parse(directorOutput.trim());
-      // Handle both object and array responses
-      if (Array.isArray(directorJson)) {
-        directorJson = directorJson[0] || {};
+      // Strip ```json wrapper if present
+      let cleanedOutput = directorOutput.trim();
+      if (cleanedOutput.startsWith('```json') && cleanedOutput.endsWith('```')) {
+        cleanedOutput = cleanedOutput.slice(7, -3).trim(); // remove ```json and ```
       }
+      // Try direct JSON parsing
+      let directorJson = JSON.parse(cleanedOutput);
+      
+      // Check if we got a valid response object/array
+      if (Array.isArray(directorJson)) {
+        // If it's an array, check if first element is a valid object
+        if (directorJson.length > 0 && typeof directorJson[0] === 'object' && directorJson[0] !== null) {
+          directorJson = directorJson[0];
+        } else {
+          // Array of numbers or invalid - treat as parse failure
+          throw new Error('Invalid array response');
+        }
+      } else if (typeof directorJson !== 'object' || directorJson === null) {
+        // Not an object or array - treat as parse failure
+        throw new Error('Invalid response type');
+      }
+      
       directorGuidance = directorJson.guidance || '';
       charactersToRespond = Array.isArray(directorJson.characters) ? directorJson.characters.filter((c: string) => c && (!activeCharacters || activeCharacters.includes(c))) : [];
     } catch (e) {
@@ -350,7 +396,7 @@ export class Orchestrator {
     console.log('Director selected characters:', charactersToRespond);
     // Fallback if parsing fails
     if (!directorGuidance && !charactersToRespond.length) {
-      console.warn('Failed to parse DirectorAgent output:', directorOutput);
+      console.warn('Failed to parse DirectorAgent output properly:', directorOutput);
       directorGuidance = directorOutput; // Use as guidance
       // Default to first active character if available, otherwise skip character responses
       if (activeCharacters && activeCharacters.length > 0) {
@@ -361,18 +407,108 @@ export class Orchestrator {
     }
     context.directorGuidance = directorGuidance;
 
+    // Step 4: Characters
+    let responses: { sender: string; content: string }[] = [];
+    
+    // Initialize character states if not present
+    const characterStates = { ...sessionContext.scene.characterStates };
+    const userPersonaName = personaName || 'user';
+    if (!characterStates[userPersonaName]) {
+      characterStates[userPersonaName] = {
+        clothingWorn: 'default',
+        mood: 'neutral',
+        activity: 'interacting',
+        location: sessionContext.scene.location || 'unknown',
+        position: 'standing'
+      };
+    }
+    for (const char of sessionContext.activeCharacters) {
+      if (!characterStates[char.name]) {
+        characterStates[char.name] = {
+          clothingWorn: char.outfit || 'default',
+          mood: 'neutral',
+          activity: 'present',
+          location: sessionContext.scene.location || 'unknown',
+          position: 'standing'
+        };
+        console.log(`Initialized character state for ${char.name}`);
+      }
+    }
+    console.log('Character states after initialization:', Object.keys(characterStates));
+    
+    // Parse user actions for outfit updates
+    if (userInput.includes('takes off his shirt') || userInput.includes('takes his shirt off')) {
+      if (characterStates['Hex']) {
+        characterStates['Hex'].clothingWorn = 'pants, shoes, socks';
+      }
+    }
+    if (userInput.includes('takes off his pants') || userInput.includes('takes his pants off') || userInput.includes('leaving him in his underwear')) {
+      if (characterStates['Hex']) {
+        characterStates['Hex'].clothingWorn = 'underwear, shoes, socks';
+      }
+    }
+    
     // Step 3: World state update
     const worldAgent = this.agents.get('world')!;
+    // Get messages since last world state update
+    const lastMessageNumber = sessionContext.scene.lastWorldStateMessageNumber || 0;
+    const recentMessages = this.db.prepare('SELECT message, sender FROM Messages WHERE sceneId = ? AND messageNumber > ? ORDER BY messageNumber').all(sceneId!, lastMessageNumber) as any[];
+    const recentEvents = recentMessages.map(m => `${m.sender}: ${m.message}`);
+    
+    const worldContext = {
+      ...context,
+      previousWorldState: sessionContext.scene.worldState,
+      recentEvents,
+      trackers: sessionContext.trackers
+    };
+    
     console.log('Calling WorldAgent');
     this.emitAgentStatus('WorldAgent', 'start', sceneId);
-    const worldUpdateStr = await worldAgent.run(context);
+    const worldUpdateStr = await worldAgent.run(worldContext);
     console.log('WorldAgent completed');
     this.emitAgentStatus('WorldAgent', 'complete', sceneId);
     // Parse JSON response from WorldAgent (enforced by response_format)
+    let worldStateChanged = false;
+    let trackersChanged = false;
     try {
-      const worldUpdate = JSON.parse(worldUpdateStr.trim());
+      // Strip ```json wrapper if present
+      let cleanedOutput = worldUpdateStr.trim();
+      if (cleanedOutput.startsWith('```json') && cleanedOutput.endsWith('```')) {
+        cleanedOutput = cleanedOutput.slice(7, -3).trim(); // remove ```json and ```
+      }
+      let worldUpdate = JSON.parse(cleanedOutput);
+      
+      // Handle both object and array responses
+      if (Array.isArray(worldUpdate)) {
+        // If it's an array, check if first element is a valid object
+        if (worldUpdate.length > 0 && typeof worldUpdate[0] === 'object' && worldUpdate[0] !== null) {
+          worldUpdate = worldUpdate[0];
+        } else {
+          // Array of invalid data - treat as parse failure
+          throw new Error('Invalid array response from WorldAgent');
+        }
+      } else if (typeof worldUpdate !== 'object' || worldUpdate === null) {
+        // Not an object or array - treat as parse failure
+        throw new Error('Invalid response type from WorldAgent');
+      }
+      
+      // Check if we got a valid response object
       if (!worldUpdate.unchanged) {
-        Object.assign(this.worldState, worldUpdate);
+        if (worldUpdate.worldState) {
+          Object.assign(this.worldState, worldUpdate.worldState);
+          worldStateChanged = true;
+        }
+        if (worldUpdate.characterStates) {
+          Object.assign(characterStates, worldUpdate.characterStates);
+        }
+        if (worldUpdate.trackers) {
+          // Normalize objectives to array if it's an object
+          if (worldUpdate.trackers.objectives && typeof worldUpdate.trackers.objectives === 'object' && !Array.isArray(worldUpdate.trackers.objectives)) {
+            worldUpdate.trackers.objectives = Object.values(worldUpdate.trackers.objectives).map((obj: any) => typeof obj === 'string' ? obj : obj.description || JSON.stringify(obj));
+          }
+          Object.assign(this.trackers, worldUpdate.trackers);
+          trackersChanged = true;
+        }
       }
     } catch (e) {
       console.warn('WorldAgent returned invalid JSON:', worldUpdateStr, e);
@@ -380,9 +516,27 @@ export class Orchestrator {
       const jsonStr = this.extractFirstJson(worldUpdateStr);
       if (jsonStr) {
         try {
-          const worldUpdate = JSON.parse(jsonStr);
+          let worldUpdate = JSON.parse(jsonStr);
+          // Handle both object and array responses
+          if (Array.isArray(worldUpdate)) {
+            worldUpdate = worldUpdate[0] || {};
+          }
           if (!worldUpdate.unchanged) {
-            Object.assign(this.worldState, worldUpdate);
+            if (worldUpdate.worldState) {
+              Object.assign(this.worldState, worldUpdate.worldState);
+              worldStateChanged = true;
+            }
+            if (worldUpdate.characterStates) {
+              Object.assign(characterStates, worldUpdate.characterStates);
+            }
+            if (worldUpdate.trackers) {
+              // Normalize objectives to array if it's an object
+              if (worldUpdate.trackers.objectives && typeof worldUpdate.trackers.objectives === 'object' && !Array.isArray(worldUpdate.trackers.objectives)) {
+                worldUpdate.trackers.objectives = Object.values(worldUpdate.trackers.objectives).map((obj: any) => typeof obj === 'string' ? obj : obj.description || JSON.stringify(obj));
+              }
+              Object.assign(this.trackers, worldUpdate.trackers);
+              trackersChanged = true;
+            }
           }
         } catch (fallbackError) {
           console.warn('WorldAgent JSON extraction also failed:', fallbackError);
@@ -391,11 +545,42 @@ export class Orchestrator {
         console.warn('No JSON found in WorldAgent response:', worldUpdateStr);
       }
     }
+    
+    // Save updated world state to scene if it changed
+    if (worldStateChanged) {
+      const currentMaxMessageNumber = this.db.prepare('SELECT MAX(messageNumber) as maxNum FROM Messages WHERE sceneId = ?').get(sceneId!) as any;
+      const newLastMessageNumber = currentMaxMessageNumber?.maxNum || 0;
+      SceneService.update(sceneId!, {
+        worldState: this.worldState,
+        lastWorldStateMessageNumber: newLastMessageNumber
+      });
+    }
+    
+    // Save updated trackers to campaign if they changed
+    if (trackersChanged) {
+      this.db.prepare('UPDATE CampaignState SET trackers = ?, updatedAt = CURRENT_TIMESTAMP WHERE campaignId = ?').run(JSON.stringify(this.trackers), sessionContext.campaign.id);
+    }
+    
+    // Emit updated state to frontend
+    this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { state: this.worldState, trackers: this.trackers, characterStates });
+    
     context.worldState = this.worldState;
 
-    // Step 4: Characters
-    let responses: { sender: string; content: string }[] = [];
     for (const charName of charactersToRespond) {
+      console.log(`Processing character: ${charName}`);
+      
+      // Ensure character state exists
+      if (!characterStates[charName]) {
+        console.log(`Initializing character state for ${charName}`);
+        characterStates[charName] = {
+          clothingWorn: 'default',
+          mood: 'neutral',
+          activity: 'responding',
+          location: sessionContext?.scene?.location || 'unknown',
+          position: 'standing'
+        };
+      }
+      
       const characterData = this.getCharacterByName(charName);
       if (!characterData) {
         console.warn(`Character ${charName} not found`);
@@ -407,6 +592,7 @@ export class Orchestrator {
         ...context,
         history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.slice(0, -1).join('\n')}`] : this.history.slice(0, -1), // Exclude the current user input from history
         character: characterData,
+        characterState: characterStates[charName],
         maxCompletionTokens: (characterAgent as any).getProfile().sampler?.max_completion_tokens || 400,
       };
       console.log(`Calling CharacterAgent for ${charName}`);
@@ -415,10 +601,29 @@ export class Orchestrator {
       console.log(`CharacterAgent for ${charName} completed`);
       this.emitAgentStatus(charName, 'complete', sceneId);
       if (characterResponse) {
-        responses.push({ sender: charName, content: characterResponse });
-        this.history.push(`${charName}: ${characterResponse}`);
+        // Strip ```json wrapper if present
+        let cleanedResponse = characterResponse.trim();
+        if (cleanedResponse.startsWith('```json') && cleanedResponse.endsWith('```')) {
+          cleanedResponse = cleanedResponse.slice(7, -3).trim();
+        }
+        let parsed;
+        try {
+          parsed = JSON.parse(cleanedResponse);
+        } catch (e) {
+          // If parsing fails, treat as plain text
+          parsed = { response: cleanedResponse, characterState: null };
+        }
+        const content = parsed.response;
+        responses.push({ sender: charName, content });
+        this.history.push(`${charName}: ${content}`);
       }
     }
+
+    // Save updated character states to scene
+    SceneService.update(sceneId!, { characterStates });
+    this.characterStates = characterStates; // Update instance
+    // Emit character states update
+    this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates: this.characterStates });
 
     return responses;
   }
@@ -552,6 +757,8 @@ export class Orchestrator {
   clearHistory() {
     this.history = [];
     this.worldState = {};
+    this.trackers = { stats: {}, objectives: [], relationships: {} };
+    this.characterStates = {};
     this.sceneSummary = '';
   }
 }

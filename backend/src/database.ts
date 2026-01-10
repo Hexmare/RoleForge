@@ -112,6 +112,9 @@ db.exec(`
     notes JSON,
     backgroundImage TEXT,
     locationRelationships JSON,
+    worldState JSON DEFAULT '{}',
+    lastWorldStateMessageNumber INTEGER DEFAULT 0,
+    characterStates JSON DEFAULT '{}',
     UNIQUE(arcId, orderIndex)
   );
 
@@ -223,6 +226,25 @@ try {
   }
 } catch (e) {
   console.warn('Could not ensure Scenes summarization tracking columns exist:', e);
+}
+
+// Ensure Scenes world state and character state columns exist
+try {
+  const scols3 = db.prepare("PRAGMA table_info('Scenes')").all();
+  const hasWorldState = scols3.some((c: any) => c.name === 'worldState');
+  const hasLastWorldStateMessageNumber = scols3.some((c: any) => c.name === 'lastWorldStateMessageNumber');
+  const hasCharacterStates = scols3.some((c: any) => c.name === 'characterStates');
+  if (!hasWorldState) {
+    db.exec(`ALTER TABLE Scenes ADD COLUMN worldState JSON DEFAULT '{}';`);
+  }
+  if (!hasLastWorldStateMessageNumber) {
+    db.exec(`ALTER TABLE Scenes ADD COLUMN lastWorldStateMessageNumber INTEGER DEFAULT 0;`);
+  }
+  if (!hasCharacterStates) {
+    db.exec(`ALTER TABLE Scenes ADD COLUMN characterStates JSON DEFAULT '{}';`);
+  }
+} catch (e) {
+  console.warn('Could not ensure Scenes world state columns exist:', e);
 }
 
 export default db;
