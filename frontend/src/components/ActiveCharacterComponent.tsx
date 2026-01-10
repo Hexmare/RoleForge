@@ -20,11 +20,11 @@ const ActiveCharacterComponent: React.FC<ActiveCharacterComponentProps> = ({
   const [selectedCharacters, setSelectedCharacters] = useState<string[]>(activeCharacters);
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const handleCheckboxChange = (characterName: string, checked: boolean) => {
+  const handleCheckboxChange = (characterId: string, checked: boolean) => {
     if (checked) {
-      setSelectedCharacters([...selectedCharacters, characterName]);
+      setSelectedCharacters([...selectedCharacters, characterId]);
     } else {
-      setSelectedCharacters(selectedCharacters.filter(name => name !== characterName));
+      setSelectedCharacters(selectedCharacters.filter(id => id !== characterId));
     }
   };
 
@@ -44,18 +44,18 @@ const ActiveCharacterComponent: React.FC<ActiveCharacterComponentProps> = ({
       <div className="space-y-2">
         {activeCharacters.length > 0 ? (
           <div className="space-y-1">
-            {activeCharacters.map((characterName) => {
-              const character = characters.find(c => c.name === characterName);
+            {activeCharacters.map((characterId) => {
+              const character = characters.find(c => c.id === characterId);
               return (
-                <div key={characterName} className="flex items-center space-x-2">
+                <div key={characterId} className="flex items-center space-x-2">
                   <div className="avatar flex-shrink-0">
                     {character?.avatarUrl ? (
                       <img src={character.avatarUrl} alt="avatar" className="avatar-img" />
                     ) : (
-                      characterName.slice(0, 2)
+                      (character?.name || '??').slice(0, 2)
                     )}
                   </div>
-                  <span className="text-text-primary text-sm">{characterName}</span>
+                  <span className="text-text-primary text-sm">{character?.name || 'Unknown'}</span>
                 </div>
               );
             })}
@@ -79,8 +79,8 @@ const ActiveCharacterComponent: React.FC<ActiveCharacterComponentProps> = ({
                   <input
                     type="checkbox"
                     className="w-4 h-4 text-accent-primary bg-panel-secondary border-border-color rounded focus:ring-accent-primary"
-                    checked={selectedCharacters.includes(character.name)}
-                    onChange={(e) => handleCheckboxChange(character.name, e.target.checked)}
+                    checked={selectedCharacters.includes(character.id)}
+                    onChange={(e) => handleCheckboxChange(character.id, e.target.checked)}
                   />
                   <div className="avatar flex-shrink-0">
                     {character.avatarUrl ? (

@@ -7,7 +7,7 @@ World state snapshot: {{ worldState | json }}
 
 User's latest input: {{ userInput }}
 
-Active characters available: {{ activeCharacters | join(', ') | default('All') }}
+Active characters available: {{ activeCharacterNames | default('None') }}
 
 Analyze the scene and decide:
 - A short guidance directive (50–100 words) for the story pacing and engagement.

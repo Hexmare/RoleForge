@@ -97,13 +97,13 @@ export class Orchestrator {
 
     // Resolve merged character objects where possible
     const activeCharactersResolved: any[] = [];
-    for (const uuid of activeCharacters) {
-      const merged = CharacterService.getMergedCharacter({ characterId: uuid, worldId: worldRow.id, campaignId: campaignRow.id });
+    for (const item of activeCharacters) {
+      const merged = CharacterService.getMergedCharacter({ characterId: item, worldId: worldRow.id, campaignId: campaignRow.id });
       if (merged) {
-        console.log(`Found merged character for ${uuid}`);
+        console.log(`Found merged character for ${item}`);
         activeCharactersResolved.push(merged);
       } else {
-        console.log(`No merged character found for ${uuid}`);
+        console.log(`No merged character found for ${item}`);
       }
     }
 
@@ -309,6 +309,7 @@ export class Orchestrator {
     const directorContext = { 
       ...context, 
       activeCharacters: activeCharacters || [],
+      activeCharacterNames: sessionContext.activeCharacters.map(c => c.name).join(', '),
       history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history
     };
     console.log('Calling DirectorAgent');
@@ -344,7 +345,7 @@ export class Orchestrator {
       }
       
       directorGuidance = directorJson.guidance || '';
-      charactersToRespond = Array.isArray(directorJson.characters) ? directorJson.characters.filter((c: string) => c && (!activeCharacters || activeCharacters.includes(c))) : [];
+        charactersToRespond = Array.isArray(directorJson.characters) ? directorJson.characters : [];
     } catch (e) {
       console.warn('DirectorAgent returned invalid JSON, trying extraction:', directorOutput, e);
       // Fallback: try to extract JSON from response if direct parsing fails
@@ -355,7 +356,7 @@ export class Orchestrator {
           directorJson = directorJson[0] || {};
         }
         directorGuidance = directorJson.guidance || '';
-        charactersToRespond = Array.isArray(directorJson.characters) ? directorJson.characters.filter((c: string) => c && (!activeCharacters || activeCharacters.includes(c))) : [];
+        charactersToRespond = Array.isArray(directorJson.characters) ? directorJson.characters : [];
       } catch (fallbackError) {
         console.warn('DirectorAgent JSON extraction also failed:', fallbackError);
         // Fallback: try old format
@@ -367,7 +368,7 @@ export class Orchestrator {
         if (charactersMatch) {
           const charsStr = charactersMatch[1].trim();
           if (charsStr.toLowerCase() !== 'none') {
-            charactersToRespond = charsStr.split(',').map(c => c.trim()).filter(c => c && (!activeCharacters || activeCharacters.includes(c)));
+            charactersToRespond = charsStr.split(',').map(c => c.trim()).filter(c => c);
           }
         }
       }
@@ -561,9 +562,9 @@ export class Orchestrator {
         };
       }
       
-      const characterData = this.getCharacterByName(charName);
+      const characterData = sessionContext.activeCharacters.find(c => c.name.toLowerCase() === charName.toLowerCase());
       if (!characterData) {
-        console.warn(`Character ${charName} not found`);
+        console.warn(`Character ${charName} not found in active characters`);
         continue;
       }
 
@@ -649,21 +650,11 @@ export class Orchestrator {
         // Resolve active characters (names -> descriptions)
         const resolvedChars: { name: string; description: string }[] = [];
         if (activeCharacters && Array.isArray(activeCharacters) && activeCharacters.length) {
-          for (const nm of activeCharacters) {
-            let desc = '';
-            const charRow = this.getCharacterByName(nm);
-            if (charRow) {
-              desc = charRow.description || charRow.personality || '';
-              resolvedChars.push({ name: charRow.name || nm, description: desc });
-              continue;
-            }
-            const slugGuess = String(nm).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-            const merged = CharacterService.getMergedCharacter({ characterId: slugGuess });
+          for (const id of activeCharacters) {
+            const merged = CharacterService.getMergedCharacter({ characterId: id });
             if (merged) {
-              desc = merged.description || merged.personality || '';
-              resolvedChars.push({ name: merged.name || nm, description: desc });
-            } else {
-              resolvedChars.push({ name: nm, description: '' });
+              const desc = merged.description || merged.personality || '';
+              resolvedChars.push({ name: merged.name || 'Unknown', description: desc });
             }
           }
         }

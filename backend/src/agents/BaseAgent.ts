@@ -45,6 +45,8 @@ export abstract class BaseAgent {
     this.agentName = agentName;
     this.configManager = configManager;
     this.env = env;
+    this.env.addFilter('json', (obj: any) => JSON.stringify(obj, null, 2));
+    this.env.addGlobal('JSON', JSON);
   }
 
   protected getProfile(): LLMProfile {
@@ -164,7 +166,9 @@ export abstract class BaseAgent {
     // Add utility functions to template context
     safeContext.estimateWordsFromTokens = estimateWordsFromTokens;
 
-    return this.env.renderString(template, safeContext);
+    const result = this.env.renderString(template, safeContext);
+    console.log('Rendered template for', templateName, ':', result.substring(0, 500) + (result.length > 500 ? '...' : ''));
+    return result;
   }
 
   protected renderLLMTemplate(systemPrompt: string, userMessage: string, assistantMessage: string = ''): ChatMessage[] {

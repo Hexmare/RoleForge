@@ -31,12 +31,22 @@ export const CharacterService = {
   },
 
   getMergedCharacter({ characterId, worldId, campaignId }: { characterId: string; worldId?: number; campaignId?: number }) {
-    const base = this.getBaseById(characterId);
-    if (!base) return null;
+    let baseId = characterId;
+    let base = this.getBaseById(baseId);
+    if (!base) {
+      const chars = this.getAllCharacters();
+      const char = chars.find(c => c.name.toLowerCase() === characterId.toLowerCase());
+      if (char) {
+        base = char;
+        baseId = char.id;
+      } else {
+        return null;
+      }
+    }
     let result = { ...base };
 
     if (worldId) {
-      const wo = db.prepare('SELECT overrideData FROM WorldCharacterOverrides WHERE worldId = ? AND characterId = ?').get(worldId, characterId) as any;
+      const wo = db.prepare('SELECT overrideData FROM WorldCharacterOverrides WHERE worldId = ? AND characterId = ?').get(worldId, baseId) as any;
       if (wo) {
         const override = JSON.parse(wo.overrideData);
         result = deepMerge(result, override);
@@ -44,7 +54,7 @@ export const CharacterService = {
     }
 
     if (campaignId) {
-      const co = db.prepare('SELECT overrideData FROM CampaignCharacterOverrides WHERE campaignId = ? AND characterId = ?').get(campaignId, characterId) as any;
+      const co = db.prepare('SELECT overrideData FROM CampaignCharacterOverrides WHERE campaignId = ? AND characterId = ?').get(campaignId, baseId) as any;
       if (co) {
         const override = JSON.parse(co.overrideData);
         result = deepMerge(result, override);

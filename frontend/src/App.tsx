@@ -256,9 +256,9 @@ function App() {
           const session = await res.json();
           console.log('Raw session response:', session);
           setSessionContext(session);
-          const slugs = (session.activeCharacters || []).map((c: any) => c.name).filter(Boolean);
-          console.log('Loaded active characters from session:', slugs);
-          setActiveCharacters(slugs);
+          const ids = (session.activeCharacters || []).map((c: any) => c.id).filter(Boolean);
+          console.log('Loaded active characters from session:', ids);
+          setActiveCharacters(ids);
         } else {
           console.log('Failed to load session for scene:', selectedScene, res.status);
         }
@@ -491,7 +491,7 @@ function App() {
         return;
       }
       const data = await res.json();
-      setCharacters(data.map((c: any) => ({ ...c.data, id: c.id, avatarUrl: c.avatarUrl })));
+      setCharacters(data.map((c: any) => ({ ...c, avatarUrl: c.avatar })));
     } catch (e) {
       console.error('Error fetching characters:', e);
       setCharacters([]);
