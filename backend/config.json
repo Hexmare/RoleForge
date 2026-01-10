@@ -2,7 +2,9 @@
   "defaultProfile": "kobold",
   "features": {
     "visualAgentEnabled": true,
-    "socketAckLogs": true
+    "socketAckLogs": true,
+    "summarizationInterval": 3,
+    "maxSummaryTokens": 1000
   },
   "comfyui": {
     "endpoint": "http://localhost:8188",
@@ -51,16 +53,24 @@
       "llmProfile": "default"
     },
     "character": {
-      "llmProfile": "default"
+      "llmProfile": "default",
+      "sampler": {
+        "max_completion_tokens": 400
+      }
     },
     "director": {
-      "llmProfile": "default"
+      "llmProfile": "default",
+      "format": "json"
     },
     "world": {
-      "llmProfile": "default"
+      "llmProfile": "default",
+      "format": "json"
     },
     "summarize": {
-      "llmProfile": "default"
+      "llmProfile": "default",
+      "sampler": {
+        "max_completion_tokens": 1024
+      }
     },
     "visual": {
       "llmProfile": "default"

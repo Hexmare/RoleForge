@@ -60,6 +60,11 @@ export class Orchestrator {
     }
   }
 
+  // Get an agent instance
+  public getAgent(agentName: string): BaseAgent | undefined {
+    return this.agents.get(agentName);
+  }
+
   // Build a rich SessionContext for a given sceneId
   async buildSessionContext(sceneId: number) {
     const sceneRow = this.db.prepare('SELECT * FROM Scenes WHERE id = ?').get(sceneId) as any;
@@ -131,7 +136,10 @@ export class Orchestrator {
         elapsedMinutes: sceneRow.elapsedMinutes,
         notes: sceneRow.notes ? JSON.parse(sceneRow.notes) : null,
         backgroundImage: sceneRow.backgroundImage,
-        locationRelationships: sceneRow.locationRelationships ? JSON.parse(sceneRow.locationRelationships) : null
+        locationRelationships: sceneRow.locationRelationships ? JSON.parse(sceneRow.locationRelationships) : null,
+        summary: sceneRow.summary,
+        lastSummarizedMessageId: sceneRow.lastSummarizedMessageId,
+        summaryTokenCount: sceneRow.summaryTokenCount
       },
       activeCharacters: activeCharactersResolved,
       worldState: { elapsedMinutes: campaignState.elapsedMinutes, dynamicFacts: campaignState.dynamicFacts },
@@ -223,6 +231,14 @@ export class Orchestrator {
   }
 
   async processUserInput(userInput: string, personaName: string = 'default', activeCharacters?: string[], sceneId?: number): Promise<{ sender: string; content: string }[]> {
+    // Load scene summary from database if sceneId is provided
+    if (sceneId && !this.sceneSummary) {
+      const sceneRow = this.db.prepare('SELECT summary FROM Scenes WHERE id = ?').get(sceneId) as any;
+      if (sceneRow?.summary) {
+        this.sceneSummary = sceneRow.summary;
+      }
+    }
+
     const slashCmd = this.parseSlashCommand(userInput);
     if (slashCmd) {
       return this.handleSlashCommand(slashCmd.command, slashCmd.args, activeCharacters, sceneId);
@@ -236,9 +252,8 @@ export class Orchestrator {
       // Prepare context
       const context: AgentContext = {
         userInput,
-        history: this.history,
+        history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history,
         worldState: this.worldState,
-        sceneSummary: this.sceneSummary,
         lore: this.getActivatedLore(userInput + ' ' + this.history.join(' ')),
         userPersona: this.getPersona(personaName),
       };
@@ -261,9 +276,8 @@ export class Orchestrator {
     // Prepare base context
     let context: AgentContext = {
       userInput,
-      history: this.history,
+      history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history,
       worldState: this.worldState,
-      sceneSummary: this.sceneSummary,
       lore: this.getActivatedLore(userInput + ' ' + this.history.join(' ')),
       userPersona: this.getPersona(personaName),
     };
@@ -283,7 +297,11 @@ export class Orchestrator {
 
     // Step 2: Director guidance and character selection
     const directorAgent = this.agents.get('director')!;
-    const directorContext = { ...context, activeCharacters: activeCharacters || [] };
+    const directorContext = { 
+      ...context, 
+      activeCharacters: activeCharacters || [],
+      history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history
+    };
     console.log('Calling DirectorAgent');
     this.emitAgentStatus('Director', 'start', sceneId);
     const directorOutput = await directorAgent.run(directorContext);
@@ -293,21 +311,38 @@ export class Orchestrator {
     let directorGuidance = '';
     let charactersToRespond: string[] = [];
     try {
-      const directorJson = JSON.parse(this.extractFirstJson(directorOutput) || directorOutput);
+      // Try direct JSON parsing first (enforced by response_format)
+      let directorJson = JSON.parse(directorOutput.trim());
+      // Handle both object and array responses
+      if (Array.isArray(directorJson)) {
+        directorJson = directorJson[0] || {};
+      }
       directorGuidance = directorJson.guidance || '';
       charactersToRespond = Array.isArray(directorJson.characters) ? directorJson.characters.filter((c: string) => c && (!activeCharacters || activeCharacters.includes(c))) : [];
     } catch (e) {
-      console.warn('Failed to parse DirectorAgent JSON output:', directorOutput);
-      // Fallback: try old format
-      const guidanceMatch = directorOutput.match(/Guidance:\s*(.+?)(?:\n|$)/i);
-      const charactersMatch = directorOutput.match(/Characters:\s*(.+?)(?:\n|$)/i);
-      if (guidanceMatch) {
-        directorGuidance = guidanceMatch[1].trim();
-      }
-      if (charactersMatch) {
-        const charsStr = charactersMatch[1].trim();
-        if (charsStr.toLowerCase() !== 'none') {
-          charactersToRespond = charsStr.split(',').map(c => c.trim()).filter(c => c && (!activeCharacters || activeCharacters.includes(c)));
+      console.warn('DirectorAgent returned invalid JSON, trying extraction:', directorOutput, e);
+      // Fallback: try to extract JSON from response if direct parsing fails
+      try {
+        let directorJson = JSON.parse(this.extractFirstJson(directorOutput) || directorOutput);
+        // Handle both object and array responses
+        if (Array.isArray(directorJson)) {
+          directorJson = directorJson[0] || {};
+        }
+        directorGuidance = directorJson.guidance || '';
+        charactersToRespond = Array.isArray(directorJson.characters) ? directorJson.characters.filter((c: string) => c && (!activeCharacters || activeCharacters.includes(c))) : [];
+      } catch (fallbackError) {
+        console.warn('DirectorAgent JSON extraction also failed:', fallbackError);
+        // Fallback: try old format
+        const guidanceMatch = directorOutput.match(/Guidance:\s*(.+?)(?:\n|$)/i);
+        const charactersMatch = directorOutput.match(/Characters:\s*(.+?)(?:\n|$)/i);
+        if (guidanceMatch) {
+          directorGuidance = guidanceMatch[1].trim();
+        }
+        if (charactersMatch) {
+          const charsStr = charactersMatch[1].trim();
+          if (charsStr.toLowerCase() !== 'none') {
+            charactersToRespond = charsStr.split(',').map(c => c.trim()).filter(c => c && (!activeCharacters || activeCharacters.includes(c)));
+          }
         }
       }
     }
@@ -317,8 +352,12 @@ export class Orchestrator {
     if (!directorGuidance && !charactersToRespond.length) {
       console.warn('Failed to parse DirectorAgent output:', directorOutput);
       directorGuidance = directorOutput; // Use as guidance
-      // Default to Alice if no characters specified
-      charactersToRespond = ['Alice'];
+      // Default to first active character if available, otherwise skip character responses
+      if (activeCharacters && activeCharacters.length > 0) {
+        charactersToRespond = [activeCharacters[0]];
+      } else {
+        charactersToRespond = []; // No characters to respond
+      }
     }
     context.directorGuidance = directorGuidance;
 
@@ -329,19 +368,28 @@ export class Orchestrator {
     const worldUpdateStr = await worldAgent.run(context);
     console.log('WorldAgent completed');
     this.emitAgentStatus('WorldAgent', 'complete', sceneId);
-    // Extract JSON from response
-    const jsonStr = this.extractFirstJson(worldUpdateStr);
-    if (jsonStr) {
-      try {
-        const worldUpdate = JSON.parse(jsonStr);
-        if (!worldUpdate.unchanged) {
-          Object.assign(this.worldState, worldUpdate);
-        }
-      } catch (e) {
-        console.warn('WorldAgent returned invalid JSON:', worldUpdateStr);
+    // Parse JSON response from WorldAgent (enforced by response_format)
+    try {
+      const worldUpdate = JSON.parse(worldUpdateStr.trim());
+      if (!worldUpdate.unchanged) {
+        Object.assign(this.worldState, worldUpdate);
       }
-    } else {
-      console.warn('No JSON found in WorldAgent response:', worldUpdateStr);
+    } catch (e) {
+      console.warn('WorldAgent returned invalid JSON:', worldUpdateStr, e);
+      // Fallback: try to extract JSON from response if direct parsing fails
+      const jsonStr = this.extractFirstJson(worldUpdateStr);
+      if (jsonStr) {
+        try {
+          const worldUpdate = JSON.parse(jsonStr);
+          if (!worldUpdate.unchanged) {
+            Object.assign(this.worldState, worldUpdate);
+          }
+        } catch (fallbackError) {
+          console.warn('WorldAgent JSON extraction also failed:', fallbackError);
+        }
+      } else {
+        console.warn('No JSON found in WorldAgent response:', worldUpdateStr);
+      }
     }
     context.worldState = this.worldState;
 
@@ -357,8 +405,9 @@ export class Orchestrator {
       const characterAgent = new CharacterAgent(charName, this.configManager, this.env);
       const characterContext: AgentContext = {
         ...context,
-        history: this.history.slice(0, -1), // Exclude the current user input from history
+        history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.slice(0, -1).join('\n')}`] : this.history.slice(0, -1), // Exclude the current user input from history
         character: characterData,
+        maxCompletionTokens: (characterAgent as any).getProfile().sampler?.max_completion_tokens || 400,
       };
       console.log(`Calling CharacterAgent for ${charName}`);
       this.emitAgentStatus(charName, 'start', sceneId);

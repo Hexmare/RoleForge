@@ -27,15 +27,25 @@ export interface LLMProfile {
   model?: string;
   template?: string; // LLM template name, e.g., 'chatml'
   sampler?: SamplerSettings;
+  format?: string; // Response format, e.g., 'json'
+}
+
+export interface AgentConfig {
+  llmProfile?: string;
+  sampler?: SamplerSettings;
+  format?: string;
 }
 
 export interface Config {
   comfyui: any;
   profiles: Record<string, LLMProfile>;
   defaultProfile: string;
-  agents?: Record<string, { llmProfile: string }>;
+  agents?: Record<string, AgentConfig>;
   features?: {
     visualAgentEnabled?: boolean;
+    socketAckLogs?: boolean;
+    summarizationInterval?: number;
+    maxSummaryTokens?: number;
   };
 }
 

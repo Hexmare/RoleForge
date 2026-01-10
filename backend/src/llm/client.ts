@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import axios from 'axios';
 import { LLMProfile } from '../configManager';
+import { countTokens } from '../utils/tokenCounter.js';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -8,8 +9,7 @@ export interface ChatMessage {
 }
 
 function estimateTokens(text: string): number {
-  // Rough approximation: ~4 characters per token
-  return Math.ceil(text.length / 4);
+  return countTokens(text);
 }
 
 function trimMessages(messages: ChatMessage[], maxTokens: number): ChatMessage[] {
@@ -84,28 +84,45 @@ export async function chatCompletion(
     logit_bias: profile.sampler.logitBias ?? null,
   } : {};
 
-  if (options.stream) {
-    const stream = await client.chat.completions.create({
-      model,
-      messages: trimmedMessages,
-      stream: true,
-      ...samplerOptions,
-    });
+  // Conditionally add response_format for JSON responses
+  const formatOptions = profile.format === 'json' ? {
+    response_format: { type: "json_object" as const }
+  } : {};
 
-    return (async function* () {
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content;
-        if (content) {
-          yield content;
+  const baseOptions = {
+    model,
+    messages: trimmedMessages,
+    ...samplerOptions,
+    ...formatOptions,
+  };
+
+  try {
+    if (options.stream) {
+      const stream = await client.chat.completions.create({
+        ...baseOptions,
+        stream: true,
+      });
+
+      return (async function* () {
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content;
+          if (content) {
+            yield content;
+          }
         }
-      }
-    })();
-  } else {
-    const response = await client.chat.completions.create({
+      })();
+    } else {
+      const response = await client.chat.completions.create(baseOptions);
+      return response.choices[0]?.message?.content || '';
+    }
+  } catch (error: any) {
+    console.error('LLM API call failed:', {
+      profile: profile.baseURL,
       model,
-      messages: trimmedMessages,
-      ...samplerOptions,
+      error: error.message,
+      status: error.status,
+      response: error.response?.data
     });
-    return response.choices[0]?.message?.content || '';
+    throw error;
   }
 }

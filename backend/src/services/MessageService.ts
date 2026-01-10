@@ -1,18 +1,13 @@
 import db from '../database';
 import * as fs from 'fs';
 import * as path from 'path';
+import { countTokens } from '../utils/tokenCounter.js';
 
 export const MessageService = {
   logMessage(sceneId: number, sender: string, message: string, charactersPresent: any[] = [], metadata: any = {}) {
     const row = db.prepare('SELECT MAX(messageNumber) as maxNum FROM Messages WHERE sceneId = ?').get(sceneId) as any;
     const next = (row?.maxNum ?? 0) + 1;
-    // estimate tokens (naive heuristic: ~1 token per 4 chars)
-    const estimateTokens = (s: string) => {
-      if (!s) return 0;
-      const c = s.length;
-      return Math.max(1, Math.round(c / 4));
-    };
-    const tokenCount = estimateTokens(message);
+    const tokenCount = countTokens(message);
     const stmt = db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, charactersPresent, tokenCount, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)');
     const result = stmt.run(sceneId, next, message, sender, JSON.stringify(charactersPresent), tokenCount, JSON.stringify(metadata || {}));
     const inserted = db.prepare('SELECT * FROM Messages WHERE id = ?').get(result.lastInsertRowid) as any;

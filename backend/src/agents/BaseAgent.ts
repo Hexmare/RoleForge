@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { chatCompletion, ChatMessage } from '../llm/client';
 import { ConfigManager, LLMProfile } from '../configManager';
+import { estimateWordsFromTokens } from '../utils/tokenCounter.js';
 
 export interface AgentContext {
   userInput: string;
@@ -26,6 +27,9 @@ export interface AgentContext {
   voiceMap?: Record<string, string>; // For TTSAgent
   userPersona?: any; // For user persona
   activeCharacters?: string[]; // For DirectorAgent
+  existingSummary?: string; // For SummarizeAgent
+  maxSummaryTokens?: number; // For SummarizeAgent
+  maxCompletionTokens?: number; // For response length limits
 }
 
 export abstract class BaseAgent {
@@ -46,12 +50,53 @@ export abstract class BaseAgent {
     if (profileName === 'default') {
       profileName = this.configManager.getConfig().defaultProfile;
     }
-    return this.configManager.getProfile(profileName);
+
+    const baseProfile = this.configManager.getProfile(profileName);
+
+    // Merge agent-specific overrides (sampler and format)
+    const mergedProfile = { ...baseProfile };
+    
+    if (agentConfig?.sampler) {
+      mergedProfile.sampler = {
+        ...baseProfile.sampler,
+        ...agentConfig.sampler
+      };
+    }
+    
+    if (agentConfig?.format) {
+      mergedProfile.format = agentConfig.format;
+    }
+
+    return mergedProfile;
   }
 
   protected async callLLM(messages: ChatMessage[], stream: boolean = false): Promise<string | AsyncIterable<string>> {
-    const profile = this.getProfile();
-    return chatCompletion(profile, messages, { stream });
+    try {
+      const profile = this.getProfile();
+      return await chatCompletion(profile, messages, { stream });
+    } catch (error: any) {
+      console.error(`LLM call failed for agent ${this.agentName}:`, error);
+      
+      // Provide a fallback response based on agent type
+      switch (this.agentName) {
+        case 'character':
+          return "I apologize, but I'm having trouble responding right now. Could you try rephrasing your message?";
+        case 'narrator':
+          return "The scene remains as it was. The environment is quiet and unchanged.";
+        case 'director':
+          return '{"guidance": "Continue the conversation naturally.", "characters": []}';
+        case 'world':
+          return '{"updates": []}';
+        case 'summarize':
+          return "Unable to generate summary at this time.";
+        case 'visual':
+          return "Unable to generate visual content at this time.";
+        case 'creator':
+          return "Unable to create content at this time.";
+        default:
+          return "I apologize, but I'm experiencing technical difficulties.";
+      }
+    }
   }
 
   protected cleanResponse(response: string): string {
@@ -84,6 +129,10 @@ export abstract class BaseAgent {
       if ('description' in safeContext.userPersona) safeContext.userPersona.description = escapeForTemplate(safeContext.userPersona.description);
       if ('name' in safeContext.userPersona) safeContext.userPersona.name = escapeForTemplate(safeContext.userPersona.name);
     }
+
+    // Add utility functions to template context
+    safeContext.estimateWordsFromTokens = estimateWordsFromTokens;
+
     return this.env.renderString(template, safeContext);
   }
 

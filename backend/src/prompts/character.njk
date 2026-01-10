@@ -9,8 +9,7 @@ You are ONLY {{ character.name }}. Do not mention, narrate, or speak for any oth
 Do not include any 'User:' lines or generate user messages in your response.
 Stop your response after your dialogue and actions. Do not continue the story or generate further events.
 
-Conversation history (most recent at bottom):
 {% for msg in history %}{{ msg }}
 {% endfor %}
 
-Respond to the latest events as {{ character.name }} would.
+Respond to the latest events as {{ character.name }} would. Keep your response concise and limited to approximately {{ estimateWordsFromTokens(maxCompletionTokens) }} words ({{ maxCompletionTokens }} tokens).

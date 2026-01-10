@@ -199,4 +199,30 @@ try {
   console.warn('Could not ensure Messages.metadata column exists:', e);
 }
 
+// Ensure Scenes.summary column exists for summarization
+try {
+  const scols = db.prepare("PRAGMA table_info('Scenes')").all();
+  const hasSummary = scols.some((c: any) => c.name === 'summary');
+  if (!hasSummary) {
+    db.exec(`ALTER TABLE Scenes ADD COLUMN summary TEXT;`);
+  }
+} catch (e) {
+  console.warn('Could not ensure Scenes.summary column exists:', e);
+}
+
+// Ensure Scenes.lastSummarizedMessageId and summaryTokenCount columns exist
+try {
+  const scols2 = db.prepare("PRAGMA table_info('Scenes')").all();
+  const hasLastSummarized = scols2.some((c: any) => c.name === 'lastSummarizedMessageId');
+  const hasSummaryTokens = scols2.some((c: any) => c.name === 'summaryTokenCount');
+  if (!hasLastSummarized) {
+    db.exec(`ALTER TABLE Scenes ADD COLUMN lastSummarizedMessageId INTEGER;`);
+  }
+  if (!hasSummaryTokens) {
+    db.exec(`ALTER TABLE Scenes ADD COLUMN summaryTokenCount INTEGER DEFAULT 0;`);
+  }
+} catch (e) {
+  console.warn('Could not ensure Scenes summarization tracking columns exist:', e);
+}
+
 export default db;

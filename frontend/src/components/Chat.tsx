@@ -370,6 +370,30 @@ const Chat: React.FC<ChatProps> = ({
                 >
                   Delete Posts
                 </button>
+                <button
+                  className="chat-menu-item"
+                  onClick={async () => {
+                    if (!selectedScene) return;
+                    try {
+                      setCurrentAgent('Summarize');
+                      const response = await fetch(`/api/scenes/${selectedScene}/summarize`, { method: 'POST' });
+                      if (!response.ok) {
+                        throw new Error('Summarization failed');
+                      }
+                      // Refresh messages to show any updates
+                      onMessagesRefresh();
+                    } catch (e) {
+                      console.warn('Failed to trigger summarization', e);
+                      alert('Failed to summarize scene');
+                    } finally {
+                      setCurrentAgent(null);
+                      setMenuOpen(false);
+                    }
+                  }}
+                  disabled={!selectedScene}
+                >
+                  Summarize Now
+                </button>
               </div>
             )}
           </div>

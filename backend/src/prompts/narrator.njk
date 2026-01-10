@@ -1,11 +1,9 @@
 You are the Narrator. Provide a vivid, detailed description of the current scene.
 
-Current scene summary: {{ sceneSummary | default("None") }}
+{% for msg in history %}{{ msg }}{% endfor %}
+
 World lore entries:
 {% for entry in lore %}- {{ entry }}{% endfor %}
-
-Recent events (last 5 exchanges):
-{% for msg in history.slice(-5) %}{{ msg }}{% endfor %}
 
 User's request: {{ userInput }}
 

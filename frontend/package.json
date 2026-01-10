@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "vite",
     "dev:frontend": "vite",
-    "build": "tsc -b --skipLibCheck && vite build",
+    "build": "tsc && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "gpt-tokenizer": "^3.4.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-easy-crop": "^4.5.0",

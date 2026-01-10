@@ -180,6 +180,10 @@ function App() {
       setRegenPendingIds(prev => Array.from(new Set([...(prev||[]), data.messageId])));
       setRegenErrors(prev => { const n = { ...prev }; delete n[data.messageId]; return n; });
     });
+    socket.on('sceneUpdated', (data: { sceneId: number; summary?: string; summaryTokenCount?: number }) => {
+      // Refresh worlds/campaigns/scenes data to reflect updated summary
+      loadWorlds().catch(() => {});
+    });
 
     return () => {
       socket.off('sceneAdvanced');
@@ -189,6 +193,7 @@ function App() {
       socket.off('regenFailed');
       socket.off('regenStarted');
       socket.off('imageStored');
+      socket.off('sceneUpdated');
     };
   }, []);
 

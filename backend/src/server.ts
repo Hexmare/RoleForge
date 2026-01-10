@@ -23,6 +23,7 @@ import { VisualAgent } from './agents/VisualAgent';
 import { tryParse, unwrapPrompt } from './utils/unpackPrompt';
 import axios from 'axios';
 import { randomBytes } from 'crypto';
+import { countTokens } from './utils/tokenCounter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -156,9 +157,76 @@ app.put('/api/scenes/:id', (req, res) => {
   res.json(SceneService.update(Number(id), req.body));
 });
 
+app.get('/api/scenes/:id', (req, res) => {
+  const { id } = req.params;
+  const scene = SceneService.getById(Number(id));
+  if (!scene) return res.status(404).json({ error: 'Scene not found' });
+  res.json(scene);
+});
+
 app.delete('/api/scenes/:id', (req, res) => {
   const { id } = req.params;
   res.json(SceneService.delete(Number(id)));
+});
+
+// Manual summarization endpoint
+app.post('/api/scenes/:sceneId/summarize', async (req, res) => {
+  const { sceneId } = req.params;
+  try {
+    const cfg = configManager.getConfig();
+    const sceneData = db.prepare('SELECT summary, lastSummarizedMessageId FROM Scenes WHERE id = ?').get(sceneId) as any;
+    if (!sceneData) return res.status(404).json({ error: 'Scene not found' });
+
+    const existingSummary = sceneData?.summary || '';
+    const lastSummarizedId = sceneData?.lastSummarizedMessageId || 0;
+    
+    // Get new messages since last summarization
+    const newMessages = MessageService.getMessages(Number(sceneId), 1000, 0).filter((m: any) => m.id > lastSummarizedId);
+    const history = newMessages.map((m: any) => `${m.sender}: ${m.message}`).join('\n');
+    
+    const context = {
+      userInput: '', // Not needed for summarization
+      history: [history],
+      worldState: {},
+      existingSummary: existingSummary || undefined,
+      maxSummaryTokens: cfg.features?.maxSummaryTokens || 500
+    };
+
+    // Emit agent status start
+    io.to(`scene-${sceneId}`).emit('agentStatus', { agent: 'Summarize', status: 'start' });
+    
+    const summary = await orchestrator.getAgent('summarize')?.run(context);
+    
+    if (summary) {
+      // Calculate token count using proper GPT tokenization
+      const tokenCount = countTokens(summary);
+      
+      // Get the latest message ID
+      const latestMessage = db.prepare('SELECT id FROM Messages WHERE sceneId = ? ORDER BY id DESC LIMIT 1').get(sceneId) as any;
+      
+      // Update scene with new summary
+      db.prepare('UPDATE Scenes SET summary = ?, summaryTokenCount = ?, lastSummarizedMessageId = ? WHERE id = ?').run(
+        summary, tokenCount, latestMessage?.id || 0, sceneId
+      );
+      
+      // Emit agent status complete
+      io.to(`scene-${sceneId}`).emit('agentStatus', { agent: 'Summarize', status: 'complete' });
+      
+      // Emit scene update to clients
+      io.to(`scene-${sceneId}`).emit('sceneUpdated', { sceneId: Number(sceneId), summary, summaryTokenCount: tokenCount });
+      
+      res.json({ success: true, summary, tokenCount });
+    } else {
+      // Emit agent status complete on failure too
+      io.to(`scene-${sceneId}`).emit('agentStatus', { agent: 'Summarize', status: 'complete' });
+      res.status(500).json({ error: 'Failed to generate summary' });
+    }
+  } catch (e) {
+    console.error('Manual summarization failed:', e);
+    // Emit agent status complete on error
+    io.to(`scene-${sceneId}`).emit('agentStatus', { agent: 'Summarize', status: 'complete' });
+    res.status(500).json({ error: 'Summarization failed' });
+  }
 });
 
 // Messages
@@ -1080,6 +1148,59 @@ io.on('connection', (socket) => {
             }
             MessageService.logMessage(sceneId, r.sender, content, [], {});
           } catch (e) { console.warn('Failed to log AI response', e); }
+        }
+      }
+
+      // Check for summarization trigger
+      if (sceneId) {
+        try {
+          const cfg = configManager.getConfig();
+          const interval = cfg.features?.summarizationInterval;
+          if (interval && typeof interval === 'number' && interval > 0) {
+            const messageCount = db.prepare('SELECT COUNT(*) as count FROM Messages WHERE sceneId = ?').get(sceneId) as any;
+            if (messageCount.count % interval === 0) {
+              // Get scene data for existing summary
+              const sceneData = db.prepare('SELECT summary, lastSummarizedMessageId FROM Scenes WHERE id = ?').get(sceneId) as any;
+              const existingSummary = sceneData?.summary || '';
+              const lastSummarizedId = sceneData?.lastSummarizedMessageId || 0;
+              
+              // Get new messages since last summarization
+              const newMessages = MessageService.getMessages(sceneId, 1000, 0).filter((m: any) => m.id > lastSummarizedId);
+              const history = newMessages.map((m: any) => `${m.sender}: ${m.message}`).join('\n');
+              
+              const context = {
+                userInput: '', // Not needed for summarization
+                history: [history],
+                worldState: {},
+                existingSummary: existingSummary || undefined,
+                maxSummaryTokens: cfg.features?.maxSummaryTokens || 500
+              };
+              
+              // Emit agent status start
+              io.to(`scene-${sceneId}`).emit('agentStatus', { agent: 'Summarize', status: 'start' });
+              
+              const summary = await orchestrator.getAgent('summarize')?.run(context);
+              
+              if (summary) {
+                // Calculate token count using proper GPT tokenization
+                const tokenCount = countTokens(summary);
+                
+                // Get the latest message ID
+                const latestMessage = db.prepare('SELECT id FROM Messages WHERE sceneId = ? ORDER BY id DESC LIMIT 1').get(sceneId) as any;
+                
+                // Update scene with new summary
+                db.prepare('UPDATE Scenes SET summary = ?, summaryTokenCount = ?, lastSummarizedMessageId = ? WHERE id = ?').run(
+                  summary, tokenCount, latestMessage?.id || 0, sceneId
+                );
+                console.log(`Summarized scene ${sceneId} after ${messageCount.count} messages (${tokenCount} tokens)`);
+              }
+              
+              // Emit agent status complete
+              io.to(`scene-${sceneId}`).emit('agentStatus', { agent: 'Summarize', status: 'complete' });
+            }
+          }
+        } catch (e) {
+          console.warn('Summarization failed', e);
         }
       }
 
