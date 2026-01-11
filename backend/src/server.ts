@@ -20,6 +20,7 @@ import ArcService from './services/ArcService';
 import SceneService from './services/SceneService';
 import MessageService from './services/MessageService';
 import CharacterService from './services/CharacterService';
+import LorebookService from './services/LorebookService';
 import { VisualAgent } from './agents/VisualAgent';
 import { tryParse, unwrapPrompt } from './utils/unpackPrompt';
 import axios from 'axios';
@@ -182,6 +183,153 @@ app.get('/api/scenes/:id', (req, res) => {
 app.delete('/api/scenes/:id', (req, res) => {
   const { id } = req.params;
   res.json(SceneService.delete(Number(id)));
+});
+
+// Lorebooks API
+app.get('/api/lorebooks', (req, res) => {
+  try {
+    res.json((LorebookService as any).listAll());
+  } catch (e) {
+    console.error('Failed to list lorebooks', e);
+    res.status(500).json({ error: 'Failed to list lorebooks' });
+  }
+});
+
+app.post('/api/lorebooks', (req, res) => {
+  try {
+    const { name, description, settings } = req.body;
+    const lb = (LorebookService as any).createLorebook({ name, description, settings });
+    res.json(lb);
+  } catch (e) {
+    console.error('Failed to create lorebook', e);
+    res.status(500).json({ error: 'Failed to create lorebook' });
+  }
+});
+
+app.get('/api/lorebooks/:uuid', (req, res) => {
+  const { uuid } = req.params;
+  const lb = (LorebookService as any).getLorebook(uuid);
+  if (!lb) return res.status(404).json({ error: 'Lorebook not found' });
+  res.json(lb);
+});
+
+app.put('/api/lorebooks/:uuid', (req, res) => {
+  const { uuid } = req.params;
+  const updated = (LorebookService as any).updateLorebook(uuid, req.body);
+  if (!updated) return res.status(404).json({ error: 'Lorebook not found' });
+  res.json(updated);
+});
+
+app.delete('/api/lorebooks/:uuid', (req, res) => {
+  const { uuid } = req.params;
+  res.json((LorebookService as any).deleteLorebook(uuid));
+});
+
+// Entries
+app.get('/api/lorebooks/:uuid/entries', (req, res) => {
+  const { uuid } = req.params;
+  try {
+    res.json((LorebookService as any).getEntries(uuid));
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get entries' });
+  }
+});
+
+app.post('/api/lorebooks/:uuid/entries', (req, res) => {
+  const { uuid } = req.params;
+  try {
+    const entry = (LorebookService as any).addEntry(uuid, req.body);
+    res.json(entry);
+  } catch (e) {
+    console.error('Failed to add entry', e);
+    res.status(500).json({ error: 'Failed to add entry' });
+  }
+});
+
+app.put('/api/lorebooks/:uuid/entries/:entryId', (req, res) => {
+  const { uuid, entryId } = req.params;
+  const updated = (LorebookService as any).updateEntry(uuid, Number(entryId), req.body);
+  if (!updated) return res.status(404).json({ error: 'Entry not found' });
+  res.json(updated);
+});
+
+app.delete('/api/lorebooks/:uuid/entries/:entryId', (req, res) => {
+  const { uuid, entryId } = req.params;
+  res.json((LorebookService as any).deleteEntry(uuid, Number(entryId)));
+});
+
+// Import/Export endpoints for SillyTavern-compatible lorebooks
+app.post('/api/lorebooks/import', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'file required' });
+  const raw = fs.readFileSync(req.file.path, 'utf-8');
+  let parsed: any = null;
+  try { parsed = JSON.parse(raw); } catch (e) { try { fs.unlinkSync(req.file.path); } catch (_){}; return res.status(400).json({ error: 'invalid JSON' }); }
+  try {
+    // Accept SillyTavern style where `entries` may be an object with numeric keys
+    if (parsed && parsed.entries && !Array.isArray(parsed.entries) && typeof parsed.entries === 'object') {
+      parsed.entries = Object.values(parsed.entries);
+    }
+
+    // Basic runtime validation: entries must be an array and non-empty
+    if (!parsed || typeof parsed !== 'object') {
+      try { fs.unlinkSync(req.file.path); } catch (_){}
+      return res.status(400).json({ error: 'invalid payload' });
+    }
+    if (!parsed.entries || !Array.isArray(parsed.entries) || parsed.entries.length === 0) {
+      try { fs.unlinkSync(req.file.path); } catch (_){}
+      return res.status(400).json({ error: 'import must contain entries array or object' });
+    }
+
+    // Validate each entry minimally to provide helpful errors to the user
+    const errors: string[] = [];
+    parsed.entries.forEach((e: any, idx: number) => {
+      if (!e || typeof e !== 'object') errors.push(`entry[${idx}] is not an object`);
+      const key = e.key || e.keys || e.match || e.trigger;
+      if (!key || (Array.isArray(key) && key.length === 0) || (typeof key === 'string' && key.trim() === '')) {
+        errors.push(`entry[${idx}] missing key(s)`);
+      }
+      const content = e.content || e.value || e.text || e.value;
+      if (!content || typeof content !== 'string' || content.trim() === '') errors.push(`entry[${idx}] missing content`);
+    });
+    if (errors.length) {
+      try { fs.unlinkSync(req.file.path); } catch (_){}
+      return res.status(400).json({ error: 'validation failed', detail: errors });
+    }
+
+    // Ensure we have a name — prefer provided name, else use uploaded filename or fallback
+    if (!parsed.name || typeof parsed.name !== 'string' || parsed.name.trim() === '') {
+      try {
+        const base = req.file.originalname ? path.basename(req.file.originalname, path.extname(req.file.originalname)) : 'Imported Lorebook';
+        parsed.name = base;
+      } catch (e) {
+        parsed.name = 'Imported Lorebook';
+      }
+    }
+
+    const created = (LorebookService as any).importFromSillyTavern(parsed);
+    try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
+    return res.json(created);
+  } catch (err) {
+    try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
+    const em = (err as any)?.message || String(err);
+    console.warn('Import validation failed:', em);
+    return res.status(400).json({ error: 'import validation failed', detail: em });
+  }
+});
+
+app.get('/api/lorebooks/:uuid/export', (req, res) => {
+  try {
+    const { uuid } = req.params;
+    const out = (LorebookService as any).exportForSillyTavern(uuid);
+    if (!out) return res.status(404).json({ error: 'Lorebook not found' });
+    const filename = `${out.name.replace(/[^a-zA-Z0-9_\-]/g, '_') || 'lorebook'}.json`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/json');
+    return res.send(JSON.stringify(out, null, 2));
+  } catch (e) {
+    console.error('Export failed', e);
+    return res.status(500).json({ error: 'Export failed', detail: String((e as any).message || e) });
+  }
 });
 
 // Manual summarization endpoint

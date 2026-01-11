@@ -74,6 +74,7 @@ function App() {
   // Panel state for new UI
   const [leftPanelOpen, setLeftPanelOpen] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [lorebooksVersion, setLorebooksVersion] = useState(0);
   // Debug config fetched from backend; use to drive client debug flags
   const [debugConfig, setDebugConfig] = useState<any>({});
   const debugRef = useRef<any>({});
@@ -1110,6 +1111,7 @@ function App() {
               activeCharacters={activeCharacters}
               onApplySelections={updateActiveCharacters}
             />
+            {/* Import moved into Lore Manager */}
           </div>
           </Panel>
           )}
@@ -1135,7 +1137,7 @@ function App() {
               />
             )}
             {currentTab === 'characters' && <CharacterManager onRefresh={fetchCharacters} />}
-            {currentTab === 'lore' && <LoreManager />}
+            {currentTab === 'lore' && <LoreManager version={lorebooksVersion} />}
             {currentTab === 'personas' && <PersonaManager />}
             {currentTab === 'comfyui' && <ComfyConfigModal visible={true} onClose={() => setCurrentTab('chat')} isModal={false} />}
             {currentTab === 'worlds' && <WorldManager onRefresh={fetchWorlds} onSelectScene={handleSceneChange} selectedScene={selectedScene} />}
