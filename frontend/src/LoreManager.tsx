@@ -1,8 +1,9 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import LoreImport from './components/LoreImport';
 import './components/entryEditor.css';
 import EntryEditor from './components/EntryEditor';
 import { IconPlus, IconEdit, IconTrash, IconDownload, IconRefresh } from './components/icons';
+import { useToast } from './components/Toast';
 
 interface Lorebook {
   id?: number;
@@ -20,6 +21,8 @@ function LoreManager({ version }: { version?: number }) {
   const [showNewModal, setShowNewModal] = useState(false);
   const [newName, setNewName] = useState('');
   const [showImportPanel, setShowImportPanel] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const toast = useToast();
   const [creatingEntry, setCreatingEntry] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState('newest');
@@ -91,13 +94,22 @@ function LoreManager({ version }: { version?: number }) {
 
   const fetchEntries = async (lb: Lorebook | null) => {
     const target = idFor(lb);
-    if (!target) return setEntries([]);
+    if (!target) {
+      console.debug('fetchEntries: no target for lorebook', lb);
+      return setEntries([]);
+    }
+    console.debug('Loading lorebook:', lb);
     try {
       const res = await fetch(`/api/lorebooks/${encodeURIComponent(target)}/entries`);
-      if (!res.ok) return setEntries([]);
+      if (!res.ok) {
+        console.debug('fetchEntries: fetch failed', res.status, res.statusText);
+        return setEntries([]);
+      }
       const data = await res.json();
+      console.log('Fetched entries for lorebook', target, data);
       setEntries(data || []);
     } catch (e) {
+      console.debug('fetchEntries error', e);
       setEntries([]);
     }
   };
@@ -110,12 +122,14 @@ function LoreManager({ version }: { version?: number }) {
 
   const handleSelectLorebook = (value: string) => {
     if (!value) {
+      console.log('handleSelectLorebook: cleared selection');
       setViewing(null);
       setEntries([]);
       setCreatingEntry(false);
       return;
     }
     const selected = lorebooks.find((lb) => idFor(lb) === value);
+    console.log('handleSelectLorebook: selected value', value, 'resolved:', selected);
     if (selected) {
       handleViewEntries(selected);
     }
@@ -202,12 +216,43 @@ function LoreManager({ version }: { version?: number }) {
             <div className="lore-manager-header-actions flex items-center gap-2">
               <button
                 type="button"
-                className={`lore-manager-header-action${showImportPanel ? ' active' : ''}`}
-                onClick={() => setShowImportPanel((prev) => !prev)}
+                className="lore-manager-header-action"
+                onClick={() => fileInputRef.current?.click()}
               >
                 <IconDownload className="w-4 h-4" />
-                <span>{showImportPanel ? 'Hide import' : 'Import'}</span>
+                <span>Import</span>
               </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/json"
+                style={{ display: 'none' }}
+                onChange={async (e) => {
+                  const f = e.target.files && e.target.files[0];
+                  if (!f) return;
+                  const fd = new FormData();
+                  fd.append('file', f);
+                  try {
+                    const res = await fetch('/api/lorebooks/import', { method: 'POST', body: fd });
+                    const txt = await res.text();
+                    let json: any = null;
+                    try { json = txt ? JSON.parse(txt) : null; } catch (err) { json = { raw: txt }; }
+                    if (!res.ok) {
+                      const msg = json?.detail || json?.error || `Import failed (${res.status})`;
+                      toast.error(String(msg));
+                      return;
+                    }
+                    const name = json?.name || json?.title || 'lorebook';
+                    toast.success(`Imported: ${name}`);
+                    fetchLorebooks();
+                  } catch (err: any) {
+                    toast.error(String(err?.message || err));
+                  } finally {
+                    // clear the input so the same file can be selected again
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }
+                }}
+              />
               <button type="button" className="lore-manager-header-action" disabled={!viewing} onClick={() => viewing && handleExport(viewing)}>
                 <IconDownload className="w-4 h-4" />
                 <span>Export</span>

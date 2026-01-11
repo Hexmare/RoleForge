@@ -354,7 +354,7 @@ export const LorebookService = {
       return {
         key: normKey,
         optional_filter: normFilter,
-        title_memo: e.title || e.name || null,
+        title_memo: e.comment ?? e.title ?? e.name ?? null,
         content: e.content || e.text || e.value || '',
         constant: e.constant || false,
         selective: e.selective || false,
@@ -429,6 +429,7 @@ export const LorebookService = {
         key: (() => { try { return JSON.parse(e.key); } catch { return e.key; } })(),
         optional_filter: e.optional_filter ? (() => { try { return JSON.parse(e.optional_filter); } catch { return e.optional_filter; } })() : null,
         title: e.title_memo,
+        comment: e.title_memo,
         content: e.content,
         constant: Boolean(e.constant),
         selective: Boolean(e.selective),
