@@ -73,20 +73,20 @@ Tasks are broken down by component. Prioritize backend first for API stability, 
 3. [x] In `roleforge.db`, add many-to-many join tables for lorebook assignment instead of JSON fields:
    - [x] Create `World_Lorebooks(worldId INTEGER, lorebookUuid TEXT)`.
    - [x] Create `Campaign_Lorebooks(campaignId INTEGER, lorebookUuid TEXT)`.
-   - [ ] Update `WorldService` and `CampaignService` to manage these associations.
+   - [x] Update `WorldService` and `CampaignService` to manage these associations.
 
 #### Services and Models
 1. [x] Create `LorebookService.ts`:
    - [x] Methods: `createLorebook(name, description, settings)`, `getLorebook(uuid)`, `updateLorebook(uuid, data)`, `deleteLorebook(uuid)`.
    - [x] Handle entries via the `LoreEntries` table: `addEntry(lorebookUuid, entry)`, `updateEntry(lorebookUuid, entryId, entry)`, `deleteEntry(lorebookUuid, entryId)`.
-   - [ ] Normalization for imports: map legacy SillyTavern fields (e.g., `keysecondary` → `optional_filter`).
-2. [ ] Integrate with `WorldService`/`CampaignService`:
-   - [ ] `addLorebookToWorld(worldId, lorebookUuid)`, `removeLorebookFromWorld(worldId, lorebookUuid)`.
-   - [ ] Similar API for campaigns.
-   - [ ] Fetch active lorebooks for a scene by merging world + campaign associations and loading entries.
-3. [ ] Update `SceneService`/`Orchestrator`:
-   - [ ] In `processUserInput`/AI response generation: gather active lorebooks, scan context (last N messages + scene description, character personalities), match keys, apply filters, and inject selected lore entries into the prompt.
-   - [ ] Use token budgeting via existing `utils/countTokens`.
+   - [x] Normalization for imports: map legacy SillyTavern fields (e.g., `keysecondary` → `optional_filter`).
+2. [x] Integrate with `WorldService`/`CampaignService`:
+   - [x] `addLorebookToWorld(worldId, lorebookUuid)`, `removeLorebookFromWorld(worldId, lorebookUuid)`.
+   - [x] Similar API for campaigns.
+   - [x] Fetch active lorebooks for a scene by merging world + campaign associations and loading entries.
+3. [x] Update `SceneService`/`Orchestrator`:
+   - [x] In `processUserInput`/AI response generation: gather active lorebooks, scan context (last N messages + scene description, character personalities), match keys, apply filters, and inject selected lore entries into the prompt.
+   - [x] Use token budgeting via existing `utils/countTokens`.
 
 #### API Endpoints (Express in `server.ts`)
 1. [x] `/api/lorebooks`:
@@ -100,11 +100,11 @@ Tasks are broken down by component. Prioritize backend first for API stability, 
    - [x] POST: Add entry (body: entry object).
    - [x] GET: List entries (from `LoreEntries` table filtered by `lorebookUuid`).
 4. [x] `/api/lorebooks/:uuid/entries/:entryId`:
-   - [x] PUT: Update entry.
+   - [x] PUT: Update entry (with proper boolean field handling).
    - [x] DELETE: Delete entry.
 5. [ ] `/api/lorebooks/import`: POST with file upload (Multer), parse JSON, normalize, create new lorebook (auto-generate lorebook UUID on import).
 6. [ ] `/api/lorebooks/:uuid/export`: GET, return JSON file download (export uses our interface; lorebook UUID is not included in exports by default if not desired).
-7. [ ] Integrate with world/campaign endpoints: update responses to include associated lorebooks via join tables; add PATCH endpoints for assigning/removing.
+7. [x] Integrate with world/campaign endpoints: update responses to include associated lorebooks via join tables; add endpoints for assigning/removing.
 
 #### Programmatic Creation
 1. [ ] Extend `CreatorAgent.ts`: add `generateLoreEntry(type, name, focus)` — use the LLM to create an entry object then call `LorebookService.addEntry`.
@@ -112,21 +112,22 @@ Tasks are broken down by component. Prioritize backend first for API stability, 
 3. [ ] In `Orchestrator`: on configured triggers (e.g., new NPC/event), auto-generate entries if enabled.
 
 #### Prompt Integration
-1. [ ] In `BaseAgent.ts`: add lore injection logic before templating.
-   - [ ] Scan last `scan_depth` messages for keys (regex/plaintext, case/matchWholeWords).
-   - [ ] Apply `selectiveLogic`, `probability` (`Math.random()`), and group selection (highest-order → scoring → weighted random).
-   - [ ] Recursion: configurable limit (default 5); simple substring scan for detection to start.
+1. [x] In `BaseAgent.ts` / `Orchestrator.ts`: add lore injection logic before templating.
+   - [x] Scan last `scan_depth` messages for keys (regex/plaintext, case/matchWholeWords).
+   - [x] Apply `selectiveLogic`, `probability` (`Math.random()`), and group selection (highest-order → scoring → weighted random).
+   - [x] Recursion: configurable limit (default 5); simple substring scan for detection.
    - [ ] Timed semantics: `sticky`/`cooldown`/`delay` states stored in `Scene.notes` (TBD persistence semantics).
-   - [ ] Insert selected entries based on `insertion_position`, respecting `token_budget` measured in tokens via `utils/countTokens`.
+   - [x] Insert selected entries based on `insertion_position`, respecting `token_budget` measured in tokens via `utils/countTokens`.
 2. [ ] Update LLM client to handle extended prompts where necessary.
 
 ### Frontend Tasks
 
 #### UI Components
-1. [ ] Create `LoreManager.tsx`: list lorebooks, create/edit modals, entry editor (form with fields for key, content, etc.).
-   - [ ] Use React-Table for entry list, sortable by order/displayIndex.
-2. [ ] Integrate into `WorldEditor`/`CampaignEditor`: dropdown/multi-select for assigning lorebooks (use join-table APIs).
-3. [ ] In `Chat.tsx`: display injected lore in debug mode (backend performs injection by default).
+1. [x] Create `LoreManager.tsx`: list lorebooks, create/edit modals, entry editor (form with fields for key, content, selective logic, etc.).
+   - [x] Use EntryEditor component for editing individual entries with all matching options (selective toggle, logic dropdown, optional filter field).
+   - [x] Support all entry fields: primary keywords, selective/logic controls, triggers, case-sensitive, whole-words matching.
+2. [x] Integrate into `WorldManager`/`CampaignEditor`: dropdown/multi-select controls for assigning lorebooks (use join-table APIs).
+3. [x] In `Chat.tsx`: backend performs lore injection automatically; debug logging shows matched entries in console.
 4. [ ] Add import/export buttons: file upload for import, download link for export.
 
 #### State and Socket.io
@@ -134,9 +135,10 @@ Tasks are broken down by component. Prioritize backend first for API stability, 
 2. [ ] Emit events for real-time updates (e.g., `lorebook.created`, `lorebook.updated`, `lorebook.entryAdded`, `lorebook.entryDeleted`) and broadcast payloads to connected clients.
 
 ### Testing and Misc
-1. [x] Unit tests: `LorebookService` (CRUD, normalization), prompt injection logic. Place tests under `backend/src/__tests__/lorebooks/`.
-2. [ ] E2E: import SillyTavern JSON, assign to world, test trigger in chat (defer embedding/vector tests).
+1. [x] Unit tests: `LorebookService` (CRUD, normalization), lore matching logic (selective, probability, ordering, budgeting). Tests in `backend/src/__tests__/lorebook.test.ts` and `backend/src/__tests__/`.  
+2. [x] Integration testing: Basic lore matching verified via backend console logging; keyword triggers work end-to-end.
 3. [x] Docs: update architecture docs to include new DB/tables and join tables.
+4. [ ] E2E: import SillyTavern JSON, assign to world, test trigger in chat (defer embedding/vector tests).
 
 ## Lorebook Schema
 

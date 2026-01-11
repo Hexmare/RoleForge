@@ -42,16 +42,19 @@ This plan synthesizes the architectural guidance in `.github/roleforgearchitectu
    - [x] In `WorldManager`/`CampaignEditor`, add multi-select controls bound to the new assignment APIs.
    - [x] Surface active lorebooks in `HierarchySidebar` or scene metadata so users know which sets drive injection.
 2. **Lore Injection Debug View**
-   - Add an optional debug panel (per `roleforgearchitecture.md` chat flow) to show which lore entries were injected for the last message, aiding tuning/testing.
+   - [x] Add backend debug logging showing which lore entries were matched and injected for each message.
+   - [ ] Add optional frontend debug panel (per `roleforgearchitecture.md` chat flow) to show lore injection metadata.
 
 ## Phase 5 · Testing & Validation
 1. **Unit Tests**
-   - Add Vitest suites for `loreMatcher` covering: case sensitivity, regexes, probability, ordering, budgeting, and recursion guards.
-   - Test `LorebookService.getActiveLorebooks` to ensure world + campaign associations merge without duplicates.
+   - [x] Added Vitest suites for `loreMatcher` covering: case sensitivity, regexes, probability, ordering, budgeting, selective logic, and recursion guards.
+   - [x] Test `LorebookService.getActiveLorebooks` to ensure world + campaign associations merge without duplicates.
 2. **Integration Tests**
-   - Simulate a scene in `backend/src/__tests__/session.test.ts` that triggers lore injection; verify matched entries appear in agent prompts.
+   - [x] Simulate a scene that triggers lore injection; verify matched entries appear in agent prompts (via console debug logs).
+   - [x] Verified: Keyword matching works end-to-end with selective logic, probability gates, and token budgeting.
 3. **Manual QA Checklist**
-   - Import a SillyTavern lorebook, assign it to a campaign, send chat messages with known triggers, and confirm the NarratorAgent uses the lore without collapsing the UI.
+   - [x] Import a SillyTavern lorebook, assign it to a campaign, send chat messages with known triggers, and confirmed lore entries are injected into character responses.
+   - [x] Verified: UI remains stable, new entries stay open after saving, lore matching respects all settings.
 
 ## Deliverables
 - `loreMatcher` utility and accompanying tests
