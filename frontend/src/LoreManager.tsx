@@ -379,8 +379,20 @@ function LoreManager({ version }: { version?: number }) {
                     <div style={{ width: 'calc(3.5em + 15px)' }} className="text-sm text-gray-200 text-center">{en.probability ?? en.trigger_percent ?? '-'}</div>
 
                     <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="menu_button square"
+                        title="Expand/Collapse Entry"
+                        onClick={() => setEditingEntry(
+                          editingEntry && (editingEntry.id || editingEntry.uid) === (en.id || en.uid)
+                            ? null
+                            : en
+                        )}
+                        style={{ marginRight: '6px' }}
+                      >
+                        <span className={`icon ${editingEntry && (editingEntry.id || editingEntry.uid) === (en.id || en.uid) ? 'fa-chevron-up' : 'fa-chevron-down'}`}></span>
+                      </button>
                       <button type="button" className="bg-slate-600 px-2 py-1 rounded" onClick={() => navigator.clipboard?.writeText(en.content || en.body || en.text || '')}>Copy</button>
-                      <button type="button" className="bg-yellow-600 px-2 py-1 rounded" onClick={() => handleEditEntry(en)}>Edit</button>
                       <button type="button" className="bg-indigo-600 px-2 py-1 rounded" onClick={async () => {
                         // duplicate
                         try {
