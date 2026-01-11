@@ -13,6 +13,7 @@ export interface AgentContext {
   worldState: Record<string, any>;
   sceneSummary?: string;
   lore?: string[];
+  formattedLore?: string;
   directorGuidance?: string;
   visualPrompt?: string;
   visualOpportunity?: boolean;

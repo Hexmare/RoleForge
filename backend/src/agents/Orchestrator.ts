@@ -72,6 +72,7 @@ export class Orchestrator {
 
   // Build a rich SessionContext for a given sceneId
   async buildSessionContext(sceneId: number) {
+    console.log(`\n========== [LORE ENGINE] Building SessionContext for Scene ${sceneId} ==========`);
     const sceneRow = this.db.prepare('SELECT * FROM Scenes WHERE id = ?').get(sceneId) as any;
     if (!sceneRow) return null;
 
@@ -80,18 +81,56 @@ export class Orchestrator {
     const worldRow = this.db.prepare('SELECT * FROM Worlds WHERE id = ?').get(campaignRow.worldId) as any;
 
     // Get active lorebooks for world and campaign
+    console.log(`[LORE] Building session context for scene ${sceneId}`);
+    console.log(`[LORE] World: ${worldRow.name} (${worldRow.id}), Campaign: ${campaignRow.name} (${campaignRow.id})`);
+    
     const activeLorebooks = LorebookService.getActiveLorebooks(worldRow.id, campaignRow.id);
+    console.log(`[LORE] Active lorebooks count: ${activeLorebooks.length}`);
+    activeLorebooks.forEach((lb: any) => {
+      console.log(`[LORE]   - Lorebook: "${lb.name}" (uuid: ${lb.uuid}, entries: ${(lb.entries || []).length})`);
+    });
+    
     const allEntries: any[] = [];
     for (const lb of activeLorebooks) {
       allEntries.push(...(lb.entries || []));
     }
+    console.log(`[LORE] Total entries available: ${allEntries.length}`);
 
     // Get lore context for matching
     const loreContext = SceneService.getLoreContext(sceneId, 4); // scanDepth 4
+    console.log(`[LORE] Lore context keys: ${loreContext ? Object.keys(loreContext).join(', ') : 'none'}`);
+    
     let matchedLore: string[] = [];
+    let formattedLore = '';
     if (loreContext && allEntries.length > 0) {
+      console.log(`[LORE] Matching entries against context...`);
       const result = matchLoreEntries(allEntries, loreContext, 4, 2048); // tokenBudget 2048
+      console.log(`[LORE] Match results: ${result.selectedEntries.length} selected out of ${allEntries.length} available entries`);
+      result.selectedEntries.forEach((entry: any, idx: number) => {
+        console.log(`[LORE]   SELECTED ${idx + 1}: "${entry.key}" (position: ${entry.insertion_position})`);
+      });
       matchedLore = result.selectedEntries.map(e => e.content);
+      
+      // Format lore with labeled sections (Option B) by insertion_position
+      const groupedByPosition: { [key: string]: string[] } = {};
+      for (const entry of result.selectedEntries) {
+        const pos = entry.insertion_position || 'Before Char Defs';
+        if (!groupedByPosition[pos]) {
+          groupedByPosition[pos] = [];
+        }
+        groupedByPosition[pos].push(entry.content);
+      }
+      
+      // Build formatted lore string
+      const sections: string[] = [];
+      for (const [position, contents] of Object.entries(groupedByPosition)) {
+        sections.push(`[LORE - ${position}]\n${contents.join('\n')}`);
+      }
+      formattedLore = sections.join('\n\n');
+      console.log(`[LORE] Formatted lore sections: ${Object.keys(groupedByPosition).join(', ')}`);
+      console.log(`[LORE] Total formatted lore length: ${formattedLore.length} chars`);
+    } else {
+      console.log(`[LORE] No lore context or entries found. loreContext: ${!!loreContext}, entries: ${allEntries.length}`);
     }
 
     // Campaign state
@@ -145,7 +184,8 @@ export class Orchestrator {
       worldState: { elapsedMinutes: campaignState.elapsedMinutes, dynamicFacts: campaignState.dynamicFacts },
       trackers: campaignState.trackers || { stats: {}, objectives: [], relationships: {} },
       locationMap: (sceneRow.locationRelationships ? JSON.parse(sceneRow.locationRelationships) : {}),
-      lore: matchedLore
+      lore: matchedLore,
+      formattedLore: formattedLore
     };
 
     // Seed orchestrator worldState from scene-level world state, falling back to campaign dynamic facts
@@ -302,6 +342,7 @@ export class Orchestrator {
       history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history,
       worldState: this.worldState,
       lore: this.getActivatedLore(userInput + ' ' + this.history.join(' ')),
+      formattedLore: sessionContext.formattedLore,
       userPersona: this.getPersona(personaName),
     };
 
@@ -590,25 +631,52 @@ export class Orchestrator {
         characterState: characterStates[charName],
         maxCompletionTokens: (characterAgent as any).getProfile().sampler?.max_completion_tokens || 400,
       };
-      console.log(`Calling CharacterAgent for ${charName}`);
+      console.log(`[CHARACTER] Calling CharacterAgent for "${charName}"`);
+      console.log(`[CHARACTER] Character profile: name=${characterData?.name}, includes lore: ${!!context.formattedLore}`);
       this.emitAgentStatus(charName, 'start', sceneId);
       const characterResponse = await characterAgent.run(characterContext);
-      console.log(`CharacterAgent for ${charName} completed`);
+      console.log(`[CHARACTER] CharacterAgent for "${charName}" completed`);
+      console.log(`[CHARACTER] Raw response length: ${characterResponse?.length || 0} chars`);
+      console.log(`[CHARACTER] First 200 chars of response: ${characterResponse?.substring(0, 200) || 'EMPTY'}`);
       this.emitAgentStatus(charName, 'complete', sceneId);
       if (characterResponse) {
         // Strip ```json wrapper if present
         let cleanedResponse = characterResponse.trim();
+        console.log(`[CHARACTER] Attempting JSON parse on response...`);
         if (cleanedResponse.startsWith('```json') && cleanedResponse.endsWith('```')) {
+          console.log(`[CHARACTER] Stripping \`\`\`json wrapper`);
           cleanedResponse = cleanedResponse.slice(7, -3).trim();
+          console.log(`[CHARACTER] After stripping: ${cleanedResponse.substring(0, 100)}...`);
         }
         let parsed;
         try {
+          console.log(`[CHARACTER] Parsing JSON...`);
           parsed = JSON.parse(cleanedResponse);
+          console.log(`[CHARACTER] JSON parse SUCCESS. Keys: ${Object.keys(parsed).join(', ')}`);
         } catch (e) {
-          // If parsing fails, treat as plain text
-          parsed = { response: cleanedResponse, characterState: null };
+          // If direct parsing fails, try to extract JSON object
+          console.warn(`[CHARACTER] JSON parse FAILED: ${e instanceof Error ? e.message : e}`);
+          console.log(`[CHARACTER] Attempting JSON extraction...`);
+          
+          // Try to find JSON object in response
+          const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              parsed = JSON.parse(jsonMatch[0]);
+              console.log(`[CHARACTER] JSON extraction SUCCESS. Keys: ${Object.keys(parsed).join(', ')}`);
+            } catch (innerE) {
+              console.warn(`[CHARACTER] JSON extraction also failed: ${innerE instanceof Error ? innerE.message : innerE}`);
+              console.log(`[CHARACTER] Treating response as plain text`);
+              parsed = { response: cleanedResponse, characterState: null };
+            }
+          } else {
+            // If parsing fails, treat as plain text
+            console.log(`[CHARACTER] No JSON object found. Treating response as plain text`);
+            parsed = { response: cleanedResponse, characterState: null };
+          }
         }
         const content = parsed.response;
+        console.log(`[CHARACTER] Extracted content length: ${content?.length || 0} chars`);
         responses.push({ sender: charName, content });
         this.history.push(`${charName}: ${content}`);
       }

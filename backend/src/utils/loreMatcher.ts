@@ -64,6 +64,8 @@ export function matchLoreEntries(
   tokenBudget: number = 2048
 ): LoreMatcherResult {
   const text = context.text.toLowerCase(); // Normalize for case-insensitive matching unless specified
+  console.log(`[LORE MATCHER] Starting match with ${entries.length} entries`);
+  console.log(`[LORE MATCHER] Context text (first 200 chars): ${text.substring(0, 200)}`);
   const selected: MatchedEntry[] = [];
   let totalTokens = 0;
 
@@ -71,9 +73,14 @@ export function matchLoreEntries(
   const grouped: { [group: string]: MatchedEntry[] } = {};
 
   for (const entry of entries) {
-    if (!entry.enabled) continue;
+    if (!entry.enabled) {
+      console.log(`[LORE MATCHER] Entry "${entry.key}" is disabled, skipping`);
+      continue;
+    }
 
+    console.log(`[LORE MATCHER] Checking entry: key=${JSON.stringify(entry.key)}, enabled=${entry.enabled}`);
     const matches = matchEntry(entry, text, context);
+    console.log(`[LORE MATCHER]   Matches found: ${matches.length}`);
     if (matches.length > 0) {
       const matchedEntry: MatchedEntry = { ...entry, matchedKeys: matches };
       if (entry.group) {
@@ -126,25 +133,38 @@ function matchEntry(entry: LoreEntry, text: string, context: LoreContext): strin
   const matchedKeys: string[] = [];
 
   // Check primary keys
+  console.log(`[LORE MATCHER]     Checking ${entry.key.length} keys: ${JSON.stringify(entry.key)}`);
   for (const key of entry.key) {
-    if (matchesKey(key, text, entry)) {
+    const matches = matchesKey(key, text, entry);
+    console.log(`[LORE MATCHER]       Key "${key}": ${matches ? 'MATCH' : 'no match'}`);
+    if (matches) {
       matchedKeys.push(key);
     }
   }
 
-  if (matchedKeys.length === 0) return [];
+  if (matchedKeys.length === 0) {
+    console.log(`[LORE MATCHER]     No primary keys matched`);
+    return [];
+  }
 
   // If selective, check optional_filter
-  if (entry.selective && entry.optional_filter) {
+  if (entry.selective && entry.optional_filter && entry.optional_filter.length > 0) {
+    console.log(`[LORE MATCHER]     Selective entry, checking ${entry.optional_filter.length} filters`);
     const filterMatches = entry.optional_filter.filter(filter => matchesKey(filter, text, entry));
     const logic = entry.selectiveLogic || 0;
     const passes = checkSelectiveLogic(filterMatches.length, entry.optional_filter.length, logic);
+    console.log(`[LORE MATCHER]     Filter logic (${logic}): ${filterMatches.length}/${entry.optional_filter.length} = ${passes ? 'PASS' : 'FAIL'}`);
     if (!passes) return [];
+  } else if (entry.selective && (!entry.optional_filter || entry.optional_filter.length === 0)) {
+    console.log(`[LORE MATCHER]     Entry marked selective but has no filters - treating as non-selective`);
   }
 
   // Probability check
   if (entry.useProbability && entry.probability !== undefined) {
-    if (Math.random() * 100 > entry.probability) return [];
+    const roll = Math.random() * 100;
+    const passes = roll <= entry.probability;
+    console.log(`[LORE MATCHER]     Probability check: ${roll.toFixed(1)}% vs ${entry.probability}% = ${passes ? 'PASS' : 'FAIL'}`);
+    if (!passes) return [];
   }
 
   return matchedKeys;
@@ -174,7 +194,9 @@ function matchesKey(key: string, text: string, entry: LoreEntry): boolean {
     pattern = new RegExp(escaped, flags);
   }
 
-  return pattern.test(text);
+  const result = pattern.test(text);
+  console.log(`[LORE MATCHER]         Pattern /${pattern.source}/${pattern.flags}: ${result ? '✓' : '✗'}`);
+  return result;
 }
 
 /**

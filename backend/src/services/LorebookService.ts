@@ -478,17 +478,27 @@ export const LorebookService = {
 
   // Get active lorebooks for a world and campaign, merging entries
   getActiveLorebooks(worldId: number, campaignId: number) {
+    console.log(`[LORE] LorebookService.getActiveLorebooks called for worldId=${worldId}, campaignId=${campaignId}`);
     // Get lorebook UUIDs assigned to world
     const worldLorebookUuids: string[] = db.prepare('SELECT lorebookUuid FROM World_Lorebooks WHERE worldId = ?').all(worldId).map((r: any) => r.lorebookUuid);
+    console.log(`[LORE] World lorebooks found: ${worldLorebookUuids.length} (${worldLorebookUuids.join(', ') || 'none'})`);
     // Get lorebook UUIDs assigned to campaign
     const campaignLorebookUuids: string[] = db.prepare('SELECT lorebookUuid FROM Campaign_Lorebooks WHERE campaignId = ?').all(campaignId).map((r: any) => r.lorebookUuid);
+    console.log(`[LORE] Campaign lorebooks found: ${campaignLorebookUuids.length} (${campaignLorebookUuids.join(', ') || 'none'})`);
     // Merge unique UUIDs (campaign overrides world if duplicate, but since UUIDs are unique, just combine)
     const allUuids = [...new Set([...worldLorebookUuids, ...campaignLorebookUuids])];
+    console.log(`[LORE] Total merged lorebook UUIDs: ${allUuids.length}`);
     const lorebooks: any[] = [];
     for (const uuid of allUuids) {
       const lb = this.getLorebook(uuid);
-      if (lb) lorebooks.push(lb);
+      if (lb) {
+        console.log(`[LORE] Loaded lorebook: ${lb.name} (${lb.uuid}), entries: ${(lb.entries || []).length}`);
+        lorebooks.push(lb);
+      } else {
+        console.warn(`[LORE] Failed to load lorebook with uuid: ${uuid}`);
+      }
     }
+    console.log(`[LORE] Total lorebooks loaded: ${lorebooks.length}`);
     return lorebooks;
   }
 };

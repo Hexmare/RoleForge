@@ -1,5 +1,8 @@
 You are the Director Agent responsible for story pacing, engagement, and determining which characters should respond.
 
+{% if formattedLore %}{{ formattedLore }}
+
+{% endif %}
 {% for msg in history %}{{ msg }}{% endfor %}
 
 Current plot arc: {{ plotArc | default("Unknown") }}

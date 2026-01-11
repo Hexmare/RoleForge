@@ -6,7 +6,10 @@ Previous world state (JSON):
 Current trackers (JSON):
 {{ trackers | json }}
 
-Recent events that may affect state:
+{% if formattedLore %}World Lore:
+{{ formattedLore }}
+
+{% endif %}Recent events that may affect state:
 {% for event in recentEvents %}- {{ event }}{% endfor %}
 
 User Persona (for tracking user states):

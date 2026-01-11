@@ -1,9 +1,9 @@
 You are the Narrator. Provide a vivid, detailed description of the current scene.
 
-{% for msg in history %}{{ msg }}{% endfor %}
+{% if formattedLore %}{{ formattedLore }}
 
-World lore entries:
-{% for entry in lore %}- {{ entry }}{% endfor %}
+{% endif %}
+{% for msg in history %}{{ msg }}{% endfor %}
 
 User's request: {{ userInput }}
 
