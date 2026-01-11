@@ -274,24 +274,24 @@ export const LorebookService = {
       entry.optional_filter ? JSON.stringify(entry.optional_filter) : existing.optional_filter,
       entry.title_memo ?? existing.title_memo,
       entry.content ?? existing.content,
-      entry.constant ? 1 : existing.constant,
-      entry.selective ? 1 : existing.selective,
+      entry.constant === undefined ? existing.constant : (entry.constant ? 1 : 0),
+      entry.selective === undefined ? existing.selective : (entry.selective ? 1 : 0),
       entry.selectiveLogic ?? existing.selectiveLogic,
       entry.insertion_order ?? existing.insertion_order,
       entry.insertion_position ?? existing.insertion_position,
       entry.outletName ?? existing.outletName,
       entry.enabled === undefined ? existing.enabled : (entry.enabled ? 1 : 0),
-      entry.preventRecursion ? 1 : existing.preventRecursion,
+      entry.preventRecursion === undefined ? existing.preventRecursion : (entry.preventRecursion ? 1 : 0),
       entry.probability ?? existing.probability,
-      entry.useProbability ? 1 : existing.useProbability,
+      entry.useProbability === undefined ? existing.useProbability : (entry.useProbability ? 1 : 0),
       entry.depth ?? existing.depth,
-      entry.caseSensitive ? 1 : existing.caseSensitive,
+      entry.caseSensitive === undefined ? existing.caseSensitive : (entry.caseSensitive ? 1 : 0),
       entry.matchWholeWords === undefined ? existing.matchWholeWords : (entry.matchWholeWords ? 1 : 0),
-      entry.vectorized ? 1 : existing.vectorized,
+      entry.vectorized === undefined ? existing.vectorized : (entry.vectorized ? 1 : 0),
       entry.group ?? existing.groupName,
-      entry.groupOverride ? 1 : existing.groupOverride,
+      entry.groupOverride === undefined ? existing.groupOverride : (entry.groupOverride ? 1 : 0),
       entry.groupWeight ?? existing.groupWeight,
-      entry.useGroupScoring ? 1 : existing.useGroupScoring,
+      entry.useGroupScoring === undefined ? existing.useGroupScoring : (entry.useGroupScoring ? 1 : 0),
       entry.automationId ?? existing.automationId,
       entry.sticky ?? existing.sticky,
       entry.cooldown ?? existing.cooldown,
@@ -304,7 +304,21 @@ export const LorebookService = {
     ];
 
     stmt.run(...params);
-    return db.prepare('SELECT * FROM LoreEntries WHERE id = ?').get(entryId);
+    const result: any = db.prepare('SELECT * FROM LoreEntries WHERE id = ?').get(entryId);
+    if (!result) return null;
+    const tryParse = (v: any) => {
+      if (v === null || v === undefined) return v;
+      if (typeof v !== 'string') return v;
+      try { return JSON.parse(v); } catch { return v; }
+    };
+    return {
+      ...result,
+      key: tryParse(result.key),
+      optional_filter: tryParse(result.optional_filter),
+      triggers: tryParse(result.triggers),
+      additional_matching_sources: tryParse(result.additional_matching_sources),
+      extensions: tryParse(result.extensions),
+    };
   },
 
   deleteEntry(lorebookUuid: string, entryId: number) {

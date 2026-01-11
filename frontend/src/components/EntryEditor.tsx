@@ -27,6 +27,8 @@ interface Entry {
   inclusionGroup?: string | null;
   order?: number;
   comment?: string;
+  selective?: number | boolean;
+  selectiveLogic?: number;
 }
 
 interface EntryEditorProps {
@@ -75,6 +77,8 @@ export default function EntryEditor({
   const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [collapsed, setCollapsed] = useState(initialCollapsed);
+  const [hasBeenEdited, setHasBeenEdited] = useState(false);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
   const autosaveTimer = useRef<number | null>(null);
   const id = entry.id ?? entry.uid;
   const isNewEntry = !id;
@@ -85,8 +89,12 @@ export default function EntryEditor({
   }, [initialForm]);
 
   useEffect(() => {
-    setCollapsed(initialCollapsed);
-  }, [initialCollapsed]);
+    // Once an entry has been edited, never auto-collapse it based on prop changes
+    // Only collapse new entries that have never been touched
+    if (!hasBeenEdited) {
+      setCollapsed(initialCollapsed);
+    }
+  }, [initialCollapsed, hasBeenEdited]);
 
   const sanitizedPayload = () => {
     const payload: any = { ...form }; 
@@ -111,6 +119,9 @@ export default function EntryEditor({
     // Ensure title/comment round-trips: map `comment` -> `title_memo` for backend
     payload.title_memo = payload.comment ?? payload.title_memo ?? null;
     if ('comment' in payload) delete payload.comment;
+    // Ensure selective and selectiveLogic are properly cast
+    payload.selective = payload.selective === 1 || payload.selective === true ? 1 : 0;
+    payload.selectiveLogic = Number(payload.selectiveLogic ?? 0);
     return payload;
   };
 
@@ -120,12 +131,23 @@ export default function EntryEditor({
       return next;
     });
     setIsDirty(true);
+    // Mark entry as edited so it won't auto-collapse
+    setHasBeenEdited(true);
+  };
+
+  const handleFieldFocus = (fieldName: string) => {
+    setFocusedField(fieldName);
+  };
+
+  const handleFieldBlur = () => {
+    setFocusedField(null);
   };
 
   const save = async () => {
     setSaving(true);
     try {
       const payload = sanitizedPayload();
+      console.log('[EntryEditor] Saving payload:', { selective: payload.selective, selectiveLogic: payload.selectiveLogic, ...payload });
       const target = isNewEntry
         ? `/api/lorebooks/${encodeURIComponent(String(lorebookId))}/entries`
         : `/api/lorebooks/${encodeURIComponent(String(lorebookId))}/entries/${encodeURIComponent(String(id))}`;
@@ -137,11 +159,15 @@ export default function EntryEditor({
       });
       if (!res.ok) throw new Error('Failed to save entry');
       const data = await res.json();
-      // update local form with server-canonical data (keep editor open)
+      console.log('[EntryEditor] Received response:', { selective: data.selective, selectiveLogic: data.selectiveLogic, ...data });
+      // Mark as edited to prevent auto-collapse
+      setHasBeenEdited(true);
+      // Keep entry open
+      setCollapsed(false);
+      // Always update form with server response
       setForm(normalizeArrays(data));
       setIsDirty(false);
       onSaved?.(data);
-      setIsDirty(false);
     } catch (err) {
       alert('Failed to save entry');
     } finally {
@@ -152,17 +178,21 @@ export default function EntryEditor({
   useEffect(() => {
     if (!isDirty) return;
     if (saving) return;
+    // Don't autosave while the user is actively editing a field
+    if (focusedField !== null) {
+      if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+      return;
+    }
     if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+    // Only autosave after user has stopped typing and left the field
     autosaveTimer.current = window.setTimeout(() => {
-      // call save but ignore errors here (save shows alerts)
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       save();
-    }, 1200) as unknown as number;
+    }, 1000) as unknown as number;
     return () => {
       if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
     };
-  // intentionally watch form and isDirty
-  }, [form, isDirty]);
+  }, [isDirty, focusedField, saving]);
 
   const del = async () => {
     if (isNewEntry) {
@@ -233,6 +263,8 @@ export default function EntryEditor({
               value={form.comment || ''}
               placeholder="Entry title / memo"
               onChange={(e) => updateForm({ comment: e.target.value })}
+              onFocus={() => handleFieldFocus('comment')}
+              onBlur={handleFieldBlur}
             />
             <select
               name="entryStateSelector"
@@ -332,6 +364,8 @@ export default function EntryEditor({
                   className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded"
                   value={form.content || ''}
                   onChange={(e) => updateForm({ content: e.target.value })}
+                  onFocus={() => handleFieldFocus('content')}
+                  onBlur={handleFieldBlur}
                 />
                 <div className="text-sm text-gray-400 mt-2">Tokens: {tokenCount}</div>
               </div>
@@ -343,14 +377,55 @@ export default function EntryEditor({
                     className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded"
                     value={form.key || ''}
                     onChange={(e) => updateForm({ key: e.target.value })}
+                    onFocus={() => handleFieldFocus('key')}
+                    onBlur={handleFieldBlur}
                   />
                 </div>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="accent-indigo-500"
+                      checked={form.selective === 1 || form.selective === true}
+                      onChange={(e) => updateForm({ selective: e.target.checked ? 1 : 0 })}
+                    />
+                    Selective
+                  </label>
+                  {(form.selective === 1 || form.selective === true) && (
+                    <select
+                      className="text_pole px-2 py-1 bg-gray-700 text-gray-100 rounded text-sm"
+                      value={form.selectiveLogic ?? 0}
+                      onChange={(e) => updateForm({ selectiveLogic: Number(e.target.value) })}
+                      title="Selective logic: 0=AND ANY, 1=AND ALL, 2=NOT ANY, 3=NOT ALL"
+                    >
+                      <option value={0}>AND ANY</option>
+                      <option value={1}>AND ALL</option>
+                      <option value={2}>NOT ANY</option>
+                      <option value={3}>NOT ALL</option>
+                    </select>
+                  )}
+                </div>
+                {(form.selective === 1 || form.selective === true) && (
+                  <div>
+                    <label className="block text-sm text-gray-300">Optional Filter (comma-separated)</label>
+                    <input
+                      className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded"
+                      placeholder="Additional keywords that must match based on logic"
+                      value={form.optional_filter || ''}
+                      onChange={(e) => updateForm({ optional_filter: e.target.value })}
+                      onFocus={() => handleFieldFocus('optional_filter')}
+                      onBlur={handleFieldBlur}
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm text-gray-300">Triggers (comma-separated)</label>
                   <input
                     className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded"
                     value={form.triggers || ''}
                     onChange={(e) => updateForm({ triggers: e.target.value })}
+                    onFocus={() => handleFieldFocus('triggers')}
+                    onBlur={handleFieldBlur}
                   />
                 </div>
                 <div className="flex items-center gap-3">

@@ -136,18 +136,27 @@ function LoreManager({ version }: { version?: number }) {
   };
 
   const handleEntrySaved = (_updated?: any) => {
-    setCreatingEntry(false);
     if (!_updated) return;
-    // update the entries array in-place to avoid full refetch/redraw
+    // Add the entry to the entries list if it's a newly created entry
     setEntries((prev) => {
       const idKey = _updated.id ?? _updated.uid ?? null;
       if (!idKey) return prev;
-      return prev.map((e) => {
-        const eId = e.id ?? e.uid ?? null;
-        if (eId === idKey) return _updated;
-        return e;
-      });
+      // Check if this entry already exists in the list
+      const exists = prev.some((e) => (e.id ?? e.uid) === idKey);
+      if (exists) {
+        // Update existing entry
+        return prev.map((e) => {
+          const eId = e.id ?? e.uid ?? null;
+          if (eId === idKey) return _updated;
+          return e;
+        });
+      } else {
+        // Add new entry to the list
+        return [...prev, _updated];
+      }
     });
+    // Only close the creating panel if it was a new entry that we successfully added
+    setCreatingEntry(false);
   };
 
   const handleEntryDeleted = async (_entry?: any) => {
@@ -398,6 +407,7 @@ function LoreManager({ version }: { version?: number }) {
                     key={`${entry.id || entry.uid || entry.uuid || entry.title || entry.key || entry.createdAt || idx}`}
                     entry={entry}
                     lorebookId={idFor(viewing)}
+                    initialCollapsed={true}
                     onSaved={handleEntrySaved}
                     onDeleted={handleEntryDeleted}
                     onCancel={() => {}}
