@@ -358,7 +358,7 @@ button:disabled {
 .avatar-meta .msg-num { font-weight:700; color:#cfe7f8 }
 .avatar-meta .token-count { color:#9aa6ad; font-weight:700 }
 .message-meta { font-size:12px; color:#bfc7cc; margin-bottom:6px }
-.message-text { white-space:pre-wrap; color:#e6eef2; line-height:1.4 }
+.message-text { white-space:pre-wrap; color:#e6eef2; line-height:1.4; overflow-wrap: break-word; }
 .ai .message-text { font-style: normal }
 .ai .message-body { background: rgba(255,255,255,0.02); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.04); }
 .ai.narrator .message-text { font-style: italic; color:#dce8ef }

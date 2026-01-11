@@ -114,24 +114,24 @@ function WorldManager({
     if (!editing.type) return;
 
     let url = '';
-    let method = editing.item ? 'PUT' : 'POST';
+    let method = editing.item && editing.item.id ? 'PUT' : 'POST';
     let body = {};
 
     switch (editing.type) {
       case 'world':
-        url = editing.item ? `/api/worlds/${(editing.item as World).id}` : '/api/worlds';
+        url = editing.item && editing.item.id ? `/api/worlds/${editing.item.id}` : '/api/worlds';
         body = { name: form.name, description: form.description };
         break;
       case 'campaign':
-        url = editing.item ? `/api/campaigns/${(editing.item as Campaign).id}` : `/api/worlds/${form.worldId}/campaigns`;
+        url = editing.item && editing.item.id ? `/api/campaigns/${editing.item.id}` : `/api/worlds/${form.worldId}/campaigns`;
         body = { name: form.name, description: form.description };
         break;
       case 'arc':
-        url = editing.item ? `/api/arcs/${(editing.item as Arc).id}` : `/api/campaigns/${form.campaignId}/arcs`;
+        url = editing.item && editing.item.id ? `/api/arcs/${editing.item.id}` : `/api/campaigns/${form.campaignId}/arcs`;
         body = { name: form.name, description: form.description };
         break;
       case 'scene':
-        url = editing.item ? `/api/scenes/${(editing.item as Scene).id}` : `/api/arcs/${form.arcId}/scenes`;
+        url = editing.item && editing.item.id ? `/api/scenes/${editing.item.id}` : `/api/arcs/${form.arcId}/scenes`;
         body = { title: form.title, description: form.description, location: form.location };
         break;
     }
