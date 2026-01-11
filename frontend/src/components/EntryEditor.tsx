@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import './entryEditor.css';
 import { countTokens } from '../utils/tokenCounter';
 
 interface Entry {
@@ -80,94 +81,95 @@ export default function EntryEditor({ entry, lorebookId, onSaved, onDeleted, onC
 
   return (
     <div className="bg-gray-900 p-4 rounded text-gray-100 border border-gray-800">
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 mb-4">
-        <div>
-          <label className="block text-sm text-gray-300">Primary Keywords</label>
-          <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" value={form.key || ''} onChange={(e) => setForm({ ...form, key: e.target.value })} />
-          <div className="flex gap-3 mt-3">
-            <div className="flex-1">
-              <label className="block text-sm text-gray-300">Optional Filter</label>
-              <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" value={form.optional_filter || ''} onChange={(e) => setForm({ ...form, optional_filter: e.target.value })} />
+      <div className="inline-drawer wide100p">
+        <div className="inline-drawer-header gap5px padding0">
+          <div className="gap5px world_entry_thin_controls wide100p alignitemscenter">
+            <div className="inline-drawer-toggle fa-fw fa-solid inline-drawer-icon interactable down fa-circle-chevron-down" role="button" onClick={() => { /* no-op toggle in editor */ }} />
+            <div className="fa-solid fa-toggle-on killSwitch" name="entryKillSwitch" title="Toggle entry's active state."></div>
+            <div className="flex-container alignitemscenter wide100p" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="WIEntryTitleAndStatus flex-container flex1 alignitemscenter" style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                <div className="flex-container flex1">
+                  <textarea className="text_pole" rows={1} name="comment" placeholder="Entry Title/Memo" value={form.title_memo || form.key || ''} onChange={(e) => setForm({ ...form, title_memo: e.target.value })} />
+                </div>
+                <select name="entryStateSelector" className="text_pole widthNatural margin0" value={(form as any).entryStateSelector || 'normal'} onChange={(e) => setForm({ ...form, entryStateSelector: e.target.value })}>
+                  <option value="constant">🔵</option>
+                  <option value="normal">🟢</option>
+                  <option value="vectorized">🔗</option>
+                </select>
+              </div>
+              <div className="WIEnteryHeaderControls flex-container" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div name="PositionBlock" className="world_entry_form_control world_entry_form_radios wi-enter-footer-text">
+                  <label className="WIEntryHeaderTitleMobile">Position:</label>
+                  <select name="position" className="text_pole widthNatural margin0" value={(form as any).position ?? ''} onChange={(e) => setForm({ ...form, position: e.target.value })}>
+                    <option value="0">↑Char</option>
+                    <option value="1">↓Char</option>
+                    <option value="5">↑EM</option>
+                    <option value="6">↓EM</option>
+                    <option value="2">↑AN</option>
+                    <option value="3">↓AN</option>
+                    <option value="4">@D</option>
+                    <option value="7">➡️ Outlet</option>
+                  </select>
+                </div>
+                <div className="world_entry_form_control wi-enter-footer-text flex-container flexNoGap">
+                  <label className="WIEntryHeaderTitleMobile">Depth:</label>
+                  <input title="Depth" className="text_pole wideMax100px margin0" type="number" name="depth" value={form.depth ?? ''} onChange={(e) => setForm({ ...form, depth: e.target.value ? +e.target.value : undefined })} style={{ width: 'calc(3em + 15px)' }} />
+                </div>
+                <div className="world_entry_form_control wi-enter-footer-text  flex-container flexNoGap">
+                  <label className="WIEntryHeaderTitleMobile">Order:</label>
+                  <input title="Order" className="text_pole wideMax100px margin0" type="number" name="order" value={form.insertion_order ?? 0} onChange={(e) => setForm({ ...form, insertion_order: +e.target.value })} style={{ width: 'calc(3em + 15px)' }} />
+                </div>
+                <div className="world_entry_form_control wi-enter-footer-text flex-container flexNoGap probabilityContainer">
+                  <label className="WIEntryHeaderTitleMobile">Trigger %:</label>
+                  <input title="Probability" className="text_pole wideMax100px margin0" type="number" name="probability" value={form.probability ?? 100} onChange={(e) => setForm({ ...form, probability: +e.target.value })} style={{ width: 'calc(3em + 15px)' }} />
+                </div>
+              </div>
             </div>
-            <div className="w-40">
-              <label className="block text-sm text-gray-300">Inclusion Group</label>
-              <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" value={(form as any).inclusionGroup || ''} onChange={(e) => setForm({ ...form, inclusionGroup: e.target.value })} />
-            </div>
+            <button title="Move/Copy Entry" className="menu_button move_entry_button fa-solid fa-right-left interactable" type="button" onClick={() => { /* noop */ }}>Move</button>
+            <button title="Duplicate" className="menu_button duplicate_entry_button fa-solid fa-paste interactable" type="button" onClick={async () => {
+              try {
+                const id = lorebookId;
+                await fetch(`/api/lorebooks/${encodeURIComponent(String(id))}/entries`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: form.title_memo || form.key, content: form.content }) });
+              } catch (e) { console.warn('duplicate failed', e); }
+            }}>Dup</button>
+            <button title="Delete" className="menu_button delete_entry_button fa-solid fa-trash-can interactable" type="button" onClick={del}>Del</button>
           </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="block text-sm text-gray-300">Scan Depth</label>
-            <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" type="number" value={form.depth ?? 0} onChange={(e) => setForm({ ...form, depth: +e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-300">Order</label>
-            <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" type="number" value={form.insertion_order ?? 0} onChange={(e) => setForm({ ...form, insertion_order: +e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-300">Group Weight</label>
-            <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" type="number" value={form.groupWeight ?? 100} onChange={(e) => setForm({ ...form, groupWeight: +e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-300">Probability</label>
-            <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" type="number" value={form.probability ?? 100} onChange={(e) => setForm({ ...form, probability: +e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-300">Insertion Position</label>
-            <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" value={form.insertion_position || ''} onChange={(e) => setForm({ ...form, insertion_position: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-300">Outlet Name</label>
-            <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" value={form.outletName || ''} onChange={(e) => setForm({ ...form, outletName: e.target.value })} />
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 mb-4">
-        <div>
-          <label className="block text-sm text-gray-300">Content</label>
-          <textarea rows={8} className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" value={form.content || ''} onChange={(e) => setForm({ ...form, content: e.target.value })} />
-          <div className="text-sm text-gray-400 mt-2">Tokens: {useMemo(() => countTokens(form.content || ''), [form.content])} (accurate)</div>
-        </div>
-
-        <div className="space-y-3">
-          <label className="block text-sm text-gray-300">Matching Options</label>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-indigo-500" checked={!!form.caseSensitive} onChange={(e) => setForm({ ...form, caseSensitive: e.target.checked ? 1 : 0 })} /> Case-Sensitive</label>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-indigo-500" checked={!!form.matchWholeWords} onChange={(e) => setForm({ ...form, matchWholeWords: e.target.checked ? 1 : 0 })} /> Whole Words</label>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-300">Triggers (comma-separated)</label>
-            <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" value={form.triggers || ''} onChange={(e) => setForm({ ...form, triggers: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-300">Additional Matching Sources</label>
-            <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" value={form.additional_matching_sources || ''} onChange={(e) => setForm({ ...form, additional_matching_sources: e.target.value })} />
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-indigo-500" checked={!!form.sticky} onChange={(e) => setForm({ ...form, sticky: e.target.checked ? 1 : 0 })} /> Sticky</label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-indigo-500" checked={useGroupScoring} onChange={(e) => { setUseGroupScoring(e.target.checked); (form as any).useGroupScoring = e.target.checked ? 1 : 0; setForm({ ...form }); }} /> Use Group Scoring</label>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-sm text-gray-300">Cooldown</label>
-              <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" type="number" value={form.cooldown ?? 0} onChange={(e) => setForm({ ...form, cooldown: +e.target.value })} />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-300">Delay</label>
-              <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" type="number" value={form.delay ?? 0} onChange={(e) => setForm({ ...form, delay: +e.target.value })} />
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm">Enabled <input type="checkbox" className="accent-indigo-500" checked={form.enabled === 1 || form.enabled === true} onChange={(e) => setForm({ ...form, enabled: e.target.checked ? 1 : 0 })} /></label>
+          <div className="inline-drawer-content inline-drawer-outlet flex-container paddingBottom5px wide100p" style={{ display: 'block' }}>
+            {/* body follows below */}
           </div>
         </div>
       </div>
 
-      <div className="flex justify-end gap-3">
+      <div className="mt-3">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4">
+          <div>
+            <label className="block text-sm text-gray-300">Content</label>
+            <textarea rows={8} className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" value={form.content || ''} onChange={(e) => setForm({ ...form, content: e.target.value })} />
+            <div className="text-sm text-gray-400 mt-2">Tokens: {useMemo(() => countTokens(form.content || ''), [form.content])}</div>
+          </div>
+
+          <div className="space-y-3">
+            <label className="block text-sm text-gray-300">Matching Options</label>
+            <div>
+              <label className="block text-sm text-gray-300">Primary Keywords (comma-separated)</label>
+              <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" value={form.key || ''} onChange={(e) => setForm({ ...form, key: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-300">Triggers (comma-separated)</label>
+              <input className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded" value={form.triggers || ''} onChange={(e) => setForm({ ...form, triggers: e.target.value })} />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-indigo-500" checked={!!form.caseSensitive} onChange={(e) => setForm({ ...form, caseSensitive: e.target.checked ? 1 : 0 })} /> Case-Sensitive</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-indigo-500" checked={!!form.matchWholeWords} onChange={(e) => setForm({ ...form, matchWholeWords: e.target.checked ? 1 : 0 })} /> Whole Words</label>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-sm">Enabled <input type="checkbox" className="accent-indigo-500" checked={form.enabled === 1 || form.enabled === true} onChange={(e) => setForm({ ...form, enabled: e.target.checked ? 1 : 0 })} /></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-3 mt-4">
         <button className="bg-gray-600 px-3 py-1 rounded" onClick={onCancel}>Close</button>
         <button className="bg-slate-600 px-3 py-1 rounded" onClick={() => navigator.clipboard?.writeText(form.content || '')}>Copy</button>
         <button className="bg-red-700 px-3 py-1 rounded" onClick={del}>Delete</button>
