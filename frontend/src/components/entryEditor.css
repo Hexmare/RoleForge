@@ -144,3 +144,224 @@ input[type="number"], select { background: rgba(255,255,255,0.01); border:1px so
 .WIEntryHeaderTitlesPC { padding:0 3.5rem; display:flex; align-items:center; gap:8px; justify-content:center; }
 .WIEntryHeaderTitlesPC small { color:#8f9aa0; }
 
+.entry-editor-card {
+  background: #10141a;
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 12px;
+  padding: 10px;
+  color: #e2e8f0;
+}
+
+.entry-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #12161c;
+  border: 1px solid rgba(255,255,255,0.04);
+}
+
+.entry-collapse-toggle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.02);
+  color: #cbd5f5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.entry-enable-toggle {
+  width: 46px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.05);
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  position: relative;
+}
+
+.entry-enable-toggle.enabled {
+  background: rgba(59,130,246,0.25);
+  border-color: rgba(59,130,246,0.6);
+}
+
+.entry-enable-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+
+.entry-enable-toggle.enabled .entry-enable-dot {
+  transform: translateX(18px);
+}
+
+.entry-header-input {
+  flex: 1 1 220px;
+  min-width: 180px;
+  max-width: 320px;
+  height: 36px;
+}
+
+.entry-header-row .text_pole {
+  background: #181c21;
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  height: 34px;
+  padding: 0 8px;
+}
+
+.entry-state-select,
+.entry-position-select {
+  width: 86px;
+}
+
+.entry-order-input,
+.entry-probability-input {
+  width: 70px;
+}
+
+.entry-depth-placeholder {
+  width: 52px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px dashed rgba(255,255,255,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.entry-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.entry-action-btn {
+  font-size: 0.8rem;
+  padding: 6px 8px;
+}
+
+.entry-expanded-body {
+  margin-top: 12px;
+}
+
+.entry-meta-chip {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.entry-arrow-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: #1c2229;
+  color: #e2e8f0;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.entry-arrow-btn:hover:enabled {
+  background: #292f39;
+}
+
+.entry-arrow-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.lore-manager-header-card {
+  background: #10141a;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  padding: 18px 20px;
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.6);
+  margin-bottom: 24px;
+}
+
+.lore-manager-header-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lore-manager-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lore-manager-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lore-manager-toolbar {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lore-manager-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lore-manager-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lore-manager-toolbar-group label {
+  font-size: 12px;
+  color: #bfcbd1;
+}
+
+.entries-section {
+  background: #0e1116;
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.entries-section h3 {
+  color: #e2e8f0;
+}
+
+.entries-section .entries-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.entries-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+

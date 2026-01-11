@@ -804,3 +804,144 @@ input {
 .read-the-docs {
   color: #888;
 }
+
+.lore-manager-header-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.8);
+  border-radius: 16px;
+  padding: 1.1rem 1.3rem;
+  backdrop-filter: blur(16px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.lore-manager-header-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.lore-manager-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.lore-manager-header-primary,
+.lore-manager-header-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.15);
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.lore-manager-header-primary {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.6);
+  color: #f8fafc;
+}
+
+.lore-manager-header-primary:hover {
+  border-color: rgba(59, 130, 246, 0.9);
+}
+
+.lore-manager-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.lore-manager-header-action.active {
+  border-color: rgba(34, 197, 94, 0.6);
+  color: #a7f3d0;
+}
+
+.lore-manager-header-action.red {
+  border-color: rgba(248, 113, 113, 0.8);
+  background: rgba(248, 113, 113, 0.15);
+  color: #fecaca;
+}
+
+.lore-manager-header-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lore-manager-toolbar {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 1rem;
+}
+
+.lore-manager-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.lore-manager-toolbar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.lore-manager-toolbar-group label {
+  margin-left: 0.1rem;
+}
+
+.lore-manager-create-entry-btn {
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.15);
+  color: #ecfccb;
+}
+
+.lore-manager-pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.entries-section {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 15px 35px rgba(15, 23, 42, 0.45);
+}
+
+.entries-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.entry-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.entry-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.4);
+}
+
+.entries-empty {
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+}
