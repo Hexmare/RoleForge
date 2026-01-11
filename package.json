@@ -36,6 +36,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
     "gpt-tokenizer": "^3.4.0"
   }
 }

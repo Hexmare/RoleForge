@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/solid';
 import './entryEditor.css';
 import { countTokens } from '../utils/tokenCounter';
 
@@ -213,7 +214,13 @@ export default function EntryEditor({
               className={`inline-drawer-toggle fa-fw fa-solid inline-drawer-icon interactable ${collapsed ? 'down' : 'up'}`}
               onClick={() => setCollapsed((prev) => !prev)}
               aria-label={collapsed ? 'Expand entry' : 'Collapse entry'}
-            />
+            >
+              {collapsed ? (
+                <ChevronDownIcon className="w-5 h-5 text-gray-300 transition-colors duration-150" />
+              ) : (
+                <ChevronUpIcon className="w-5 h-5 text-gray-800 transition-colors duration-150" />
+              )}
+            </button>
             <button
               type="button"
               className={`fa-solid ${form.enabled === 1 || form.enabled === true ? 'fa-toggle-on' : 'fa-toggle-off'} killSwitch`}
