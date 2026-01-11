@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './entryEditor.css';
 import { countTokens } from '../utils/tokenCounter';
 
@@ -44,6 +44,17 @@ const normalizeArrays = (entry: Entry) => {
     const value = base[field];
     if (Array.isArray(value)) {
       base[field] = value.join(',');
+    } else if (typeof value === 'string') {
+      const s = value.trim();
+      // handle JSON-encoded arrays stored as strings like '["a","b"]'
+      if (s.startsWith('[') && s.endsWith(']')) {
+        try {
+          const parsed = JSON.parse(s);
+          if (Array.isArray(parsed)) base[field] = parsed.join(',');
+        } catch (e) {
+          // leave as-is
+        }
+      }
     }
   });
   base.comment = base.comment ?? base.title_memo ?? '';
@@ -60,32 +71,54 @@ export default function EntryEditor({
 }: EntryEditorProps) {
   const initialForm = useMemo(() => normalizeArrays(entry), [entry]);
   const [form, setForm] = useState<any>(initialForm);
+  const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [collapsed, setCollapsed] = useState(initialCollapsed);
+  const autosaveTimer = useRef<number | null>(null);
   const id = entry.id ?? entry.uid;
   const isNewEntry = !id;
 
   useEffect(() => {
     setForm(initialForm);
+    setIsDirty(false);
   }, [initialForm]);
 
   useEffect(() => {
     setCollapsed(initialCollapsed);
-  }, [initialCollapsed, entry]);
+  }, [initialCollapsed]);
 
   const sanitizedPayload = () => {
     const payload: any = { ...form }; 
     const listFields = ['key', 'optional_filter', 'triggers', 'additional_matching_sources'];
     listFields.forEach((field) => {
-      if (typeof payload[field] === 'string') {
-        payload[field] = payload[field]
-          .split(',')
-          .map((part: string) => part.trim())
-          .filter((part: string) => part.length > 0);
+      const v = payload[field];
+      if (typeof v === 'string') {
+        const s = v.trim();
+        if (s.startsWith('[') && s.endsWith(']')) {
+          try {
+            const parsed = JSON.parse(s);
+            if (Array.isArray(parsed)) payload[field] = parsed;
+            else payload[field] = s.length ? s.split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0) : [];
+          } catch (e) {
+            payload[field] = s.length ? s.split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0) : [];
+          }
+        } else {
+          payload[field] = s.length ? s.split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0) : [];
+        }
       }
     });
-    if ('title_memo' in payload) delete payload.title_memo;
+    // Ensure title/comment round-trips: map `comment` -> `title_memo` for backend
+    payload.title_memo = payload.comment ?? payload.title_memo ?? null;
+    if ('comment' in payload) delete payload.comment;
     return payload;
+  };
+
+  const updateForm = (up: any) => {
+    setForm((prev: any) => {
+      const next = typeof up === 'function' ? up(prev) : { ...prev, ...up };
+      return next;
+    });
+    setIsDirty(true);
   };
 
   const save = async () => {
@@ -103,14 +136,32 @@ export default function EntryEditor({
       });
       if (!res.ok) throw new Error('Failed to save entry');
       const data = await res.json();
+      // update local form with server-canonical data (keep editor open)
+      setForm(normalizeArrays(data));
+      setIsDirty(false);
       onSaved?.(data);
-      setCollapsed(true);
+      setIsDirty(false);
     } catch (err) {
       alert('Failed to save entry');
     } finally {
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!isDirty) return;
+    if (saving) return;
+    if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = window.setTimeout(() => {
+      // call save but ignore errors here (save shows alerts)
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      save();
+    }, 1200) as unknown as number;
+    return () => {
+      if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+    };
+  // intentionally watch form and isDirty
+  }, [form, isDirty]);
 
   const del = async () => {
     if (isNewEntry) {
@@ -174,13 +225,13 @@ export default function EntryEditor({
               className="text_pole entry-title-input"
               value={form.comment || ''}
               placeholder="Entry title / memo"
-              onChange={(e) => setForm({ ...form, comment: e.target.value })}
+              onChange={(e) => updateForm({ comment: e.target.value })}
             />
             <select
               name="entryStateSelector"
               className="text_pole entry-state-select"
               value={(form as any).entryStateSelector || 'normal'}
-              onChange={(e) => setForm({ ...form, entryStateSelector: e.target.value })}
+              onChange={(e) => updateForm({ entryStateSelector: e.target.value })}
               title="Entry state"
             >
               <option value="constant">🔵</option>
@@ -193,7 +244,7 @@ export default function EntryEditor({
                 name="position"
                 className="text_pole entry-position-select"
                 value={(form as any).position ?? ''}
-                onChange={(e) => setForm({ ...form, position: e.target.value })}
+                onChange={(e) => updateForm({ position: e.target.value })}
               >
                 <option value="0">↑Char</option>
                 <option value="1">↓Char</option>
@@ -212,7 +263,7 @@ export default function EntryEditor({
                 type="number"
                 name="depth"
                 value={form.depth ?? entry.depth ?? ''}
-                onChange={(e) => setForm({ ...form, depth: Number(e.target.value) })}
+                onChange={(e) => updateForm({ depth: Number(e.target.value) })}
               />
             </div>
             <div className="entry-field" title="Order">
@@ -222,7 +273,7 @@ export default function EntryEditor({
                 type="number"
                 name="order"
                 value={form.insertion_order ?? entry.insertion_order ?? entry.order ?? ''}
-                onChange={(e) => setForm({ ...form, insertion_order: Number(e.target.value) })}
+                onChange={(e) => updateForm({ insertion_order: Number(e.target.value) })}
               />
             </div>
             <div className="entry-field" title="Trigger %">
@@ -232,7 +283,7 @@ export default function EntryEditor({
                 type="number"
                 name="probability"
                 value={form.probability ?? 100}
-                onChange={(e) => setForm({ ...form, probability: Number(e.target.value) })}
+                onChange={(e) => updateForm({ probability: Number(e.target.value) })}
               />
             </div>
             <div className="entry-header-actions">
@@ -273,7 +324,7 @@ export default function EntryEditor({
                   rows={8}
                   className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded"
                   value={form.content || ''}
-                  onChange={(e) => setForm({ ...form, content: e.target.value })}
+                  onChange={(e) => updateForm({ content: e.target.value })}
                 />
                 <div className="text-sm text-gray-400 mt-2">Tokens: {tokenCount}</div>
               </div>
@@ -284,7 +335,7 @@ export default function EntryEditor({
                   <input
                     className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded"
                     value={form.key || ''}
-                    onChange={(e) => setForm({ ...form, key: e.target.value })}
+                    onChange={(e) => updateForm({ key: e.target.value })}
                   />
                 </div>
                 <div>
@@ -292,7 +343,7 @@ export default function EntryEditor({
                   <input
                     className="w-full mt-1 p-2 bg-gray-800 text-gray-100 rounded"
                     value={form.triggers || ''}
-                    onChange={(e) => setForm({ ...form, triggers: e.target.value })}
+                    onChange={(e) => updateForm({ triggers: e.target.value })}
                   />
                 </div>
                 <div className="flex items-center gap-3">
@@ -301,7 +352,7 @@ export default function EntryEditor({
                       type="checkbox"
                       className="accent-indigo-500"
                       checked={!!form.caseSensitive}
-                      onChange={(e) => setForm({ ...form, caseSensitive: e.target.checked ? 1 : 0 })}
+                      onChange={(e) => updateForm({ caseSensitive: e.target.checked ? 1 : 0 })}
                     />
                     Case-Sensitive
                   </label>
@@ -310,7 +361,7 @@ export default function EntryEditor({
                       type="checkbox"
                       className="accent-indigo-500"
                       checked={!!form.matchWholeWords}
-                      onChange={(e) => setForm({ ...form, matchWholeWords: e.target.checked ? 1 : 0 })}
+                      onChange={(e) => updateForm({ matchWholeWords: e.target.checked ? 1 : 0 })}
                     />
                     Whole Words
                   </label>
@@ -322,26 +373,13 @@ export default function EntryEditor({
                       type="checkbox"
                       className="accent-indigo-500"
                       checked={form.enabled === 1 || form.enabled === true}
-                      onChange={(e) => setForm({ ...form, enabled: e.target.checked ? 1 : 0 })}
+                      onChange={(e) => updateForm({ enabled: e.target.checked ? 1 : 0 })}
                     />
                   </label>
                 </div>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-4 w-full">
-              <button
-                type="button"
-                className="bg-gray-600 px-3 py-1 rounded"
-                onClick={() => {
-                  setCollapsed(true);
-                  onCancel?.();
-                }}
-              >
-                Close
-              </button>
-              <button type="button" className="bg-slate-600 px-3 py-1 rounded" onClick={() => navigator.clipboard?.writeText(form.content || '')}>
-                Copy
-              </button>
               <button type="button" className="bg-green-600 px-3 py-1 rounded" onClick={save} disabled={saving}>
                 {saving ? 'Saving...' : 'Save'}
               </button>

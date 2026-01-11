@@ -135,9 +135,19 @@ function LoreManager({ version }: { version?: number }) {
     }
   };
 
-  const handleEntrySaved = async (_updated?: any) => {
-    if (viewing) await fetchEntries(viewing);
+  const handleEntrySaved = (_updated?: any) => {
     setCreatingEntry(false);
+    if (!_updated) return;
+    // update the entries array in-place to avoid full refetch/redraw
+    setEntries((prev) => {
+      const idKey = _updated.id ?? _updated.uid ?? null;
+      if (!idKey) return prev;
+      return prev.map((e) => {
+        const eId = e.id ?? e.uid ?? null;
+        if (eId === idKey) return _updated;
+        return e;
+      });
+    });
   };
 
   const handleEntryDeleted = async (_entry?: any) => {
