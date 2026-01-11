@@ -156,110 +156,86 @@ export default function EntryEditor({
     <div className="world_entry" data-uid={id ?? 'new'}>
       <form className="world_entry_form wi-card-entry" onSubmit={(e) => e.preventDefault()}>
         <div className="inline-drawer wide100p">
-          <div className="inline-drawer-header gap5px padding0">
-            <div className="gap5px world_entry_thin_controls wide100p alignitemscenter">
-              <div
-                className={`inline-drawer-toggle fa-fw fa-solid inline-drawer-icon interactable ${collapsed ? 'down' : 'up'}`}
-                role="button"
-                tabIndex={0}
-                onClick={() => setCollapsed((prev) => !prev)}
-              />
-              <div
-                className={`fa-solid ${form.enabled === 1 || form.enabled === true ? 'fa-toggle-on' : 'fa-toggle-off'} killSwitch`}
-                title="Toggle entry's active state"
-                onClick={toggleEntryEnabled}
-                role="button"
-                tabIndex={0}
-              />
-              <div className="flex-container alignitemscenter wide100p">
-                <div className="WIEntryTitleAndStatus flex-container flex1 alignitemscenter">
-                  <div className="flex-container flex1">
-                    <textarea
-                      className="text_pole"
-                      rows={1}
-                      value={form.comment || ''}
-                      placeholder="Entry Title/Memo"
-                      onChange={(e) => setForm({ ...form, comment: e.target.value })}
-                    />
-                  </div>
-                  <select
-                    name="entryStateSelector"
-                    className="text_pole widthNatural margin0"
-                    value={(form as any).entryStateSelector || 'normal'}
-                    onChange={(e) => setForm({ ...form, entryStateSelector: e.target.value })}
-                  >
-                    <option value="constant">🔵</option>
-                    <option value="normal">🟢</option>
-                    <option value="vectorized">🔗</option>
-                  </select>
-                </div>
-                <div className="WIEnteryHeaderControls flex-container">
-                  <div className="world_entry_form_control world_entry_form_radios wi-enter-footer-text">
-                    <label className="WIEntryHeaderTitleMobile" htmlFor="position">
-                      Position:
-                    </label>
-                    <select
-                      name="position"
-                      className="text_pole widthNatural margin0"
-                      value={(form as any).position ?? ''}
-                      onChange={(e) => setForm({ ...form, position: e.target.value })}
-                    >
-                      <option value="0">↑Char</option>
-                      <option value="1">↓Char</option>
-                      <option value="5">↑EM</option>
-                      <option value="6">↓EM</option>
-                      <option value="2">↑AN</option>
-                      <option value="3">↓AN</option>
-                      <option value="4">@D</option>
-                      <option value="7">➡️ Outlet</option>
-                    </select>
-                  </div>
-                  <div className="world_entry_form_control wi-enter-footer-text flex-container flexNoGap">
-                    <label className="WIEntryHeaderTitleMobile" htmlFor="depth">
-                      Depth:
-                    </label>
-                    <input
-                      title="Depth"
-                      className="text_pole wideMax100px margin0"
-                      type="number"
-                      name="depth"
-                      value={form.depth ?? entry.depth ?? ''}
-                      onChange={(e) => setForm({ ...form, depth: Number(e.target.value) })}
-                      style={{ width: 'calc(3em + 15px)' }}
-                    />
-                  </div>
-                  <div className="world_entry_form_control wi-enter-footer-text flex-container flexNoGap">
-                    <label className="WIEntryHeaderTitleMobile" htmlFor="order">
-                      Order:
-                    </label>
-                    <input
-                      title="Order"
-                      className="text_pole wideMax100px margin0"
-                      type="number"
-                      name="order"
-                      value={form.insertion_order ?? entry.insertion_order ?? entry.order ?? ''}
-                      onChange={(e) => setForm({ ...form, insertion_order: Number(e.target.value) })}
-                      style={{ width: 'calc(3em + 15px)' }}
-                    />
-                  </div>
-                  <div className="world_entry_form_control wi-enter-footer-text flex-container flexNoGap probabilityContainer">
-                    <label className="WIEntryHeaderTitleMobile" htmlFor="probability">
-                      Trigger %:
-                    </label>
-                    <input
-                      title="Probability"
-                      className="text_pole wideMax100px margin0"
-                      type="number"
-                      name="probability"
-                      value={form.probability ?? 100}
-                      onChange={(e) => setForm({ ...form, probability: Number(e.target.value) })}
-                      style={{ width: 'calc(3em + 15px)' }}
-                    />
-                  </div>
-                </div>
-              </div>
+          <div className="entry-header-row-single">
+            <button
+              type="button"
+              className={`inline-drawer-toggle fa-fw fa-solid inline-drawer-icon interactable ${collapsed ? 'down' : 'up'}`}
+              onClick={() => setCollapsed((prev) => !prev)}
+              aria-label={collapsed ? 'Expand entry' : 'Collapse entry'}
+            />
+            <button
+              type="button"
+              className={`fa-solid ${form.enabled === 1 || form.enabled === true ? 'fa-toggle-on' : 'fa-toggle-off'} killSwitch`}
+              title="Toggle entry's active state"
+              onClick={toggleEntryEnabled}
+            />
+            <input
+              type="text"
+              className="text_pole entry-title-input"
+              value={form.comment || ''}
+              placeholder="Entry title / memo"
+              onChange={(e) => setForm({ ...form, comment: e.target.value })}
+            />
+            <select
+              name="entryStateSelector"
+              className="text_pole entry-state-select"
+              value={(form as any).entryStateSelector || 'normal'}
+              onChange={(e) => setForm({ ...form, entryStateSelector: e.target.value })}
+              title="Entry state"
+            >
+              <option value="constant">🔵</option>
+              <option value="normal">🟢</option>
+              <option value="vectorized">🔗</option>
+            </select>
+            <div className="entry-field" title="Position">
+              <span className="entry-field-label">Position</span>
+              <select
+                name="position"
+                className="text_pole entry-position-select"
+                value={(form as any).position ?? ''}
+                onChange={(e) => setForm({ ...form, position: e.target.value })}
+              >
+                <option value="0">↑Char</option>
+                <option value="1">↓Char</option>
+                <option value="5">↑EM</option>
+                <option value="6">↓EM</option>
+                <option value="2">↑AN</option>
+                <option value="3">↓AN</option>
+                <option value="4">@D</option>
+                <option value="7">➡️Outlet</option>
+              </select>
             </div>
-            <div className="WIEntryHeaderControls flex-container" style={{ gap: '6px' }}>
+            <div className="entry-field" title="Depth">
+              <span className="entry-field-label">Depth</span>
+              <input
+                className="text_pole entry-number"
+                type="number"
+                name="depth"
+                value={form.depth ?? entry.depth ?? ''}
+                onChange={(e) => setForm({ ...form, depth: Number(e.target.value) })}
+              />
+            </div>
+            <div className="entry-field" title="Order">
+              <span className="entry-field-label">Order</span>
+              <input
+                className="text_pole entry-number"
+                type="number"
+                name="order"
+                value={form.insertion_order ?? entry.insertion_order ?? entry.order ?? ''}
+                onChange={(e) => setForm({ ...form, insertion_order: Number(e.target.value) })}
+              />
+            </div>
+            <div className="entry-field" title="Trigger %">
+              <span className="entry-field-label">Trigger %</span>
+              <input
+                className="text_pole entry-number"
+                type="number"
+                name="probability"
+                value={form.probability ?? 100}
+                onChange={(e) => setForm({ ...form, probability: Number(e.target.value) })}
+              />
+            </div>
+            <div className="entry-header-actions">
               <button
                 type="button"
                 className="menu_button move_entry_button fa-solid fa-right-left interactable"
