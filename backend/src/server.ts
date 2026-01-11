@@ -1579,49 +1579,219 @@ app.delete('/api/scenes/:id', (req, res) => {
   }
 });
 
-// Lorebooks CRUD
+// Lorebooks CRUD (using LorebookService with uuid)
 app.get('/api/lorebooks', (req, res) => {
-  const lorebooks = db.prepare('SELECT * FROM lorebooks').all();
-  res.json(lorebooks);
-});
-
-app.post('/api/lorebooks', (req, res) => {
-  const { name, description, scan_depth, token_budget, recursive_scanning, extensions, entries } = req.body;
-  const stmt = db.prepare(`
-    INSERT INTO lorebooks (name, description, scan_depth, token_budget, recursive_scanning, extensions, entries)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-  const result = stmt.run(name, description, scan_depth, token_budget, recursive_scanning ? 1 : 0, JSON.stringify(extensions), JSON.stringify(entries));
-  res.json({ id: result.lastInsertRowid });
-});
-
-app.get('/api/lorebooks/:id', (req, res) => {
-  const { id } = req.params;
-  const lorebook = db.prepare('SELECT * FROM lorebooks WHERE id = ?').get(id) as any;
-  if (lorebook) {
-    lorebook.extensions = JSON.parse(lorebook.extensions || '{}');
-    lorebook.entries = JSON.parse(lorebook.entries || '[]');
-    res.json(lorebook);
-  } else {
-    res.status(404).json({ error: 'Lorebook not found' });
+  try {
+    const lorebooks: any[] = LorebookService.listAll();
+    const simplified = lorebooks.map(lb => ({ uuid: lb.uuid, name: lb.name, description: lb.description }));
+    res.json(simplified);
+  } catch (error) {
+    console.error('Error fetching lorebooks:', error);
+    res.status(500).json({ error: 'Failed to fetch lorebooks' });
   }
 });
 
-app.put('/api/lorebooks/:id', (req, res) => {
-  const { id } = req.params;
-  const { name, description, scan_depth, token_budget, recursive_scanning, extensions, entries } = req.body;
-  const stmt = db.prepare(`
-    UPDATE lorebooks SET name = ?, description = ?, scan_depth = ?, token_budget = ?, recursive_scanning = ?, extensions = ?, entries = ? WHERE id = ?
-  `);
-  const result = stmt.run(name, description, scan_depth, token_budget, recursive_scanning ? 1 : 0, JSON.stringify(extensions), JSON.stringify(entries), id);
-  res.json({ changes: result.changes });
+app.post('/api/lorebooks', (req, res) => {
+  try {
+    const { name, description, settings } = req.body;
+    const lb = LorebookService.createLorebook({ name, description, settings });
+    res.json({ uuid: lb.uuid, name: lb.name, description: lb.description });
+  } catch (error) {
+    console.error('Error creating lorebook:', error);
+    res.status(500).json({ error: 'Failed to create lorebook' });
+  }
 });
 
-app.delete('/api/lorebooks/:id', (req, res) => {
-  const { id } = req.params;
-  const stmt = db.prepare('DELETE FROM lorebooks WHERE id = ?');
-  const result = stmt.run(id);
-  res.json({ changes: result.changes });
+app.get('/api/lorebooks/:uuid', (req, res) => {
+  try {
+    const { uuid } = req.params;
+    const lb = LorebookService.getLorebook(uuid);
+    if (lb) {
+      res.json(lb);
+    } else {
+      res.status(404).json({ error: 'Lorebook not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching lorebook:', error);
+    res.status(500).json({ error: 'Failed to fetch lorebook' });
+  }
+});
+
+app.put('/api/lorebooks/:uuid', (req, res) => {
+  try {
+    const { uuid } = req.params;
+    const { name, description, settings } = req.body;
+    const lb = LorebookService.updateLorebook(uuid, { name, description, settings });
+    if (lb) {
+      res.json(lb);
+    } else {
+      res.status(404).json({ error: 'Lorebook not found' });
+    }
+  } catch (error) {
+    console.error('Error updating lorebook:', error);
+    res.status(500).json({ error: 'Failed to update lorebook' });
+  }
+});
+
+app.delete('/api/lorebooks/:uuid', (req, res) => {
+  try {
+    const { uuid } = req.params;
+    const result = LorebookService.deleteLorebook(uuid);
+    res.json(result);
+  } catch (error) {
+    console.error('Error deleting lorebook:', error);
+    res.status(500).json({ error: 'Failed to delete lorebook' });
+  }
+});
+
+// Lorebook entries
+app.get('/api/lorebooks/:uuid/entries', (req, res) => {
+  try {
+    const { uuid } = req.params;
+    const entries = LorebookService.getEntries(uuid);
+    res.json(entries);
+  } catch (error) {
+    console.error('Error fetching lorebook entries:', error);
+    res.status(500).json({ error: 'Failed to fetch entries' });
+  }
+});
+
+app.post('/api/lorebooks/:uuid/entries', (req, res) => {
+  try {
+    const { uuid } = req.params;
+    const entry = req.body;
+    const newEntry = LorebookService.addEntry(uuid, entry);
+    res.json(newEntry);
+  } catch (error) {
+    console.error('Error adding entry:', error);
+    res.status(500).json({ error: 'Failed to add entry' });
+  }
+});
+
+app.put('/api/lorebooks/:uuid/entries/:entryId', (req, res) => {
+  try {
+    const { uuid, entryId } = req.params;
+    const entry = req.body;
+    const updated = LorebookService.updateEntry(uuid, Number(entryId), entry);
+    if (updated) {
+      res.json(updated);
+    } else {
+      res.status(404).json({ error: 'Entry not found' });
+    }
+  } catch (error) {
+    console.error('Error updating entry:', error);
+    res.status(500).json({ error: 'Failed to update entry' });
+  }
+});
+
+app.delete('/api/lorebooks/:uuid/entries/:entryId', (req, res) => {
+  try {
+    const { uuid, entryId } = req.params;
+    const result = LorebookService.deleteEntry(uuid, Number(entryId));
+    res.json(result);
+  } catch (error) {
+    console.error('Error deleting entry:', error);
+    res.status(500).json({ error: 'Failed to delete entry' });
+  }
+});
+
+// Import/Export
+app.post('/api/lorebooks/import', upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const json = JSON.parse(fs.readFileSync(req.file.path, 'utf-8'));
+    const lb = LorebookService.importFromSillyTavern(json);
+    // Clean up temp file
+    fs.unlinkSync(req.file.path);
+    res.json({ uuid: lb.uuid, name: lb.name });
+  } catch (error) {
+    console.error('Error importing lorebook:', error);
+    res.status(500).json({ error: 'Failed to import lorebook' });
+  }
+});
+
+app.get('/api/lorebooks/:uuid/export', (req, res) => {
+  try {
+    const { uuid } = req.params;
+    const json = LorebookService.exportForSillyTavern(uuid);
+    if (!json) return res.status(404).json({ error: 'Lorebook not found' });
+    res.setHeader('Content-Disposition', `attachment; filename="${json.name || 'lorebook'}.json"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(json);
+  } catch (error) {
+    console.error('Error exporting lorebook:', error);
+    res.status(500).json({ error: 'Failed to export lorebook' });
+  }
+});
+
+// World lorebook associations
+app.get('/api/worlds/:id/lorebooks', (req, res) => {
+  try {
+    const { id } = req.params;
+    const lorebookUuids = WorldService.getLorebooks(Number(id));
+    res.json(lorebookUuids);
+  } catch (error) {
+    console.error('Error fetching world lorebooks:', error);
+    res.status(500).json({ error: 'Failed to fetch lorebooks' });
+  }
+});
+
+app.post('/api/worlds/:id/lorebooks', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { lorebookUuid } = req.body;
+    const result = WorldService.addLorebook(Number(id), lorebookUuid);
+    res.json(result);
+  } catch (error) {
+    console.error('Error adding lorebook to world:', error);
+    res.status(500).json({ error: 'Failed to add lorebook' });
+  }
+});
+
+app.delete('/api/worlds/:id/lorebooks/:lorebookUuid', (req, res) => {
+  try {
+    const { id, lorebookUuid } = req.params;
+    const result = WorldService.removeLorebook(Number(id), lorebookUuid);
+    res.json(result);
+  } catch (error) {
+    console.error('Error removing lorebook from world:', error);
+    res.status(500).json({ error: 'Failed to remove lorebook' });
+  }
+});
+
+// Campaign lorebook associations
+app.get('/api/campaigns/:id/lorebooks', (req, res) => {
+  try {
+    const { id } = req.params;
+    const lorebookUuids = CampaignService.getLorebooks(Number(id));
+    res.json(lorebookUuids);
+  } catch (error) {
+    console.error('Error fetching campaign lorebooks:', error);
+    res.status(500).json({ error: 'Failed to fetch lorebooks' });
+  }
+});
+
+app.post('/api/campaigns/:id/lorebooks', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { lorebookUuid } = req.body;
+    const result = CampaignService.addLorebook(Number(id), lorebookUuid);
+    res.json(result);
+  } catch (error) {
+    console.error('Error adding lorebook to campaign:', error);
+    res.status(500).json({ error: 'Failed to add lorebook' });
+  }
+});
+
+app.delete('/api/campaigns/:id/lorebooks/:lorebookUuid', (req, res) => {
+  try {
+    const { id, lorebookUuid } = req.params;
+    const result = CampaignService.removeLorebook(Number(id), lorebookUuid);
+    res.json(result);
+  } catch (error) {
+    console.error('Error removing lorebook from campaign:', error);
+    res.status(500).json({ error: 'Failed to remove lorebook' });
+  }
 });
 
 // Personas CRUD
@@ -1865,11 +2035,12 @@ io.on('connection', (socket) => {
       }
 
       // Process through Orchestrator
-      const response = await orchestrator.processUserInput(input, persona, activeCharacters, sceneId);
+      const result = await orchestrator.processUserInput(input, persona, activeCharacters, sceneId);
+      const { responses, lore } = result;
 
       // Persist responses to messages if scene provided
-      if (sceneId && Array.isArray(response)) {
-        for (const r of response) {
+      if (sceneId && Array.isArray(responses)) {
+        for (const r of responses) {
           try {
             let content = r.content;
             // If the response contains an image URL (markdown), download and store locally and replace URL
@@ -1970,10 +2141,10 @@ io.on('connection', (socket) => {
       }
 
       // Emit full response (streaming can be added later)
-      socket.emit('aiResponse', response);
+      socket.emit('aiResponse', { responses, lore });
     } catch (error) {
       console.error('Error processing message:', error);
-      socket.emit('aiResponse', [{ sender: 'System', content: 'Sorry, an error occurred.' }]);
+      socket.emit('aiResponse', { responses: [{ sender: 'System', content: 'Sorry, an error occurred.' }], lore: [] });
     }
   });
 

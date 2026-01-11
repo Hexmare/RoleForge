@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Orchestrator } from '../agents/Orchestrator';
 import CharacterService from '../services/CharacterService';
+import LorebookService from '../services/LorebookService';
+import SceneService from '../services/SceneService';
 import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -8,6 +10,16 @@ import * as fs from 'fs';
 // Mock the database and services
 vi.mock('better-sqlite3');
 vi.mock('../services/CharacterService');
+vi.mock('../services/LorebookService', () => ({
+  default: {
+    getActiveLorebooks: vi.fn().mockReturnValue([]),
+  },
+}));
+vi.mock('../services/SceneService', () => ({
+  default: {
+    getLoreContext: vi.fn().mockReturnValue({ text: 'test text', activeCharacters: [] }),
+  },
+}));
 vi.mock('../configManager', () => ({
   ConfigManager: vi.fn().mockImplementation(() => ({
     getProfile: vi.fn().mockReturnValue({}),

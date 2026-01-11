@@ -22,7 +22,7 @@ function main() {
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
   const lorebooksDbPath = path.join(dataDir, 'lorebooks.db');
-  const roleforgeDbPath = path.join(repoRoot, 'backend', 'roleforge.db');
+  const roleforgeDbPath = path.join(repoRoot, 'roleforge.db');
 
   const m002 = path.join(migrationsDir, '002_create_lorebooks.sql');
   if (fs.existsSync(m002)) {

@@ -14,6 +14,8 @@ import CharacterService from '../services/CharacterService.js';
 import SceneService from '../services/SceneService.js';
 import Database from 'better-sqlite3';
 import { Server } from 'socket.io';
+import LorebookService from '../services/LorebookService.js';
+import { matchLoreEntries } from '../utils/loreMatcher.js';
 
 export class Orchestrator {
   private configManager: ConfigManager;
@@ -77,9 +79,20 @@ export class Orchestrator {
     const campaignRow = this.db.prepare('SELECT * FROM Campaigns WHERE id = ?').get(arcRow.campaignId) as any;
     const worldRow = this.db.prepare('SELECT * FROM Worlds WHERE id = ?').get(campaignRow.worldId) as any;
 
-    // Lore entries for world
-    const loreRows = this.db.prepare('SELECT key, content, tags FROM LoreEntries WHERE worldId = ?').all(worldRow.id || -1) as any[];
-    const loreEntries = loreRows.map(r => ({ key: r.key, content: r.content, tags: JSON.parse(r.tags || '[]') }));
+    // Get active lorebooks for world and campaign
+    const activeLorebooks = LorebookService.getActiveLorebooks(worldRow.id, campaignRow.id);
+    const allEntries: any[] = [];
+    for (const lb of activeLorebooks) {
+      allEntries.push(...(lb.entries || []));
+    }
+
+    // Get lore context for matching
+    const loreContext = SceneService.getLoreContext(sceneId, 4); // scanDepth 4
+    let matchedLore: string[] = [];
+    if (loreContext && allEntries.length > 0) {
+      const result = matchLoreEntries(allEntries, loreContext, 4, 2048); // tokenBudget 2048
+      matchedLore = result.selectedEntries.map(e => e.content);
+    }
 
     // Campaign state
     const cs = this.db.prepare('SELECT * FROM CampaignState WHERE campaignId = ?').get(campaignRow.id) as any;
@@ -108,7 +121,7 @@ export class Orchestrator {
     }
 
     const sessionContext = {
-      world: { id: worldRow.id, slug: worldRow.slug, name: worldRow.name, description: worldRow.description, loreEntries },
+      world: { id: worldRow.id, slug: worldRow.slug, name: worldRow.name, description: worldRow.description },
       campaign: { id: campaignRow.id, slug: campaignRow.slug, name: campaignRow.name, description: campaignRow.description },
       arc: { id: arcRow.id, orderIndex: arcRow.orderIndex, name: arcRow.name, description: arcRow.description },
       scene: {
@@ -131,7 +144,8 @@ export class Orchestrator {
       activeCharacters: activeCharactersResolved,
       worldState: { elapsedMinutes: campaignState.elapsedMinutes, dynamicFacts: campaignState.dynamicFacts },
       trackers: campaignState.trackers || { stats: {}, objectives: [], relationships: {} },
-      locationMap: (sceneRow.locationRelationships ? JSON.parse(sceneRow.locationRelationships) : {})
+      locationMap: (sceneRow.locationRelationships ? JSON.parse(sceneRow.locationRelationships) : {}),
+      lore: matchedLore
     };
 
     // Seed orchestrator worldState from scene-level world state, falling back to campaign dynamic facts
@@ -229,7 +243,7 @@ export class Orchestrator {
     return keywords.some(keyword => lowerInput.includes(keyword));
   }
 
-  async processUserInput(userInput: string, personaName: string = 'default', activeCharacters?: string[], sceneId?: number): Promise<{ sender: string; content: string }[]> {
+  async processUserInput(userInput: string, personaName: string = 'default', activeCharacters?: string[], sceneId?: number): Promise<{ responses: { sender: string; content: string }[], lore: string[] }> {
     // Load scene summary from database if sceneId is provided
     if (sceneId && !this.sceneSummary) {
       const sceneRow = this.db.prepare('SELECT summary FROM Scenes WHERE id = ?').get(sceneId) as any;
@@ -265,7 +279,7 @@ export class Orchestrator {
       console.log('NarratorAgent completed');
       this.emitAgentStatus('Narrator', 'complete', sceneId);
       this.history.push(`Narrator: ${narration}`);
-      return [{ sender: 'Narrator', content: narration }];
+      return { responses: [{ sender: 'Narrator', content: narration }], lore: [] };
     }
 
     // Normal interaction flow
@@ -279,7 +293,7 @@ export class Orchestrator {
     if (!sessionContext) {
       // Fallback to basic interaction without scene-level state
       // This would be for non-scene based interactions
-      return [{ sender: 'System', content: 'Scene context required for full interaction' }];
+      return { responses: [{ sender: 'System', content: 'Scene context required for full interaction' }], lore: [] };
     }
 
     // Prepare base context
@@ -606,10 +620,10 @@ export class Orchestrator {
     // Emit character states update
     this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates: this.characterStates });
 
-    return responses;
+    return { responses, lore: sessionContext.lore };
   }
 
-  private async handleSlashCommand(command: string, args: string[], activeCharacters?: string[], sceneId?: number): Promise<{ sender: string; content: string }[]> {
+  private async handleSlashCommand(command: string, args: string[], activeCharacters?: string[], sceneId?: number): Promise<{ responses: { sender: string; content: string }[]; lore: string[]; }> {
     switch (command) {
       case 'create':
         const creatorAgent = this.agents.get('creator')!;
@@ -624,10 +638,10 @@ export class Orchestrator {
         const creatorResult = await creatorAgent.run(context);
         console.log('CreatorAgent completed');
         this.emitAgentStatus('Creator', 'complete', sceneId);
-        return [{ sender: 'Creator', content: creatorResult }];
+        return { responses: [{ sender: 'Creator', content: creatorResult }], lore: [] };
       case 'image':
         if (!this.configManager.isVisualAgentEnabled()) {
-          return [{ sender: 'System', content: 'Visual agent is disabled in configuration.' }];
+          return { responses: [{ sender: 'System', content: 'Visual agent is disabled in configuration.' }], lore: [] };
         }
         const visualAgent = this.agents.get('visual')!;
         const visualContext: AgentContext = {
@@ -642,10 +656,10 @@ export class Orchestrator {
         const visualResult = await visualAgent.run(visualContext);
         console.log('VisualAgent completed for /image');
         this.emitAgentStatus('Visual', 'complete', sceneId);
-        return [{ sender: 'Visual', content: visualResult }];
+        return { responses: [{ sender: 'Visual', content: visualResult }], lore: [] };
       case 'scenepicture':
         if (!this.configManager.isVisualAgentEnabled()) {
-          return [{ sender: 'System', content: 'Visual agent is disabled in configuration.' }];
+          return { responses: [{ sender: 'System', content: 'Visual agent is disabled in configuration.' }], lore: [] };
         }
         // Resolve active characters (names -> descriptions)
         const resolvedChars: { name: string; description: string }[] = [];
@@ -693,13 +707,13 @@ export class Orchestrator {
           this.emitAgentStatus('Visual', 'complete', sceneId);
           const meta = { prompt: promptForImage, urls: [imageUrl], current: 0 };
           const md = `![${JSON.stringify(meta)}](${imageUrl})`;
-          return [{ sender: 'Visual', content: md }];
+          return { responses: [{ sender: 'Visual', content: md }], lore: [] };
         } catch (err) {
           console.error('scenepicture generation failed', err);
-          return [{ sender: 'System', content: 'Scene picture generation failed.' }];
+          return { responses: [{ sender: 'System', content: 'Scene picture generation failed.' }], lore: [] };
         }
       default:
-        return [{ sender: 'System', content: `Unknown command: /${command}` }];
+        return { responses: [{ sender: 'System', content: `Unknown command: /${command}` }], lore: [] };
     }
   }
 

@@ -1,4 +1,5 @@
 import db from '../database';
+import MessageService from './MessageService';
 
 export const SceneService = {
   create(arcId: number, title: string, description?: string, location?: string, timeOfDay?: string, orderIndex?: number) {
@@ -44,6 +45,37 @@ export const SceneService = {
     const stmt = db.prepare('DELETE FROM Scenes WHERE id = ?');
     const result = stmt.run(id);
     return { changes: result.changes };
+  },
+
+  getLoreContext(sceneId: number, scanDepth: number = 4) {
+    const scene = this.getById(sceneId);
+    if (!scene) return null;
+
+    // Scene description/location/time
+    const sceneText = [
+      scene.description || '',
+      scene.location || '',
+      scene.timeOfDay || ''
+    ].filter(Boolean).join(' ');
+
+    // Recent messages
+    const messages: any[] = MessageService.getMessages(sceneId, scanDepth, 0);
+    const messageText = messages.map((m: any) => m.message).join(' ');
+
+    // Active characters
+    const activeCharacters = scene.activeCharacters ? JSON.parse(scene.activeCharacters) : [];
+
+    // Selected persona
+    const personaRow = db.prepare('SELECT value FROM Settings WHERE key = ?').get('selectedPersona') as any;
+    const selectedPersona = personaRow ? personaRow.value : null;
+
+    const contextText = [sceneText, messageText].filter(Boolean).join(' ');
+
+    return {
+      text: contextText,
+      activeCharacters,
+      selectedPersona
+    };
   }
 };
 

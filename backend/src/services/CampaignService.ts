@@ -18,7 +18,11 @@ export const CampaignService = {
   },
 
   getById(id: number) {
-    return db.prepare('SELECT * FROM Campaigns WHERE id = ?').get(id);
+    const campaign = db.prepare('SELECT * FROM Campaigns WHERE id = ?').get(id);
+    if (!campaign) return null;
+    // Include assigned lorebooks
+    const lorebookUuids = db.prepare('SELECT lorebookUuid FROM Campaign_Lorebooks WHERE campaignId = ?').all(id).map((r: any) => r.lorebookUuid);
+    return { ...campaign, lorebookUuids };
   },
 
   update(id: number, { name, description }: { name: string; description?: string }) {
@@ -68,6 +72,22 @@ export const CampaignService = {
       );
     }
     return this.getState(campaignId);
+  },
+
+  addLorebook(campaignId: number, lorebookUuid: string) {
+    const stmt = db.prepare('INSERT OR IGNORE INTO Campaign_Lorebooks (campaignId, lorebookUuid) VALUES (?, ?)');
+    const result = stmt.run(campaignId, lorebookUuid);
+    return { changes: result.changes };
+  },
+
+  removeLorebook(campaignId: number, lorebookUuid: string) {
+    const stmt = db.prepare('DELETE FROM Campaign_Lorebooks WHERE campaignId = ? AND lorebookUuid = ?');
+    const result = stmt.run(campaignId, lorebookUuid);
+    return { changes: result.changes };
+  },
+
+  getLorebooks(campaignId: number) {
+    return db.prepare('SELECT lorebookUuid FROM Campaign_Lorebooks WHERE campaignId = ?').all(campaignId).map((r: any) => r.lorebookUuid);
   }
 };
 

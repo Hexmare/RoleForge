@@ -5,6 +5,13 @@ interface World {
   slug: string;
   name: string;
   description?: string;
+  lorebookUuids?: string[];
+}
+
+interface Lorebook {
+  uuid: string;
+  name: string;
+  description?: string;
 }
 
 interface Campaign {
@@ -40,6 +47,7 @@ function WorldManager({ onRefresh, onSelectScene, selectedScene }: { onRefresh: 
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [editing, setEditing] = useState<any | null>(null);
   const [form, setForm] = useState<any>({});
+  const [lorebooks, setLorebooks] = useState<Lorebook[]>([]);
 
   async function fetchWorlds() {
     const res = await fetch('/api/worlds');
@@ -63,6 +71,10 @@ function WorldManager({ onRefresh, onSelectScene, selectedScene }: { onRefresh: 
     const scenesPromises = arcsData.flat().map((a: any) => fetch(`/api/arcs/${a.id}/scenes`).then(r => r.json()));
     const scenesData = await Promise.all(scenesPromises);
     setScenes(scenesData.flat());
+
+    const lorebooksRes = await fetch('/api/lorebooks');
+    const lorebooksData = await lorebooksRes.json();
+    setLorebooks(lorebooksData);
   };
 
   useEffect(() => {
@@ -94,11 +106,36 @@ function WorldManager({ onRefresh, onSelectScene, selectedScene }: { onRefresh: 
         break;
     }
 
-    await fetch(url, {
+    const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    const saved = await res.json();
+
+    // For campaigns, update lorebook assignments
+    if (activeTab === 'campaigns' && form.lorebookUuids) {
+      const campaignId = editing ? editing.id : saved.id;
+      // Get current assignments
+      const currentRes = await fetch(`/api/campaigns/${campaignId}/lorebooks`);
+      const current = await currentRes.json();
+      // Remove old ones not in new list
+      for (const uuid of current) {
+        if (!form.lorebookUuids.includes(uuid)) {
+          await fetch(`/api/campaigns/${campaignId}/lorebooks/${uuid}`, { method: 'DELETE' });
+        }
+      }
+      // Add new ones
+      for (const uuid of form.lorebookUuids) {
+        if (!current.includes(uuid)) {
+          await fetch(`/api/campaigns/${campaignmpaignId}/lorebooks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lorebookUuid: uuid }),
+          });
+        }
+      }
+    }
 
     setForm({});
     setEditing(null);
@@ -141,6 +178,19 @@ function WorldManager({ onRefresh, onSelectScene, selectedScene }: { onRefresh: 
               value={form.description || ''}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
+            <label>Lorebooks</label>
+            <select
+              multiple
+              value={form.lorebookUuids || []}
+              onChange={(e) => {
+                const selected = Array.from(e.target.selectedOptions, option => option.value);
+                setForm({ ...form, lorebookUuids: selected });
+              }}
+            >
+              {lorebooks.map(lb => (
+                <option key={lb.uuid} value={lb.uuid}>{lb.name}</option>
+              ))}
+            </select>
           </>
         );
       case 'campaigns':
@@ -166,6 +216,19 @@ function WorldManager({ onRefresh, onSelectScene, selectedScene }: { onRefresh: 
               value={form.description || ''}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
+            <label>Lorebooks</label>
+            <select
+              multiple
+              value={form.lorebookUuids || []}
+              onChange={(e) => {
+                const selected = Array.from(e.target.selectedOptions, option => option.value);
+                setForm({ ...form, lorebookUuids: selected });
+              }}
+            >
+              {lorebooks.map(lb => (
+                <option key={lb.uuid} value={lb.uuid}>{lb.name}</option>
+              ))}
+            </select>
           </>
         );
       case 'arcs':

@@ -360,7 +360,22 @@ export const LorebookService = {
         selective: e.selective || false,
         selectiveLogic: e.selectiveLogic ?? e.selective_logic ?? 0,
         insertion_order: e.insertion_order ?? e.order ?? 100,
-        insertion_position: e.insertion_position || e.position || 'Before Char Defs',
+        insertion_position: (() => {
+          if (e.insertion_position) return e.insertion_position;
+          if (e.position !== undefined) {
+            // Map old numeric position to string
+            const posMap: { [key: number]: string } = {
+              0: 'Before Char Defs',
+              1: 'After Char Defs',
+              2: 'Top of AN',
+              3: 'Bottom of AN',
+              4: 'In Chat @Depth',
+              5: 'Deep Chat @Depth'
+            };
+            return posMap[e.position] || 'Before Char Defs';
+          }
+          return 'Before Char Defs';
+        })(),
         outletName: e.outletName || e.outlet || null,
         enabled: (e.disabled === true) ? 0 : (e.enabled === false ? 0 : 1),
         preventRecursion: e.preventRecursion || false,
@@ -459,6 +474,22 @@ export const LorebookService = {
       }))
     };
     return out;
+  },
+
+  // Get active lorebooks for a world and campaign, merging entries
+  getActiveLorebooks(worldId: number, campaignId: number) {
+    // Get lorebook UUIDs assigned to world
+    const worldLorebookUuids: string[] = db.prepare('SELECT lorebookUuid FROM World_Lorebooks WHERE worldId = ?').all(worldId).map((r: any) => r.lorebookUuid);
+    // Get lorebook UUIDs assigned to campaign
+    const campaignLorebookUuids: string[] = db.prepare('SELECT lorebookUuid FROM Campaign_Lorebooks WHERE campaignId = ?').all(campaignId).map((r: any) => r.lorebookUuid);
+    // Merge unique UUIDs (campaign overrides world if duplicate, but since UUIDs are unique, just combine)
+    const allUuids = [...new Set([...worldLorebookUuids, ...campaignLorebookUuids])];
+    const lorebooks: any[] = [];
+    for (const uuid of allUuids) {
+      const lb = this.getLorebook(uuid);
+      if (lb) lorebooks.push(lb);
+    }
+    return lorebooks;
   }
 };
 

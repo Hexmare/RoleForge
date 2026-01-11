@@ -71,6 +71,9 @@ interface ChatProps {
   onUpdateMessage: (id: number, content: string) => void;
   onMessagesRefresh: () => void;
   socket: Socket;
+  lastLore: string[];
+  debugMode: boolean;
+  onToggleDebug: () => void;
 }
 
 const Chat: React.FC<ChatProps> = ({
@@ -86,7 +89,10 @@ const Chat: React.FC<ChatProps> = ({
   characters,
   onUpdateMessage,
   onMessagesRefresh,
-  socket
+  socket,
+  lastLore,
+  debugMode,
+  onToggleDebug,
 }) => {
   const chatWindowRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -271,9 +277,23 @@ const Chat: React.FC<ChatProps> = ({
       {/* Chat Section */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-4">
         {selectedScene ? (
-          <div
-            ref={chatWindowRef}
-            className="flex flex-col space-y-4"
+          <>
+            {debugMode !== undefined && (
+              <div className="mb-4">
+                <button onClick={onToggleDebug} className="btn-secondary text-sm">Debug: {debugMode ? 'On' : 'Off'}</button>
+                {debugMode && lastLore.length > 0 && (
+                  <div className="glass p-3 rounded-lg mt-2">
+                    <h4 className="text-text-primary font-semibold">Injected Lore Entries:</h4>
+                    <ul className="text-text-secondary text-sm space-y-1">
+                      {lastLore.map((lore, i) => <li key={i} className="bg-bg-secondary p-2 rounded">{lore}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+            <div
+              ref={chatWindowRef}
+              className="flex flex-col space-y-4"
             onScroll={(e) => {
               const el = e.target as HTMLDivElement;
               const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 50;
@@ -339,6 +359,7 @@ const Chat: React.FC<ChatProps> = ({
             )}
             <div ref={messagesEndRef} />
           </div>
+          </>
         ) : (
           <div className="flex items-center justify-center h-full text-text-secondary">
             No scene selected. Select a scene to load chat.

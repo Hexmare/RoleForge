@@ -78,6 +78,8 @@ function App() {
   // Debug config fetched from backend; use to drive client debug flags
   const [debugConfig, setDebugConfig] = useState<any>({});
   const debugRef = useRef<any>({});
+  const [lastLore, setLastLore] = useState<string[]>([]);
+  const [debugMode, setDebugMode] = useState(false);
 
   useEffect(() => {
     fetchPersonas();
@@ -525,9 +527,10 @@ function App() {
   };
 
   useEffect(() => {
-    socket.on('aiResponse', (responses: { sender: string; content: string }[]) => {
-      const newMsgs: Message[] = responses.map(res => ({ role: 'ai', sender: res.sender, content: res.content }));
+    socket.on('aiResponse', (data: { responses: { sender: string; content: string }[], lore: string[] }) => {
+      const newMsgs: Message[] = data.responses.map(res => ({ role: 'ai', sender: res.sender, content: res.content }));
       setMessages(prev => [...prev, ...newMsgs]);
+      setLastLore(data.lore);
       // Also refresh authoritative messages from server for the current scene
       const sid = selectedSceneRef.current;
       if (sid) {
@@ -1134,6 +1137,9 @@ function App() {
                 onUpdateMessage={updateMessageContent}
                 onMessagesRefresh={() => selectedScene && loadMessages(selectedScene)}
                 socket={socket}
+                lastLore={lastLore}
+                debugMode={debugMode}
+                onToggleDebug={() => setDebugMode(!debugMode)}
               />
             )}
             {currentTab === 'characters' && <CharacterManager onRefresh={fetchCharacters} />}
