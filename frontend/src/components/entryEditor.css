@@ -137,6 +137,19 @@ input[type="number"], select { background: rgba(255,255,255,0.01); border:1px so
 .WIEntryHeaderTitleMobile { font-size:0.78rem; color:#8f9aa0; }
 .world_entry .text_pole { background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.02); color:#dbe7ec; padding:6px 8px; border-radius:8px; }
 .world_entry .inline-drawer-toggle { width:26px; height:26px; border-radius:50%; background: rgba(0,0,0,0.32); display:inline-flex; align-items:center; justify-content:center; }
+
+/* Visual states for collapse/expand toggle */
+.world_entry .inline-drawer-toggle.down {
+  background: rgba(0,0,0,0.32);
+  color: #cbd5f5;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.world_entry .inline-drawer-toggle.up {
+  background: rgba(255,255,255,0.92);
+  color: #111827;
+  border: 1px solid rgba(0,0,0,0.12);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
 .world_entry .killSwitch { background: rgba(255,255,255,0.02); color:#fbbf24; width:24px; height:24px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; }
 .world_entry .WIEntryTitleAndStatus { gap:8px; }
 .world_entry .probabilityContainer input, .world_entry input[type="number"] { width:68px; background: rgba(0,0,0,0.55); }
