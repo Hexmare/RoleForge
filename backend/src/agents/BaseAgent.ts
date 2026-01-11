@@ -23,13 +23,15 @@ export interface AgentContext {
   characterState?: any; // For CharacterAgent - current state of the character
   creationRequest?: string; // For CreatorAgent
   mode?: string; // For CreatorAgent - 'create', 'update', 'field'
+  narrationMode?: string; // For NarratorAgent - 'default' or 'scene-picture'
   narration?: string; // For VisualAgent
   sceneElements?: string[]; // For VisualAgent
   visualStyle?: string; // For VisualAgent
   text?: string; // For TTSAgent
   voiceMap?: Record<string, string>; // For TTSAgent
   userPersona?: any; // For user persona
-  activeCharacters?: string[]; // For DirectorAgent
+  userPersonaState?: any; // For user persona - current state of the user persona
+  activeCharacters?: any[]; // For DirectorAgent (strings) or NarratorAgent (objects)
   existingSummary?: string; // For SummarizeAgent
   maxSummaryTokens?: number; // For SummarizeAgent
   maxCompletionTokens?: number; // For response length limits

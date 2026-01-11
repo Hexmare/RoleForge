@@ -43,6 +43,15 @@ export class VisualAgent extends BaseAgent {
       }
     }
 
+    // For scene-picture mode, generate an optimized SD prompt directly
+    if (context.narrationMode === 'scene-picture') {
+      const systemPrompt = this.renderTemplate('visual-scene-picture', context);
+      const messages = this.renderLLMTemplate(systemPrompt, 'Generate optimized Stable Diffusion prompt');
+      const response = await this.callLLM(messages);
+      const sdPrompt = this.cleanResponse(response as string).trim();
+      return sdPrompt;
+    }
+
     const systemPrompt = this.renderTemplate('visual', context);
     const messages = this.renderLLMTemplate(systemPrompt, context.userInput);
     const response = await this.callLLM(messages);
@@ -65,7 +74,7 @@ export class VisualAgent extends BaseAgent {
     return cleaned;
   }
 
-  private async generateImage(prompt: string): Promise<string> {
+  async generateImage(prompt: string): Promise<string> {
     const config = this.configManager.getConfig();
     const comfyui = config.comfyui;
     if (!comfyui || !comfyui.endpoint) {

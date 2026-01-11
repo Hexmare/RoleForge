@@ -7,7 +7,9 @@ export class NarratorAgent extends BaseAgent {
   }
 
   async run(context: AgentContext): Promise<string> {
-    const systemPrompt = this.renderTemplate('narrator', context);
+    // Choose template based on narration mode
+    const templateName = context.narrationMode === 'scene-picture' ? 'narrator-scene-picture' : 'narrator';
+    const systemPrompt = this.renderTemplate(templateName, context);
     const messages = this.renderLLMTemplate(systemPrompt, context.userInput);
     const response = await this.callLLM(messages);
     return this.cleanResponse(response as string);

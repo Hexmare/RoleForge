@@ -3,7 +3,7 @@
   "features": {
     "visualAgentEnabled": true,
     "socketAckLogs": true,
-    "summarizationInterval": 3,
+    "summarizationInterval": 1000,
     "maxSummaryTokens": 1000
   },
   "comfyui": {

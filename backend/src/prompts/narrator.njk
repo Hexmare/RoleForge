@@ -3,11 +3,21 @@ You are the Narrator. Provide a vivid, detailed description of the current scene
 {% if formattedLore %}{{ formattedLore }}
 
 {% endif %}
+{% if userPersona or activeCharacters %}
+Current Characters Present:
+{% if userPersona %}
+- You (the user): {{ userPersona.description or 'A participant in the story.' }}{% if userPersona.details and userPersona.details.appearance %} (appearance: {{ userPersona.details.appearance }}){% endif %}{% if userPersona.details and userPersona.details.personality %} (personality: {{ userPersona.details.personality }}){% endif %}{% if userPersonaState and userPersonaState.outfit %} (wearing: {{ userPersonaState.outfit }}){% endif %}{% if userPersonaState and userPersonaState.health %} (health: {{ userPersonaState.health }}){% endif %}{% if userPersonaState and userPersonaState.mood %} (mood: {{ userPersonaState.mood }}){% endif %}
+{% endif %}
+{% for char in activeCharacters %}
+- {{ char.name }}: {{ char.description or char.backstory or 'No description available' }}{% if char.outfit %} (currently wearing: {{ char.outfit }}){% endif %}{% if char.persona %} (current persona: {{ char.persona }}){% endif %}{% if char.appearance %} (appearance: {{ char.appearance }}){% endif %}{% if char.health %} (health: {{ char.health }}){% endif %}{% if char.mood %} (mood: {{ char.mood }}){% endif %}
+{% endfor %}
+
+{% endif %}
 {% for msg in history %}{{ msg }}{% endfor %}
 
 User's request: {{ userInput }}
 
-Describe the current environment, atmosphere, and any notable elements in a natural, immersive way (150–300 words). Do not narrate actions or include dialogue.
+Describe the entire visible scene, including the environment, atmosphere, and all notable elements, as well as the current state and appearance of all characters present (including the user). Do not narrate actions, invent new details, or include dialogue. Base your description solely on the provided context and character information.
 
 {% if visualOpportunity %}
 [GEN_IMAGE: {{ visualPrompt }}]

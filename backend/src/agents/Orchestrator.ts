@@ -149,10 +149,16 @@ export class Orchestrator {
 
     // Resolve merged character objects where possible
     const activeCharactersResolved: any[] = [];
+    const characterStates = sceneRow.characterStates ? JSON.parse(sceneRow.characterStates) : {};
     for (const item of activeCharacters) {
       const merged = CharacterService.getMergedCharacter({ characterId: item, worldId: worldRow.id, campaignId: campaignRow.id });
       if (merged) {
         console.log(`Found merged character for ${item}`);
+        // Apply current character state if available
+        const currentState = characterStates[merged.id] || characterStates[merged.name];
+        if (currentState) {
+          Object.assign(merged, currentState);
+        }
         activeCharactersResolved.push(merged);
       } else {
         console.log(`No merged character found for ${item}`);
@@ -237,10 +243,19 @@ export class Orchestrator {
   private getPersona(name: string): any {
     const persona = this.db.prepare('SELECT * FROM personas WHERE name = ?').get(name) as any;
     if (persona) {
-      persona.details = JSON.parse(persona.details || '{}');
-      return persona;
+      // Parse the JSON data and flatten it to top level for easy template access
+      const data = JSON.parse(persona.data || '{}');
+      return {
+        id: persona.id,
+        name: persona.name,
+        avatarUrl: persona.avatarUrl,
+        // Flatten all data properties to top level
+        ...data,
+        // Also keep as nested for backward compatibility
+        data: data
+      };
     }
-    return { name: 'Default', description: 'A user in the story.', details: {} };
+    return { name: 'Default', description: 'A user in the story.', data: {} };
   }
 
   private extractFirstJson(text: string): string | null {
@@ -294,13 +309,20 @@ export class Orchestrator {
 
     const slashCmd = this.parseSlashCommand(userInput);
     if (slashCmd) {
-      return this.handleSlashCommand(slashCmd.command, slashCmd.args, activeCharacters, sceneId);
+      return this.handleSlashCommand(slashCmd.command, slashCmd.args, activeCharacters, sceneId, personaName);
     }
 
     // Check if user is requesting a scene description
     if (this.isSceneDescriptionRequest(userInput)) {
+      // Load session context for scene-level data
+      const sessionContext = sceneId ? await this.buildSessionContext(sceneId) : null;
+
       // Add user input to history
       this.history.push(`User: ${userInput}`);
+
+      // Extract user persona state from characterStates if available
+      const userPersonaState = sessionContext?.scene.characterStates?.['user'] || 
+                               sessionContext?.scene.characterStates?.[personaName] || {};
 
       // Prepare context
       const context: AgentContext = {
@@ -309,6 +331,9 @@ export class Orchestrator {
         worldState: this.worldState,
         lore: this.getActivatedLore(userInput + ' ' + this.history.join(' ')),
         userPersona: this.getPersona(personaName),
+        userPersonaState: userPersonaState,
+        activeCharacters: sessionContext?.activeCharacters || [],
+        formattedLore: sessionContext?.formattedLore || '',
       };
 
       // Call only NarratorAgent for scene description
@@ -691,7 +716,7 @@ export class Orchestrator {
     return { responses, lore: sessionContext.lore };
   }
 
-  private async handleSlashCommand(command: string, args: string[], activeCharacters?: string[], sceneId?: number): Promise<{ responses: { sender: string; content: string }[]; lore: string[]; }> {
+  private async handleSlashCommand(command: string, args: string[], activeCharacters?: string[], sceneId?: number, personaName: string = 'default'): Promise<{ responses: { sender: string; content: string }[]; lore: string[]; }> {
     switch (command) {
       case 'create':
         const creatorAgent = this.agents.get('creator')!;
@@ -699,6 +724,7 @@ export class Orchestrator {
           userInput: args.join(' '),
           history: this.history,
           worldState: this.worldState,
+          userPersona: this.getPersona(personaName),
           creationRequest: args.join(' '),
         };
         console.log('Calling CreatorAgent');
@@ -716,6 +742,7 @@ export class Orchestrator {
           userInput: args.join(' '),
           history: this.history,
           worldState: this.worldState,
+          userPersona: this.getPersona(personaName),
           narration: args.join(' '),
           sceneElements: [], // No specific elements for /image command
         };
@@ -729,51 +756,71 @@ export class Orchestrator {
         if (!this.configManager.isVisualAgentEnabled()) {
           return { responses: [{ sender: 'System', content: 'Visual agent is disabled in configuration.' }], lore: [] };
         }
-        // Resolve active characters (names -> descriptions)
-        const resolvedChars: { name: string; description: string }[] = [];
-        if (activeCharacters && Array.isArray(activeCharacters) && activeCharacters.length) {
-          for (const id of activeCharacters) {
-            const merged = CharacterService.getMergedCharacter({ characterId: id });
-            if (merged) {
-              const desc = merged.description || merged.personality || '';
-              resolvedChars.push({ name: merged.name || 'Unknown', description: desc });
-            }
-          }
+        
+        // Load full session context for scene details
+        const sessionContext = sceneId ? await this.buildSessionContext(sceneId) : null;
+        
+        // Resolve active characters with full merged data and character states
+        const resolvedCharsWithState: any[] = [];
+        if (sessionContext?.activeCharacters && Array.isArray(sessionContext.activeCharacters)) {
+          resolvedCharsWithState.push(...sessionContext.activeCharacters);
         }
 
         // Build a context for the narrator using current orchestrator state and active character summaries
         const narratorAgent = this.agents.get('narrator')!;
+        
+        // Extract user persona state from characterStates if available
+        const userPersonaState = sessionContext?.scene.characterStates?.['user'] || 
+                                 sessionContext?.scene.characterStates?.['default'] || {};
+        
         const narrContext: AgentContext = {
           userInput: 'Describe the scene',
           history: this.history,
           worldState: this.worldState,
           sceneSummary: this.sceneSummary,
           lore: this.getActivatedLore(this.history.join(' ')),
-          userPersona: this.getPersona('default'),
-          activeCharacters: resolvedChars
+          formattedLore: sessionContext?.formattedLore || '',
+          userPersona: this.getPersona(personaName),
+          userPersonaState: userPersonaState,
+          activeCharacters: resolvedCharsWithState,
+          narrationMode: 'scene-picture',
+          // Additional scene context
+          location: sessionContext?.scene.location,
+          timeOfDay: sessionContext?.scene.timeOfDay,
+          sceneDescription: sessionContext?.scene.description,
         } as any;
-        console.log('Calling NarratorAgent for /scenepicture');
+        console.log('Calling NarratorAgent for /scenepicture with scene-picture mode');
         this.emitAgentStatus('Narrator', 'start', sceneId);
         const narration = await narratorAgent.run(narrContext);
         console.log('NarratorAgent completed for /scenepicture');
         this.emitAgentStatus('Narrator', 'complete', sceneId);
 
-        // Append character info to prompt for visual agent
-        let promptForImage = narration;
-        if (resolvedChars.length) {
-          // Escape any double-quotes/backslashes in character descriptions to keep JSON safe
-          const escapeForJson = (s: any) => String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-          const charsText = resolvedChars.map(c => `- ${c.name}: ${escapeForJson(c.description || 'no description')}`).join('\n');
-          promptForImage = `${narration}\n\nCharacters:\n${charsText}`;
-        }
-
-        // Generate image from narration+characters
+        // Generate SD prompt for scene picture visualization
         const visAgent = this.agents.get('visual')! as any;
         try {
           this.emitAgentStatus('Visual', 'start', sceneId);
-          const imageUrl = await visAgent.generateFromPrompt(promptForImage);
+          
+          // Create context for visual agent to generate SD prompt
+          const visualContext: AgentContext = {
+            userInput: 'Generate SD prompt for this scene',
+            history: this.history,
+            worldState: this.worldState,
+            userPersona: this.getPersona(personaName),
+            userPersonaState: userPersonaState,
+            activeCharacters: resolvedCharsWithState,
+            sceneDescription: narration,
+            location: sessionContext?.scene.location,
+            timeOfDay: sessionContext?.scene.timeOfDay,
+            narrationMode: 'scene-picture',
+          } as any;
+          
+          // Call visual agent to generate SD prompt
+          const sdPrompt = await visAgent.run(visualContext);
+          
+          // Generate image from the SD prompt
+          const imageUrl = await visAgent.generateImage(sdPrompt);
           this.emitAgentStatus('Visual', 'complete', sceneId);
-          const meta = { prompt: promptForImage, urls: [imageUrl], current: 0 };
+          const meta = { prompt: sdPrompt, urls: [imageUrl], current: 0 };
           const md = `![${JSON.stringify(meta)}](${imageUrl})`;
           return { responses: [{ sender: 'Visual', content: md }], lore: [] };
         } catch (err) {
