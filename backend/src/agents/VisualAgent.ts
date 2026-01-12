@@ -43,6 +43,29 @@ export class VisualAgent extends BaseAgent {
       }
     }
 
+    // For /image command: use dedicated visual-image template with matched entities
+    if ((context as any).matchedEntities && (context as any).matchedEntities.length > 0) {
+      const systemPrompt = this.renderTemplate('visual-image', context);
+      const messages = this.renderLLMTemplate(systemPrompt, '');
+      const response = await this.callLLM(messages);
+      const sdPrompt = this.cleanResponse(response as string).trim();
+      
+      // Validate the prompt
+      if (sdPrompt.length < 30 || sdPrompt.includes('detailed prompt here')) {
+        console.error('Visual agent generated invalid prompt:', sdPrompt);
+        return '[Image generation failed: invalid prompt generated]';
+      }
+      
+      try {
+        const imageUrl = await this.generateImage(sdPrompt);
+        const meta = { prompt: sdPrompt, urls: [imageUrl], current: 0 };
+        return `![${JSON.stringify(meta)}](${imageUrl})`;
+      } catch (error) {
+        console.error('Image generation failed:', error);
+        return '[Image generation failed]';
+      }
+    }
+
     // For scene-picture mode, generate an optimized SD prompt directly
     if (context.narrationMode === 'scene-picture') {
       const systemPrompt = this.renderTemplate('visual-scene-picture', context);
@@ -52,6 +75,30 @@ export class VisualAgent extends BaseAgent {
       return sdPrompt;
     }
 
+    // For /image command: narration is provided, generate image directly (legacy path)
+    if (context.narration && typeof context.narration === 'string' && context.narration.length > 10) {
+      const systemPrompt = this.renderTemplate('visual', context);
+      const messages = this.renderLLMTemplate(systemPrompt, '');
+      const response = await this.callLLM(messages);
+      const sdPrompt = this.cleanResponse(response as string).trim();
+      
+      // If the prompt is too short or generic, it failed
+      if (sdPrompt.length < 20 || sdPrompt.includes('detailed prompt here')) {
+        console.error('Visual agent generated invalid prompt:', sdPrompt);
+        return '[Image generation failed: invalid prompt generated]';
+      }
+      
+      try {
+        const imageUrl = await this.generateImage(sdPrompt);
+        const meta = { prompt: sdPrompt, urls: [imageUrl], current: 0 };
+        return `![${JSON.stringify(meta)}](${imageUrl})`;
+      } catch (error) {
+        console.error('Image generation failed:', error);
+        return '[Image generation failed]';
+      }
+    }
+
+    // For regular visual requests with userInput, check for [GEN_IMAGE:] tags
     const systemPrompt = this.renderTemplate('visual', context);
     const messages = this.renderLLMTemplate(systemPrompt, context.userInput);
     const response = await this.callLLM(messages);
@@ -75,6 +122,7 @@ export class VisualAgent extends BaseAgent {
   }
 
   async generateImage(prompt: string): Promise<string> {
+    this.configManager.reload(); // Reload config fresh each time
     const config = this.configManager.getConfig();
     const comfyui = config.comfyui;
     if (!comfyui || !comfyui.endpoint) {

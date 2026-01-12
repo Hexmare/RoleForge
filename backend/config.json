@@ -9,7 +9,7 @@
   "comfyui": {
     "endpoint": "http://localhost:8188",
     "workflow": "Default_Comfy_Workflow.json",
-    "model": "crealismTerraMirabilis_v2025Steps.safetensors",
+    "model": "svision_240429.safetensors",
     "vae": "qwen_image_vae.safetensors",
     "sampler": "euler",
     "scheduler": "simple",

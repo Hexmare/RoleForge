@@ -35,7 +35,7 @@ export default function ComfyConfigModal({ visible, onClose, isModal = true }: P
   const [comfyStatus, setComfyStatus] = useState<string | null>(null);
   const [lastCounts, setLastCounts] = useState<{ models?: number; vaes?: number; samplers?: number; schedulers?: number } | null>(null);
 
-  const refreshComfyLists = async (ep?: string | any) => {
+  const refreshComfyLists = async (ep?: string | any, cfgModel?: string | null, cfgVae?: string | null, cfgSampler?: string | null, cfgScheduler?: string | null) => {
     const useEp = (typeof ep === 'string') ? ep : endpoint;
     setComfyStatus('Querying ComfyUI...');
     try {
@@ -47,10 +47,11 @@ export default function ComfyConfigModal({ visible, onClose, isModal = true }: P
         setVaes((data.vaes || []).map((v: any) => (typeof v === 'object' && v.name) ? v.name : String(v)));
         setSamplers((data.samplers || []).map((s: any) => String(s)));
         setSchedulers((data.schedulers || []).map((s: any) => String(s)));
-        if (!selectedModel && data.models && data.models.length) setSelectedModel(data.models[0].name || data.models[0]);
-        if (!selectedVae && data.vaes && data.vaes.length) setSelectedVae(data.vaes[0].name || data.vaes[0]);
-        if (!selectedSampler && data.samplers && data.samplers.length) setSelectedSampler(data.samplers[0]);
-        if (!selectedScheduler && data.schedulers && data.schedulers.length) setSelectedScheduler(data.schedulers[0]);
+        // Use config values if provided, otherwise default to first item
+        setSelectedModel(cfgModel || (data.models && data.models.length ? (data.models[0].name || data.models[0]) : null));
+        setSelectedVae(cfgVae || (data.vaes && data.vaes.length ? (data.vaes[0].name || data.vaes[0]) : null));
+        setSelectedSampler(cfgSampler || (data.samplers && data.samplers.length ? data.samplers[0] : null));
+        setSelectedScheduler(cfgScheduler || (data.schedulers && data.schedulers.length ? data.schedulers[0] : null));
         setLastCounts({ models: (data.models || []).length, vaes: (data.vaes || []).length, samplers: (data.samplers || []).length, schedulers: (data.schedulers || []).length });
         setComfyStatus('OK');
       } else {
@@ -80,10 +81,6 @@ export default function ComfyConfigModal({ visible, onClose, isModal = true }: P
             const ep = cfg.endpoint || cfg.url || endpoint;
             setEndpoint(ep);
             setSelectedWorkflow(cfg.workflow || selectedWorkflow);
-            setSelectedModel(cfg.model || selectedModel);
-            setSelectedVae(cfg.vae || selectedVae);
-            setSelectedSampler(cfg.sampler || selectedSampler);
-            setSelectedScheduler(cfg.scheduler || selectedScheduler);
             setSteps(cfg.steps ?? steps);
             setHeight(cfg.height ?? height);
             setWidth(cfg.width ?? width);
@@ -93,8 +90,8 @@ export default function ComfyConfigModal({ visible, onClose, isModal = true }: P
             setSeed(cfg.seed ?? seed);
             setNegativePrompt(cfg.negative_prompt || negativePrompt);
             setPositivePrompt(cfg.positive_prompt || positivePrompt);
-            // auto-refresh lists now that endpoint is set
-            await refreshComfyLists(ep);
+            // auto-refresh lists now that endpoint is set, passing config values for model/vae/sampler/scheduler
+            await refreshComfyLists(ep, cfg.model, cfg.vae, cfg.sampler, cfg.scheduler);
           }
         }
       } catch (e) {

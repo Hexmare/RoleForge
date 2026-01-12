@@ -7,6 +7,7 @@ interface Persona {
   species: string;
   race: string;
   gender: string;
+  age: string;
   appearance: {
     height: string;
     weight: string;
@@ -330,6 +331,16 @@ function PersonaManager() {
               />
               {editing !== 'new' && <button type="button" onClick={() => { setRegenField('gender'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+              <label style={{ flex: 1 }}>Age: The persona's age or age range</label>
+              <input
+                type="text"
+                value={form.age || ''}
+                onChange={(e) => setForm({ ...form, age: e.target.value })}
+                style={{ flex: 2 }}
+              />
+              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('age'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
+            </div>
             <fieldset style={{ marginBottom: 8 }}>
               <legend>Appearance: Physical description of the persona</legend>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
@@ -401,6 +412,15 @@ function PersonaManager() {
                   type="text"
                   value={form.appearance?.distinctiveFeatures || ''}
                   onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, distinctiveFeatures: e.target.value } })}
+                  style={{ flex: 2 }}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+                <label style={{ flex: 1 }}>Skin Tone:</label>
+                <input
+                  type="text"
+                  value={form.appearance?.skinTone || ''}
+                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, skinTone: e.target.value } })}
                   style={{ flex: 2 }}
                 />
               </div>

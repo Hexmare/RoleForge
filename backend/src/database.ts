@@ -101,6 +101,32 @@ try {
   console.warn('Could not ensure avatarUrl column exists:', e);
 }
 
+// Ensure personas table has race and skinTone columns
+try {
+  const pcols = db.prepare("PRAGMA table_info('personas')").all();
+  const hasRace = pcols.some((c: any) => c.name === 'race');
+  if (!hasRace) {
+    db.exec(`ALTER TABLE personas ADD COLUMN race TEXT DEFAULT 'Caucasian';`);
+  }
+  const hasSkinTone = pcols.some((c: any) => c.name === 'skinTone');
+  if (!hasSkinTone) {
+    db.exec(`ALTER TABLE personas ADD COLUMN skinTone TEXT DEFAULT 'white';`);
+  }
+} catch (e) {
+  console.warn('Could not ensure personas race/skinTone columns exist:', e);
+}
+
+// Ensure characters table has skinTone column
+try {
+  const ccols = db.prepare("PRAGMA table_info('characters')").all();
+  const hasSkinTone = ccols.some((c: any) => c.name === 'skinTone');
+  if (!hasSkinTone) {
+    db.exec(`ALTER TABLE characters ADD COLUMN skinTone TEXT DEFAULT 'white';`);
+  }
+} catch (e) {
+  console.warn('Could not ensure characters skinTone column exists:', e);
+}
+
 // Phase 5: World/Campaign/Arc/Scene and related tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS Worlds (

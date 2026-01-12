@@ -24,7 +24,7 @@ import LorebookService from './services/LorebookService';
 import { VisualAgent } from './agents/VisualAgent';
 import { tryParse, unwrapPrompt } from './utils/unpackPrompt';
 import axios from 'axios';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { countTokens } from './utils/tokenCounter.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -995,7 +995,11 @@ app.get('/api/characters/:id', (req, res) => {
 
 app.post('/api/characters', (req, res) => {
   const characterData = req.body;
-  const id = CharacterService.saveBaseCharacter(characterData.name, characterData, characterData.avatarUrl || characterData.avatar);
+  const id = characterData.id || CharacterService.saveBaseCharacter(characterData.name, characterData, characterData.avatarUrl || characterData.avatar);
+  if (characterData.id) {
+    // If a UUID was provided, save it with that ID
+    CharacterService.saveBaseCharacter(characterData.id, characterData, characterData.avatarUrl || characterData.avatar);
+  }
   res.json({ id });
 });
 
@@ -1056,7 +1060,9 @@ app.post('/api/characters/generate', async (req, res) => {
     };
     const result = await orchestrator.createCharacter(context);
     const generatedChar = JSON.parse(result);
-    const id = CharacterService.saveBaseCharacter(generatedChar.name, generatedChar, generatedChar.avatarUrl || generatedChar.avatar);
+    // Generate UUID for new character
+    const charWithId = { ...generatedChar, id: randomUUID() };
+    const id = CharacterService.saveBaseCharacter(charWithId.id, charWithId, charWithId.avatarUrl || charWithId.avatar);
     res.json({ id });
   } catch (error) {
     console.error('Generate error:', error);
@@ -1081,7 +1087,9 @@ app.post('/api/characters/import', async (req, res) => {
     };
     const result = await orchestrator.createCharacter(context);
     const importedChar = JSON.parse(result);
-    const id = CharacterService.saveBaseCharacter(importedChar.name, importedChar, importedChar.avatarUrl || importedChar.avatar);
+    // Generate UUID for imported character
+    const charWithId = { ...importedChar, id: randomUUID() };
+    const id = CharacterService.saveBaseCharacter(charWithId.id, charWithId, charWithId.avatarUrl || charWithId.avatar);
     res.json({ id });
   } catch (error) {
     console.error('Import error:', error);
@@ -1803,10 +1811,15 @@ app.get('/api/personas', (req, res) => {
 app.post('/api/personas', (req, res) => {
   const personaData = req.body;
   const stmt = db.prepare(`
-    INSERT INTO personas (name, data)
-    VALUES (?, ?)
+    INSERT INTO personas (name, data, race, skinTone)
+    VALUES (?, ?, ?, ?)
   `);
-  const result = stmt.run(personaData.name, JSON.stringify(personaData));
+  const result = stmt.run(
+    personaData.name,
+    JSON.stringify(personaData),
+    personaData.race || 'Caucasian',
+    personaData.skinTone || 'white'
+  );
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -1825,9 +1838,15 @@ app.put('/api/personas/:id', (req, res) => {
   const { id } = req.params;
   const personaData = req.body;
   const stmt = db.prepare(`
-    UPDATE personas SET name = ?, data = ? WHERE id = ?
+    UPDATE personas SET name = ?, data = ?, race = ?, skinTone = ? WHERE id = ?
   `);
-  const result = stmt.run(personaData.name, JSON.stringify(personaData), id);
+  const result = stmt.run(
+    personaData.name,
+    JSON.stringify(personaData),
+    personaData.race || 'Caucasian',
+    personaData.skinTone || 'white',
+    id
+  );
   res.json({ changes: result.changes });
 });
 
@@ -1856,8 +1875,13 @@ app.post('/api/personas/generate', async (req, res) => {
     };
     const result = await orchestrator.createCharacter(context);
     const generatedPersona = JSON.parse(result);
-    const stmt = db.prepare('INSERT INTO personas (name, data) VALUES (?, ?)');
-    const dbResult = stmt.run(generatedPersona.name, JSON.stringify(generatedPersona));
+    const stmt = db.prepare('INSERT INTO personas (name, data, race, skinTone) VALUES (?, ?, ?, ?)');
+    const dbResult = stmt.run(
+      generatedPersona.name,
+      JSON.stringify(generatedPersona),
+      generatedPersona.race || 'Caucasian',
+      generatedPersona.appearance?.skinTone || generatedPersona.skinTone || 'white'
+    );
     res.json({ id: dbResult.lastInsertRowid });
   } catch (error) {
     console.error('Generate persona error:', error);
@@ -1887,8 +1911,14 @@ app.post('/api/personas/:id/update', async (req, res) => {
     };
     const result = await orchestrator.createCharacter(context);
     const updatedPersona = JSON.parse(result);
-    const stmt = db.prepare('UPDATE personas SET name = ?, data = ? WHERE id = ?');
-    const dbResult = stmt.run(updatedPersona.name, JSON.stringify(updatedPersona), id);
+    const stmt = db.prepare('UPDATE personas SET name = ?, data = ?, race = ?, skinTone = ? WHERE id = ?');
+    const dbResult = stmt.run(
+      updatedPersona.name,
+      JSON.stringify(updatedPersona),
+      updatedPersona.race || existing.race || 'Caucasian',
+      updatedPersona.appearance?.skinTone || updatedPersona.skinTone || existing.skinTone || 'white',
+      id
+    );
     res.json({ changes: dbResult.changes });
   } catch (error) {
     console.error('Update persona error:', error);
@@ -1921,8 +1951,14 @@ app.post('/api/personas/:id/field', async (req, res) => {
     let value = result;
     try { value = JSON.parse(result); } catch {}
     updatedPersona[field] = value;
-    const stmt = db.prepare('UPDATE personas SET name = ?, data = ? WHERE id = ?');
-    const dbResult = stmt.run(updatedPersona.name, JSON.stringify(updatedPersona), id);
+    const stmt = db.prepare('UPDATE personas SET name = ?, data = ?, race = ?, skinTone = ? WHERE id = ?');
+    const dbResult = stmt.run(
+      updatedPersona.name,
+      JSON.stringify(updatedPersona),
+      updatedPersona.race || existing.race || 'Caucasian',
+      updatedPersona.appearance?.skinTone || updatedPersona.skinTone || existing.skinTone || 'white',
+      id
+    );
     res.json({ changes: dbResult.changes });
   } catch (error) {
     console.error('Field update persona error:', error);

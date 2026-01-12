@@ -17,9 +17,17 @@
       "type": "string",
       "description": "e.g., 'Caucasian', 'Dark Elf'"
     },
+    "ethnicity": {
+      "type": "string",
+      "description": "e.g., 'European', 'African', 'Asian'"
+    },
     "gender": {
       "type": "string",
       "description": "e.g., 'Female', 'Male', 'Non-binary'"
+    },
+    "age": {
+      "type": "string",
+      "description": "e.g., '25', '19 years old', 'mid-thirties'"
     },
     "appearance": {
       "type": "object",
@@ -30,6 +38,7 @@
         "eyeColor": { "type": "string" },
         "hairColor": { "type": "string" },
         "hairStyle": { "type": "string" },
+        "skinTone": { "type": "string", "description": "e.g., 'pale', 'fair', 'olive', 'tan', 'brown', 'deep brown'" },
         "attractiveness": { "type": "string" },
         "distinctiveFeatures": { "type": "string" }
       },

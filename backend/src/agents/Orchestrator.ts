@@ -146,6 +146,7 @@ export class Orchestrator {
 
     // Parse active characters UUIDs
     const activeCharacters = sceneRow.activeCharacters ? JSON.parse(sceneRow.activeCharacters) : [];
+    console.log(`[ORCHESTRATOR] Scene ${sceneId}: activeCharacters in DB = ${JSON.stringify(activeCharacters)}`);
 
     // Resolve merged character objects where possible
     const activeCharactersResolved: any[] = [];
@@ -153,7 +154,7 @@ export class Orchestrator {
     for (const item of activeCharacters) {
       const merged = CharacterService.getMergedCharacter({ characterId: item, worldId: worldRow.id, campaignId: campaignRow.id });
       if (merged) {
-        console.log(`Found merged character for ${item}`);
+        console.log(`[ORCHESTRATOR] Found merged character for ${item}: ${merged.name}`);
         // Apply current character state if available
         const currentState = characterStates[merged.id] || characterStates[merged.name];
         if (currentState) {
@@ -161,9 +162,10 @@ export class Orchestrator {
         }
         activeCharactersResolved.push(merged);
       } else {
-        console.log(`No merged character found for ${item}`);
+        console.log(`[ORCHESTRATOR] No merged character found for ${item}`);
       }
     }
+    console.log(`[ORCHESTRATOR] Scene ${sceneId}: resolved ${activeCharactersResolved.length} characters`);
 
     const sessionContext = {
       world: { id: worldRow.id, slug: worldRow.slug, name: worldRow.name, description: worldRow.description },
@@ -238,6 +240,46 @@ export class Orchestrator {
       return parsedData;
     }
     return null;
+  }
+
+  // Search for characters and personas by name with overrides applied
+  private searchForEntities(prompt: string, worldId?: number, campaignId?: number): any[] {
+    const matchedEntities: any[] = [];
+    
+    // Build search pool: all characters + all personas
+    const searchPool: Array<{ name: string; type: 'character' | 'persona'; data: any }> = [];
+    
+    // Add all characters with overrides applied
+    const allCharacters = CharacterService.getAllCharacters();
+    for (const char of allCharacters) {
+      const mergedWithOverrides = CharacterService.getMergedCharacter({
+        characterId: char.id,
+        worldId,
+        campaignId
+      });
+      if (mergedWithOverrides) {
+        searchPool.push({ name: mergedWithOverrides.name, type: 'character', data: mergedWithOverrides });
+      }
+    }
+    
+    // Add all personas
+    const allPersonas = this.db.prepare('SELECT * FROM personas').all() as any[];
+    for (const persona of allPersonas) {
+      const flattened = this.getPersona(persona.name);
+      searchPool.push({ name: persona.name, type: 'persona', data: flattened });
+    }
+    
+    // Search for matching names in the prompt
+    for (const entity of searchPool) {
+      if (prompt.toLowerCase().includes(entity.name.toLowerCase())) {
+        // Add type field to the data for template usage
+        const entityData = { ...entity.data, type: entity.type };
+        matchedEntities.push(entityData);
+        console.log(`[searchForEntities] Found ${entity.type}: ${entity.name}`);
+      }
+    }
+    
+    return matchedEntities;
   }
 
   private getPersona(name: string): any {
@@ -737,21 +779,48 @@ export class Orchestrator {
         if (!this.configManager.isVisualAgentEnabled()) {
           return { responses: [{ sender: 'System', content: 'Visual agent is disabled in configuration.' }], lore: [] };
         }
+        
+        // Parse character names from the input (e.g., "/image Annie and Hex embracing")
+        const imagePrompt = args.join(' ');
+        console.log(`[/image] Starting image command with prompt: "${imagePrompt}", sceneId: ${sceneId}`);
+        
+        // Load session context to get world/campaign info
+        const imageSessionContext = sceneId ? await this.buildSessionContext(sceneId) : null;
+        console.log(`[/image] Session context loaded: ${imageSessionContext ? 'yes' : 'no'}`);
+        
+        // Search for ONLY entities explicitly mentioned in the prompt
+        const matchedEntities = this.searchForEntities(
+          imagePrompt,
+          imageSessionContext?.world.id,
+          imageSessionContext?.campaign.id
+        );
+        console.log(`[/image] Matched ${matchedEntities.length} entities: [${matchedEntities.map((e: any) => e.name).join(', ')}]`);
+        
+        // If no entities found, reject the command
+        if (matchedEntities.length === 0) {
+          return { responses: [{ sender: 'System', content: 'No characters or personas found in your prompt. Please mention specific character/persona names.' }], lore: [] };
+        }
+        
+        // Use the dedicated visual-image template with matched entities
         const visualAgent = this.agents.get('visual')!;
         const visualContext: AgentContext = {
-          userInput: args.join(' '),
+          userInput: imagePrompt,
+          imagePrompt: imagePrompt,  // Keep original prompt for template
+          matchedEntities: matchedEntities,  // Pass only matched entities to template
           history: this.history,
           worldState: this.worldState,
           userPersona: this.getPersona(personaName),
-          narration: args.join(' '),
-          sceneElements: [], // No specific elements for /image command
-        };
-        console.log('Calling VisualAgent for /image');
+          activeCharacters: matchedEntities,  // Also keep for compatibility
+          narration: '', // Not used for /image
+          sceneElements: [],
+        } as any;
+        
+        console.log(`[/image] Calling VisualAgent with ${matchedEntities.length} matched entities`);
         this.emitAgentStatus('Visual', 'start', sceneId);
         const visualResult = await visualAgent.run(visualContext);
-        console.log('VisualAgent completed for /image');
+        console.log('[/image] VisualAgent completed');
         this.emitAgentStatus('Visual', 'complete', sceneId);
-        return { responses: [{ sender: 'Visual', content: visualResult }], lore: [] };
+        return { responses: [{ sender: 'Visual', content: visualResult }], lore: imageSessionContext?.lore || [] };
       case 'scenepicture':
         if (!this.configManager.isVisualAgentEnabled()) {
           return { responses: [{ sender: 'System', content: 'Visual agent is disabled in configuration.' }], lore: [] };

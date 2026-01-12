@@ -1,12 +1,22 @@
 import { useState, useEffect, useCallback } from 'react';
 import Cropper from 'react-easy-crop';
 
+// UUID v4 generation function
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 interface Character {
   id: string;
   name: string;
   species: string;
   race: string;
   gender: string;
+  age: string;
   appearance: {
     height: string;
     weight: string;
@@ -94,11 +104,15 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
       setEditing(null);
       setForm({});
     } else {
-      // create
+      // create - add UUID for new character
+      const newCharData = {
+        ...form,
+        id: generateUUID()
+      };
       const res = await fetch('/api/characters', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(newCharData),
       });
       const data = await res.json();
       const newId = data.id;
@@ -216,7 +230,7 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
   const handleCopy = async () => {
     if (!copySource || !copyName) return;
     try {
-      const newChar = { ...copySource, name: copyName, id: `copy-${Date.now()}` };
+      const newChar = { ...copySource, name: copyName, id: generateUUID() };
       const res = await fetch('/api/characters', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -436,6 +450,16 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
               />
               {editing !== 'new' && <button type="button" onClick={() => { setRegenField('gender'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+              <label style={{ flex: 1 }}>Age: The character's age or age range</label>
+              <input
+                type="text"
+                value={form.age || ''}
+                onChange={(e) => setForm({ ...form, age: e.target.value })}
+                style={{ flex: 2 }}
+              />
+              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('age'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
+            </div>
             <fieldset style={{ marginBottom: 8 }}>
               <legend>Appearance: Physical description of the character</legend>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
@@ -507,6 +531,15 @@ function CharacterManager({ onRefresh }: { onRefresh: () => void }) {
                   type="text"
                   value={form.appearance?.distinctiveFeatures || ''}
                   onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, distinctiveFeatures: e.target.value } })}
+                  style={{ flex: 2 }}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+                <label style={{ flex: 1 }}>Skin Tone:</label>
+                <input
+                  type="text"
+                  value={form.appearance?.skinTone || ''}
+                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, skinTone: e.target.value } })}
                   style={{ flex: 2 }}
                 />
               </div>
