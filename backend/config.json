@@ -1,5 +1,5 @@
 {
-  "defaultProfile": "kobold",
+  "defaultProfile": "openai",
   "features": {
     "visualAgentEnabled": true,
     "socketAckLogs": true,
@@ -70,12 +70,12 @@
       }
     },
     "director": {
-      "llmProfile": "default",
-      "format": "json"
+      "llmProfile": "default"
+
     },
     "world": {
-      "llmProfile": "default",
-      "format": "json"
+      "llmProfile": "default"
+      
     },
     "summarize": {
       "llmProfile": "default",

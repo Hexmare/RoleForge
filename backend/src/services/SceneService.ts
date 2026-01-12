@@ -1,5 +1,6 @@
 import db from '../database';
 import MessageService from './MessageService';
+import CampaignService from './CampaignService';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -121,6 +122,10 @@ export const SceneService = {
       null, // reset locationRelationships
       id
     );
+
+    // Also reset campaign trackers and dynamicFacts
+    CampaignService.updateState(campaignRow.id, { trackers: {}, dynamicFacts: {} });
+
     return { changes: result.changes };
   },
 

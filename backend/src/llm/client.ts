@@ -84,9 +84,8 @@ export async function chatCompletion(
     logit_bias: profile.sampler.logitBias ?? null,
   } : {};
 
-  // Conditionally add response_format for JSON responses
-  // Temporarily disabled for debugging
-  const formatOptions = {}; // profile.format === 'json' ? { response_format: { type: "json_object" as const } } : {};
+  // Conditionally add response_format or other format options
+  const formatOptions = profile.format ? profile.format : {};
 
   const baseOptions = {
     model,
