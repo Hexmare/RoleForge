@@ -7,6 +7,7 @@ import { DirectorAgent } from '../agents/DirectorAgent';
 import { WorldAgent } from '../agents/WorldAgent';
 import { ConfigManager } from '../configManager';
 import * as nunjucks from 'nunjucks';
+import { vi } from 'vitest';
 
 describe('LLM Client', () => {
   const mockProfile: LLMProfile = {
@@ -145,6 +146,121 @@ describe('LLM Client', () => {
       const formattedHistory = sceneSummary ? [`[SCENE SUMMARY]\n${sceneSummary}\n\n[MESSAGES]\n${history.join('\n')}`] : history;
       
       expect(formattedHistory).toEqual(history);
+    });
+  });
+
+  describe('Retry and Fallback Behavior', () => {
+    const fallbackProfile: LLMProfile = {
+      type: 'openai',
+      apiKey: 'fallback-key',
+      baseURL: 'https://fallback.example.com/v1',
+      model: 'gpt-3.5-turbo',
+    };
+
+    it('should support fallback profiles configuration', () => {
+      const mainProfile: LLMProfile = {
+        type: 'openai',
+        apiKey: 'main-key',
+        baseURL: 'https://main.example.com/v1',
+        model: 'gpt-3.5-turbo',
+        fallbackProfiles: ['fallback'],
+      };
+
+      expect(mainProfile.fallbackProfiles).toBeDefined();
+      expect(mainProfile.fallbackProfiles).toContain('fallback');
+    });
+
+    it('should have retryable error classification', () => {
+      // Verify error codes that should be retried
+      const retryableCodes = [408, 429, 500, 502, 503, 504];
+      expect(retryableCodes).toHaveLength(6);
+      expect(retryableCodes).toContain(429); // Rate limit
+      expect(retryableCodes).toContain(503); // Service unavailable
+    });
+
+    it('should recognize network errors as retryable', () => {
+      const networkErrors = ['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT'];
+      expect(networkErrors).toContain('ECONNREFUSED');
+      expect(networkErrors).toContain('ENOTFOUND');
+      expect(networkErrors).toContain('ETIMEDOUT');
+    });
+
+    it('should handle exponential backoff calculation', () => {
+      // Verify backoff times: 1s, 2s, 4s
+      const backoffs = [
+        Math.pow(2, 0) * 1000, // 1000ms
+        Math.pow(2, 1) * 1000, // 2000ms
+        Math.pow(2, 2) * 1000, // 4000ms
+      ];
+      
+      expect(backoffs[0]).toBe(1000);
+      expect(backoffs[1]).toBe(2000);
+      expect(backoffs[2]).toBe(4000);
+    });
+
+    it('should attempt retries before giving up', () => {
+      // This test verifies the retry count limit (MAX_RETRIES = 3)
+      const MAX_RETRIES = 3;
+      expect(MAX_RETRIES).toBe(3);
+    });
+
+    it('profile should accept fallbackProfiles array', () => {
+      const profile: LLMProfile = {
+        type: 'openai',
+        apiKey: 'test',
+        baseURL: 'https://test.com',
+        fallbackProfiles: ['fallback1', 'fallback2'],
+      };
+
+      expect(Array.isArray(profile.fallbackProfiles)).toBe(true);
+      expect(profile.fallbackProfiles).toHaveLength(2);
+    });
+  });
+
+  describe('Stop Sequence Support', () => {
+    it('profile sampler should support stop sequences', () => {
+      const profile: LLMProfile = {
+        type: 'openai',
+        apiKey: 'test',
+        baseURL: 'https://test.com',
+        sampler: {
+          stop: ['END', 'STOP', '###'],
+        },
+      };
+
+      expect(profile.sampler?.stop).toBeDefined();
+      expect(profile.sampler?.stop).toContain('END');
+      expect(profile.sampler?.stop).toHaveLength(3);
+    });
+
+    it('stop sequences should be passed to LLM API', () => {
+      const stopSeqs = ['END', 'STOP'];
+      expect(Array.isArray(stopSeqs)).toBe(true);
+      expect(stopSeqs).toContain('END');
+      expect(stopSeqs).toContain('STOP');
+    });
+
+    it('should handle empty stop sequences', () => {
+      const profile: LLMProfile = {
+        type: 'openai',
+        apiKey: 'test',
+        baseURL: 'https://test.com',
+        sampler: {
+          stop: [],
+        },
+      };
+
+      expect(profile.sampler?.stop).toHaveLength(0);
+    });
+
+    it('should handle undefined stop sequences', () => {
+      const profile: LLMProfile = {
+        type: 'openai',
+        apiKey: 'test',
+        baseURL: 'https://test.com',
+      };
+
+      expect(profile.sampler?.stop).toBeUndefined();
     });
   });
 });

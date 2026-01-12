@@ -1,0 +1,9 @@
+{# Llama2 Chat Format Template #}
+{# Format for Meta's Llama2-Chat models #}
+{# Reference: https://huggingface.co/meta-llama/Llama-2-7b-chat #}
+
+<s>[INST] <<SYS>>
+{{ system_prompt }}
+<</SYS>>
+
+{{ user_message }} [/INST] {{ assistant_message }} </s>

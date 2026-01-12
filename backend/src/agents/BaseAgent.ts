@@ -184,8 +184,22 @@ export abstract class BaseAgent {
 
   protected renderLLMTemplate(systemPrompt: string, userMessage: string, assistantMessage: string = ''): ChatMessage[] {
     const profile = this.getProfile();
-    const templateName = profile.template || 'chatml'; // Default to 'chatml'
-    const templatePath = path.join(dirname(fileURLToPath(import.meta.url)), '..', 'llm_templates', `${templateName}.njk`);
+    let templateName = profile.template || 'chatml'; // Default to 'chatml'
+    const templatesDir = path.join(dirname(fileURLToPath(import.meta.url)), '..', 'llm_templates');
+    let templatePath = path.join(templatesDir, `${templateName}.njk`);
+    
+    // Check if template file exists; fallback to chatml if not
+    if (!fs.existsSync(templatePath)) {
+      console.warn(`Template file not found: ${templatePath}. Falling back to chatml.njk`);
+      templateName = 'chatml';
+      templatePath = path.join(templatesDir, `${templateName}.njk`);
+      
+      // Final safety check: ensure chatml exists
+      if (!fs.existsSync(templatePath)) {
+        throw new Error(`Critical: Default template chatml.njk not found at ${templatePath}`);
+      }
+    }
+    
     const template = fs.readFileSync(templatePath, 'utf-8');
     const rendered = this.env.renderString(template, { system_prompt: systemPrompt, user_message: userMessage, assistant_message: assistantMessage });
 

@@ -28,6 +28,7 @@ export interface LLMProfile {
   template?: string; // LLM template name, e.g., 'chatml'
   sampler?: SamplerSettings;
   format?: string; // Response format, e.g., 'json'
+  fallbackProfiles?: string[]; // Profile names to try if this one fails
 }
 
 export interface AgentConfig {

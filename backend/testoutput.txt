@@ -1,0 +1,384 @@
+
+> backend@1.0.0 test
+> vitest
+
+
+[1m[44m DEV [49m[22m [34mv4.0.16 [39m[90mC:/AI_Tools/RoleForge/backend[39m
+
+ [32mΓ£ô[39m src/__tests__/llm-template.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32mΓ£ô[39m src/__tests__/unpackPrompt.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m src/__tests__/lorebook.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+[90mstdout[2m | src/__tests__/loreMatcher.test.ts[2m > [22m[2mloreMatcher[2m > [22m[2mmatches primary keys
+[22m[39m[LORE MATCHER] Starting match with 1 entries
+[LORE MATCHER] Context text (first 200 chars): the dragon breathes fire.
+[LORE MATCHER] Checking entry: key=["dragon","fire"], enabled=true
+[LORE MATCHER]     Checking 2 keys: ["dragon","fire"]
+[LORE MATCHER]         Pattern /\bdragon\b/gi: Γ£ô
+[LORE MATCHER]       Key "dragon": MATCH
+[LORE MATCHER]         Pattern /\bfire\b/gi: Γ£ô
+[LORE MATCHER]       Key "fire": MATCH
+[LORE MATCHER]   Matches found: 2
+
+[90mstdout[2m | src/__tests__/loreMatcher.test.ts[2m > [22m[2mloreMatcher[2m > [22m[2mrespects token budget
+[22m[39m[LORE MATCHER] Starting match with 2 entries
+[LORE MATCHER] Context text (first 200 chars): a b
+[LORE MATCHER] Checking entry: key=["b"], enabled=true
+[LORE MATCHER]     Checking 1 keys: ["b"]
+[LORE MATCHER]         Pattern /b/gi: Γ£ô
+[LORE MATCHER]       Key "b": MATCH
+[LORE MATCHER]   Matches found: 1
+[LORE MATCHER] Checking entry: key=["a"], enabled=true
+[LORE MATCHER]     Checking 1 keys: ["a"]
+[LORE MATCHER]         Pattern /a/gi: Γ£ô
+[LORE MATCHER]       Key "a": MATCH
+[LORE MATCHER]   Matches found: 1
+
+[90mstdout[2m | src/__tests__/loreMatcher.test.ts[2m > [22m[2mloreMatcher[2m > [22m[2mhandles selective logic
+[22m[39m[LORE MATCHER] Starting match with 1 entries
+[LORE MATCHER] Context text (first 200 chars): hero sword
+[LORE MATCHER] Checking entry: key=["hero"], enabled=true
+[LORE MATCHER]     Checking 1 keys: ["hero"]
+[LORE MATCHER]         Pattern /hero/gi: Γ£ô
+[LORE MATCHER]       Key "hero": MATCH
+[LORE MATCHER]   Matches found: 1
+
+ [32mΓ£ô[39m src/__tests__/loreMatcher.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+[90mstdout[2m | src/__tests__/client.test.ts[2m > [22m[2mLLM Client[2m > [22m[2mshould call chatCompletion without streaming
+[22m[39m[LLM] Attempt 1/3 on profile https://api.openai.com/v1
+[LLM] Making non-streaming call to gpt-3.5-turbo at https://api.openai.com/v1
+
+[90mstdout[2m | src/__tests__/generation.test.ts[2m > [22m[2mCharacter and Persona Generation[2m > [22m[2mshould generate a character
+[22m[39mRendered template for creator : You are the Creator Agent. Your task is to generate or update character profiles in the RoleForge format.
+
+{% if mode == 'create' %}
+Generate a new character based on the following:
+
+Name: {{ name }}
+Description: {{ description }}
+Instructions: {{ instructions }}
+
+The output must be a valid JSON object with exactly these top-level fields:
+- name: string
+- species: string (e.g., 'Human', 'Elf')
+- race: string (e.g., 'Caucasian', 'Dark Elf') [MANDATORY]
+- ethnicity: string (e.g., 'Eur...
+
+[90mstdout[2m | src/__tests__/generation.test.ts[2m > [22m[2mCharacter and Persona Generation[2m > [22m[2mshould generate a persona
+[22m[39mRendered template for creator : You are the Creator Agent. Your task is to generate or update character profiles in the RoleForge format.
+
+{% if mode == 'create' %}
+Generate a new character based on the following:
+
+Name: {{ name }}
+Description: {{ description }}
+Instructions: {{ instructions }}
+
+The output must be a valid JSON object with exactly these top-level fields:
+- name: string
+- species: string (e.g., 'Human', 'Elf')
+- race: string (e.g., 'Caucasian', 'Dark Elf') [MANDATORY]
+- ethnicity: string (e.g., 'Eur...
+
+[90mstdout[2m | src/__tests__/generation.test.ts[2m > [22m[2mCharacter and Persona Generation[2m > [22m[2mshould update a character field
+[22m[39mRendered template for creator : You are the Creator Agent. Your task is to generate or update character profiles in the RoleForge format.
+
+{% if mode == 'create' %}
+Generate a new character based on the following:
+
+Name: {{ name }}
+Description: {{ description }}
+Instructions: {{ instructions }}
+
+The output must be a valid JSON object with exactly these top-level fields:
+- name: string
+- species: string (e.g., 'Human', 'Elf')
+- race: string (e.g., 'Caucasian', 'Dark Elf') [MANDATORY]
+- ethnicity: string (e.g., 'Eur...
+
+[90mstdout[2m | src/__tests__/generation.test.ts[2m > [22m[2mCharacter and Persona Generation[2m > [22m[2mshould regenerate a specific field
+[22m[39mRendered template for creator : You are the Creator Agent. Your task is to generate or update character profiles in the RoleForge format.
+
+{% if mode == 'create' %}
+Generate a new character based on the following:
+
+Name: {{ name }}
+Description: {{ description }}
+Instructions: {{ instructions }}
+
+The output must be a valid JSON object with exactly these top-level fields:
+- name: string
+- species: string (e.g., 'Human', 'Elf')
+- race: string (e.g., 'Caucasian', 'Dark Elf') [MANDATORY]
+- ethnicity: string (e.g., 'Eur...
+
+ [32mΓ£ô[39m src/__tests__/generation.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+stderr | src/__tests__/session.test.ts
+Could not ensure Characters table columns: TypeError: Cannot read properties of undefined (reading 'all')
+    at C:/AI_Tools/RoleForge/backend/src/database.ts:29:70
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at C:/AI_Tools/RoleForge/backend/src/services/CharacterService.ts:1:1
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:487:17
+Could not ensure personas.avatarUrl column exists: TypeError: Cannot read properties of undefined (reading 'all')
+    at C:/AI_Tools/RoleForge/backend/src/database.ts:84:59
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at C:/AI_Tools/RoleForge/backend/src/services/CharacterService.ts:1:1
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:487:17
+Could not ensure avatarUrl column exists: TypeError: Cannot read properties of undefined (reading 'all')
+    at C:/AI_Tools/RoleForge/backend/src/database.ts:95:60
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at C:/AI_Tools/RoleForge/backend/src/services/CharacterService.ts:1:1
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:487:17
+Could not ensure personas race/skinTone columns exist: TypeError: Cannot read properties of undefined (reading 'all')
+    at C:/AI_Tools/RoleForge/backend/src/database.ts:106:59
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at C:/AI_Tools/RoleForge/backend/src/services/CharacterService.ts:1:1
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:487:17
+Could not ensure characters skinTone column exists: TypeError: Cannot read properties of undefined (reading 'all')
+    at C:/AI_Tools/RoleForge/backend/src/database.ts:121:61
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at C:/AI_Tools/RoleForge/backend/src/services/CharacterService.ts:1:1
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:487:17
+Could not ensure Messages.tokenCount column exists: TypeError: Cannot read properties of undefined (reading 'all')
+    at C:/AI_Tools/RoleForge/backend/src/database.ts:241:59
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at C:/AI_Tools/RoleForge/backend/src/services/CharacterService.ts:1:1
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:487:17
+Could not ensure Scenes.activeCharacters column exists: TypeError: Cannot read properties of undefined (reading 'all')
+    at C:/AI_Tools/RoleForge/backend/src/database.ts:252:57
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at C:/AI_Tools/RoleForge/backend/src/services/CharacterService.ts:1:1
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:487:17
+Could not ensure Messages.metadata column exists: TypeError: Cannot read properties of undefined (reading 'all')
+    at C:/AI_Tools/RoleForge/backend/src/database.ts:263:60
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at C:/AI_Tools/RoleForge/backend/src/services/CharacterService.ts:1:1
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:487:17
+Could not ensure Messages.source column exists: TypeError: Cannot read properties of undefined (reading 'all')
+    at C:/AI_Tools/RoleForge/backend/src/database.ts:275:60
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at C:/AI_Tools/RoleForge/backend/src/services/CharacterService.ts:1:1
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:487:17
+Could not ensure Scenes.summary column exists: TypeError: Cannot read properties of undefined (reading 'all')
+    at C:/AI_Tools/RoleForge/backend/src/database.ts:286:57
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at C:/AI_Tools/RoleForge/backend/src/services/CharacterService.ts:1:1
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:487:17
+Could not ensure Scenes summarization tracking columns exist: TypeError: Cannot read properties of undefined (reading 'all')
+    at C:/AI_Tools/RoleForge/backend/src/database.ts:297:58
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at C:/AI_Tools/RoleForge/backend/src/services/CharacterService.ts:1:1
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:487:17
+Could not ensure Scenes world state columns exist: TypeError: Cannot read properties of undefined (reading 'all')
+    at C:/AI_Tools/RoleForge/backend/src/database.ts:312:58
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at C:/AI_Tools/RoleForge/backend/src/services/CharacterService.ts:1:1
+    at VitestModuleEvaluator._runInlinedModule (file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/module-evaluator.js:197:4)
+    at VitestModuleRunner.directRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1146:59)
+    at VitestModuleRunner.cachedRequest (file:///C:/AI_Tools/RoleForge/node_modules/vite/dist/node/module-runner.js:1053:73)
+    at file:///C:/AI_Tools/RoleForge/node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:487:17
+
+[90mstdout[2m | src/__tests__/session.test.ts[2m > [22m[2mSession API - buildSessionContext[2m > [22m[2mshould return activeCharacters in session context when scene has active characters
+[22m[39m
+========== [LORE ENGINE] Building SessionContext for Scene 2 ==========
+[LORE] Building session context for scene 2
+[LORE] World: World 1 (1), Campaign: Campaign 1 (1)
+[LORE] Active lorebooks count: 0
+[LORE] Total entries available: 0
+[LORE] Lore context keys: text, activeCharacters
+[LORE] No lore context or entries found. loreContext: true, entries: 0
+[ORCHESTRATOR] Scene 2: activeCharacters in DB = ["uuid-raven"]
+[ORCHESTRATOR] Found merged character for uuid-raven: Raven
+[ORCHESTRATOR] Scene 2: resolved 1 characters
+
+[90mstdout[2m | src/__tests__/session.test.ts[2m > [22m[2mSession API - buildSessionContext[2m > [22m[2mshould return empty activeCharacters when scene has no active characters
+[22m[39m
+========== [LORE ENGINE] Building SessionContext for Scene 3 ==========
+[LORE] Building session context for scene 3
+[LORE] World: World 1 (1), Campaign: Campaign 1 (1)
+[LORE] Active lorebooks count: 0
+[LORE] Total entries available: 0
+[LORE] Lore context keys: text, activeCharacters
+[LORE] No lore context or entries found. loreContext: true, entries: 0
+[ORCHESTRATOR] Scene 3: activeCharacters in DB = []
+[ORCHESTRATOR] Scene 3: resolved 0 characters
+
+ [32mΓ£ô[39m src/__tests__/session.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+stderr | src/__tests__/client.test.ts > LLM Client > should call chatCompletion without streaming
+[LLM] API call failed: {
+  profile: 'https://api.openai.com/v1',
+  model: 'gpt-3.5-turbo',
+  error: '401 Incorrect API key provided: test-key. You can find your API key at https://platform.openai.com/account/api-keys.',
+  status: 401,
+  code: 'invalid_api_key',
+  response: undefined
+}
+
+stderr | src/__tests__/client.test.ts > LLM Client > should call chatCompletion without streaming
+[LLM] Non-retryable error: 401 Incorrect API key provided: test-key. You can find your API key at https://platform.openai.com/account/api-keys.
+[LLM] All LLM profiles failed. Last error: 401 Incorrect API key provided: test-key. You can find your API key at https://platform.openai.com/account/api-keys.
+
+[90mstdout[2m | src/__tests__/client.test.ts[2m > [22m[2mLLM Client[2m > [22m[2mshould call chatCompletion with streaming
+[22m[39m[LLM] Attempt 1/3 on profile https://api.openai.com/v1
+[LLM] Making streaming call to gpt-3.5-turbo at https://api.openai.com/v1
+
+stderr | src/__tests__/client.test.ts > LLM Client > should call chatCompletion with streaming
+[LLM] API call failed: {
+  profile: 'https://api.openai.com/v1',
+  model: 'gpt-3.5-turbo',
+  error: '401 Incorrect API key provided: test-key. You can find your API key at https://platform.openai.com/account/api-keys.',
+  status: 401,
+  code: 'invalid_api_key',
+  response: undefined
+}
+
+stderr | src/__tests__/client.test.ts > LLM Client > should call chatCompletion with streaming
+[LLM] Non-retryable error: 401 Incorrect API key provided: test-key. You can find your API key at https://platform.openai.com/account/api-keys.
+[LLM] All LLM profiles failed. Last error: 401 Incorrect API key provided: test-key. You can find your API key at https://platform.openai.com/account/api-keys.
+
+ [31mΓ¥»[39m src/__tests__/client.test.ts [2m([22m[2m21 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 360[2mms[22m[39m
+     [32mΓ£ô[39m should call chatCompletion without streaming[32m 215[2mms[22m[39m
+     [32mΓ£ô[39m should call chatCompletion with streaming[32m 135[2mms[22m[39m
+       [32mΓ£ô[39m should accurately count tokens[32m 3[2mms[22m[39m
+       [32mΓ£ô[39m should handle empty text[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m should handle longer text[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m should merge agent-specific sampler overrides for summarize agent[32m 1[2mms[22m[39m
+       [32mΓ£ô[39m should merge agent-specific sampler overrides for character agent[32m 0[2mms[22m[39m
+[31m       [31m├ù[31m should merge agent-specific format overrides for director agent[39m[32m 3[2mms[22m[39m
+[31m       [31m├ù[31m should merge agent-specific format overrides for world agent[39m[32m 1[2mms[22m[39m
+       [32mΓ£ô[39m should format history with scene summary when available[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m should use plain history when no scene summary[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m should support fallback profiles configuration[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m should have retryable error classification[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m should recognize network errors as retryable[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m should handle exponential backoff calculation[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m should attempt retries before giving up[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m profile should accept fallbackProfiles array[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m profile sampler should support stop sequences[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m stop sequences should be passed to LLM API[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m should handle empty stop sequences[32m 0[2mms[22m[39m
+       [32mΓ£ô[39m should handle undefined stop sequences[32m 0[2mms[22m[39m
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ» Failed Tests 2 ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+
+ FAIL  src/__tests__/client.test.ts > LLM Client > Agent Profile Merging > should merge agent-specific format overrides for director agent
+AssertionError: expected undefined to be 'json' // Object.is equality
+
+- Expected: 
+"json"
+
++ Received: 
+undefined
+
+ Γ¥» src/__tests__/client.test.ts:110:30
+    108|       
+    109|       // The director agent should have format set to 'json'
+    110|       expect(profile.format).toBe('json');
+       |                              ^
+    111|     });
+    112| 
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/2]ΓÄ»
+
+ FAIL  src/__tests__/client.test.ts > LLM Client > Agent Profile Merging > should merge agent-specific format overrides for world agent
+AssertionError: expected undefined to be 'json' // Object.is equality
+
+- Expected: 
+"json"
+
++ Received: 
+undefined
+
+ Γ¥» src/__tests__/client.test.ts:122:30
+    120|       
+    121|       // The world agent should have format set to 'json'
+    122|       expect(profile.format).toBe('json');
+       |                              ^
+    123|     });
+    124|   });
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[2/2]ΓÄ»
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m6 passed[39m[22m[90m (7)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m57 passed[39m[22m[90m (59)[39m
+[2m   Start at [22m 10:56:44
+[2m   Duration [22m 698ms[2m (transform 387ms, setup 0ms, import 1.13s, tests 389ms, environment 0ms)[22m
+
+[1m[41m FAIL [49m[22m [31mTests failed. Watching for file changes...[39m
+       [2mpress [22m[1mh[22m[2m to show help[22m[2m, [22m[2mpress [22m[1mq[22m[2m to quit[22m
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path C:\AI_Tools\RoleForge\backend
+npm error workspace backend@1.0.0
+npm error location C:\AI_Tools\RoleForge\backend
+npm error command failed
+npm error command C:\Windows\system32\cmd.exe /d /s /c vitest
