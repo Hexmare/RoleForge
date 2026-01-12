@@ -1,0 +1,194 @@
+{
+  "defaultProfile": "openai-gpt4",
+  "comfyui": {
+    "server_address": "127.0.0.1:8188",
+    "use_existing_queue_size": 0
+  },
+  "profiles": {
+    "openai-gpt4": {
+      "type": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "sk-YOUR-KEY-HERE",
+      "model": "gpt-4",
+      "template": "chatml",
+      "sampler": {
+        "temperature": 0.7,
+        "topP": 0.9,
+        "max_completion_tokens": 512
+      }
+    },
+    "openai-gpt35": {
+      "type": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKey": "sk-YOUR-KEY-HERE",
+      "model": "gpt-3.5-turbo",
+      "template": "chatml",
+      "sampler": {
+        "temperature": 0.7,
+        "max_completion_tokens": 512
+      }
+    },
+    "local-alpaca-ollama": {
+      "type": "custom",
+      "baseURL": "http://localhost:11434/api",
+      "model": "alpaca",
+      "template": "alpaca",
+      "sampler": {
+        "temperature": 0.8,
+        "topP": 0.95,
+        "max_completion_tokens": 256
+      }
+    },
+    "local-alpaca-textgenui": {
+      "type": "custom",
+      "baseURL": "http://localhost:5000",
+      "model": "alpaca-7b",
+      "template": "alpaca",
+      "sampler": {
+        "temperature": 0.8,
+        "topP": 0.95,
+        "max_completion_tokens": 256,
+        "stop": ["\n###", "END"]
+      }
+    },
+    "local-vicuna-ollama": {
+      "type": "custom",
+      "baseURL": "http://localhost:11434/api",
+      "model": "vicuna",
+      "template": "vicuna",
+      "sampler": {
+        "temperature": 0.7,
+        "topP": 0.9,
+        "max_completion_tokens": 512
+      }
+    },
+    "local-vicuna-vllm": {
+      "type": "custom",
+      "baseURL": "http://localhost:8000/v1",
+      "model": "vicuna-7b",
+      "template": "vicuna",
+      "sampler": {
+        "temperature": 0.7,
+        "max_completion_tokens": 512
+      }
+    },
+    "local-llama2-ollama": {
+      "type": "custom",
+      "baseURL": "http://localhost:11434/api",
+      "model": "llama2",
+      "template": "llama2",
+      "sampler": {
+        "temperature": 0.8,
+        "topP": 0.9,
+        "max_completion_tokens": 512
+      }
+    },
+    "local-llama2-textgenui": {
+      "type": "custom",
+      "baseURL": "http://localhost:5000",
+      "model": "llama2-7b",
+      "template": "llama2",
+      "sampler": {
+        "temperature": 0.8,
+        "topP": 0.95,
+        "max_completion_tokens": 512
+      }
+    },
+    "local-llama2-vllm": {
+      "type": "custom",
+      "baseURL": "http://localhost:8000/v1",
+      "model": "llama2-7b-chat",
+      "template": "llama2",
+      "sampler": {
+        "temperature": 0.8,
+        "max_completion_tokens": 512
+      }
+    },
+    "local-koboldcpp": {
+      "type": "custom",
+      "baseURL": "http://localhost:5001",
+      "model": "default",
+      "template": "alpaca",
+      "sampler": {
+        "temperature": 0.8,
+        "topP": 0.95,
+        "max_completion_tokens": 256
+      }
+    },
+    "claude-opus": {
+      "type": "openai",
+      "baseURL": "https://api.anthropic.com/v1",
+      "apiKey": "sk-ant-YOUR-KEY-HERE",
+      "model": "claude-opus",
+      "template": "chatml",
+      "sampler": {
+        "temperature": 0.7,
+        "max_completion_tokens": 4096
+      }
+    },
+    "mistral": {
+      "type": "openai",
+      "baseURL": "https://api.mistral.ai/v1",
+      "apiKey": "YOUR-KEY-HERE",
+      "model": "mistral-medium",
+      "template": "chatml",
+      "sampler": {
+        "temperature": 0.7,
+        "max_completion_tokens": 512
+      }
+    }
+  },
+  "agents": {
+    "character": {
+      "llmProfile": "openai-gpt4"
+    },
+    "narrator": {
+      "llmProfile": "openai-gpt4",
+      "sampler": {
+        "temperature": 0.8,
+        "max_completion_tokens": 300
+      }
+    },
+    "director": {
+      "llmProfile": "openai-gpt4",
+      "sampler": {
+        "temperature": 0.5,
+        "max_completion_tokens": 200
+      }
+    },
+    "world": {
+      "llmProfile": "openai-gpt4",
+      "sampler": {
+        "temperature": 0.6,
+        "max_completion_tokens": 150
+      }
+    },
+    "summarize": {
+      "llmProfile": "openai-gpt4",
+      "sampler": {
+        "temperature": 0.5,
+        "max_completion_tokens": 500
+      }
+    },
+    "visual": {
+      "llmProfile": "openai-gpt4",
+      "sampler": {
+        "temperature": 0.7,
+        "max_completion_tokens": 200
+      }
+    },
+    "creator": {
+      "llmProfile": "openai-gpt4",
+      "sampler": {
+        "temperature": 0.7,
+        "max_completion_tokens": 300
+      }
+    }
+  },
+  "features": {
+    "visualAgentEnabled": false,
+    "socketAckLogs": false,
+    "summarizationInterval": 300000,
+    "maxSummaryTokens": 500
+  }
+}

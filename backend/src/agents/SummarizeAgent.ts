@@ -1,5 +1,4 @@
 import { BaseAgent, AgentContext } from './BaseAgent.js';
-import { ChatMessage } from '../llm/client';
 
 export class SummarizeAgent extends BaseAgent {
   constructor(configManager: any, env: any) {
@@ -8,8 +7,7 @@ export class SummarizeAgent extends BaseAgent {
 
   async run(context: AgentContext): Promise<string> {
     const systemPrompt = this.renderTemplate('summarize', context);
-    const messages = this.renderLLMTemplate(systemPrompt, context.userInput);
-    const response = await this.callLLM(messages);
+    const response = await this.callLLM(systemPrompt, context.userInput);
     return this.cleanResponse(response as string);
   }
 }

@@ -4,6 +4,7 @@ interface TopBarProps {
   onLeftToggle: () => void;
   onRightToggle: () => void;
   onConfigClick?: () => void;
+  onLLMConfigClick?: () => void;
   onChatClick?: () => void;
   onCharacterClick?: () => void;
   onLoreClick?: () => void;
@@ -19,6 +20,7 @@ const TopBar: React.FC<TopBarProps> = ({
   onLeftToggle, 
   onRightToggle, 
   onConfigClick,
+  onLLMConfigClick,
   onChatClick,
   onCharacterClick,
   onLoreClick,
@@ -47,6 +49,16 @@ const TopBar: React.FC<TopBarProps> = ({
             aria-label="Open configuration"
           >
             ⚙️
+          </button>
+        )}
+        {onLLMConfigClick && (
+          <button
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-panel-tertiary transition-colors text-text-primary"
+            onClick={onLLMConfigClick}
+            aria-label="Configure LLM backends"
+            title="LLM Configuration"
+          >
+            🤖
           </button>
         )}
         {onChatClick && (

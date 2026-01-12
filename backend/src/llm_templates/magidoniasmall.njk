@@ -1,0 +1,26 @@
+{%- for message in messages %}
+    {%- set isLast = loop.last %}
+    {%- set remainingMessages = messages.length - loop.index0 %}
+    {%- if message.role == "user" %}
+        {%- if remainingMessages <= 2 and tools %}[AVAILABLE_TOOLS]{{ tools | safe }}[/AVAILABLE_TOOLS]
+        {%- endif %}[INST]{{ message.content }}[/INST]
+        {%- if remainingMessages == 1 %}[SYSTEM_PROMPT]{{ system }}[/SYSTEM_PROMPT]<think>
+        {%- endif %}
+    {%- elif message.role == "assistant" %}
+        {%- if isThinkSet and isLast and message.thinking %}<think>{{ message.thinking }}</think>
+        {%- endif %}
+        {%- if message.content %}{{ message.content }}
+            {%- if not isLast %}</s>
+            {%- endif %}
+        {%- elif message.toolCalls %}[TOOL_CALLS]
+            {%- for tool in message.toolCalls %}{"name": "{{ tool.function.name }}", "arguments": {{ tool.function.arguments | safe }}}
+            {%- endfor %}]</s>
+        {%- endif %}
+    {%- elif message.role == "tool" %}[TOOL_RESULTS]{"content": {{ message.content | safe }}}[/TOOL_RESULTS]
+    {%- endif %}
+    {%- if isLast and message.role != "assistant" %}
+        {%- if isThinkSet and not think %}<think>
+</think>
+        {%- endif %}
+    {%- endif %}
+{%- endfor %}

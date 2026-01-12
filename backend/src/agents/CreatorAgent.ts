@@ -8,8 +8,7 @@ export class CreatorAgent extends BaseAgent {
   async run(context: AgentContext): Promise<string> {
     const mode = (context as any).mode || 'create';
     const systemPrompt = this.renderTemplate('creator', { ...context, mode });
-    const messages = this.renderLLMTemplate(systemPrompt, (context as any).userInput || '');
-    const response = await this.callLLM(messages);
+    const response = await this.callLLM(systemPrompt, (context as any).userInput || '');
     return this.cleanResponse(response as string);
   }
 }

@@ -21,11 +21,11 @@ export interface SamplerSettings {
 }
 
 export interface LLMProfile {
-  type: 'openai';
+  type: 'openai' | 'custom'; // 'openai' uses OpenAI SDK, 'custom' uses axios with templates
   apiKey?: string;
   baseURL: string;
   model?: string;
-  template?: string; // LLM template name, e.g., 'chatml'
+  template?: string; // LLM template name, e.g., 'chatml' for openai, custom templates for 'custom' type
   sampler?: SamplerSettings;
   format?: string; // Response format, e.g., 'json'
   fallbackProfiles?: string[]; // Profile names to try if this one fails

@@ -1,0 +1,25 @@
+{{- range $index, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $index)) 1}}
+{{- if eq .Role "user" }}
+{{- if and (le (len (slice $.Messages $index)) 2) $.Tools }}[AVAILABLE_TOOLS]{{ $.Tools }}[/AVAILABLE_TOOLS]
+{{- end }}[INST]{{ .Content }}[/INST]
+{{- if eq (len (slice $.Messages $index)) 1}}[SYSTEM_PROMPT]{{ $.System }}[/SYSTEM_PROMPT]<think>
+{{- end }}
+{{- else if eq .Role "assistant" }}
+{{- if and $.IsThinkSet (and $last .Thinking) -}}
+<think>{{ .Thinking }}</think>
+{{- end }}
+{{- if .Content }}{{ .Content }}
+{{- if not (eq (len (slice $.Messages $index)) 1) }}</s>
+{{- end }}
+{{- else if .ToolCalls }}[TOOL_CALLS]
+{{- range .ToolCalls }}{"name": "{{ .Function.Name }}", "arguments": {{ .Function.Arguments }}}
+{{- end }}]</s>
+{{- end }}
+{{- else if eq .Role "tool" }}[TOOL_RESULTS]{"content": {{ .Content }}}[/TOOL_RESULTS]
+{{- end }}
+{{- if and $last (ne .Role "assistant") }}{{ if and $.IsThinkSet (not $.Think) -}}<think>
+</think>
+{{- end }}
+{{- end }}
+{{- end }}

@@ -1,5 +1,5 @@
 {
-  "defaultProfile": "openai",
+  "defaultProfile": "kobold",
   "features": {
     "visualAgentEnabled": true,
     "socketAckLogs": true,
@@ -42,10 +42,10 @@
       "stream": true
     },
     "kobold": {
-      "type": "openai",
-      "baseURL": "http://localhost:5001/v1",
+      "type": "custom",
+      "baseURL": "http://192.168.88.88:5001/v1",
       "model": "koboldcpp/mistralai_Ministral-3-14B-Reasoning-2512-Q5_K_M",
-      "template": "chatml",
+      "template": "llama2",
       "sampler": {
         "temperature": 0.8,
         "topP": 0.9,
@@ -71,11 +71,9 @@
     },
     "director": {
       "llmProfile": "default"
-
     },
     "world": {
       "llmProfile": "default"
-      
     },
     "summarize": {
       "llmProfile": "default",

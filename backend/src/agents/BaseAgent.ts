@@ -4,6 +4,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { chatCompletion, ChatMessage } from '../llm/client';
+import { customLLMRequest } from '../llm/customClient';
 import { ConfigManager, LLMProfile } from '../configManager';
 import { estimateWordsFromTokens } from '../utils/tokenCounter.js';
 
@@ -106,10 +107,21 @@ export abstract class BaseAgent {
     return mergedProfile;
   }
 
-  protected async callLLM(messages: ChatMessage[], stream: boolean = false): Promise<string | AsyncIterable<string>> {
+  protected async callLLM(systemPrompt: string, userMessage: string, assistantMessage: string = ''): Promise<string> {
     try {
       const profile = this.getProfile();
-      return await chatCompletion(profile, messages, { stream });
+      
+      // Route based on profile type
+      if (profile.type === 'custom') {
+        // For custom profiles, use raw template rendering + customLLMRequest
+        return await this.callCustomLLM(systemPrompt, userMessage, assistantMessage);
+      }
+      
+      // For openai profiles, render to ChatMessage[] and use OpenAI SDK
+      const messages = this.renderLLMTemplate(systemPrompt, userMessage, assistantMessage);
+      const result = await chatCompletion(profile, messages, { stream: false });
+      // chatCompletion with stream: false returns a string, not an AsyncIterable
+      return result as string;
     } catch (error: any) {
       console.error(`LLM call failed for agent ${this.agentName}:`, error);
       
@@ -217,6 +229,84 @@ export abstract class BaseAgent {
       }
     }
     return messages;
+  }
+
+  /**
+   * Render raw LLM template for custom clients (non-OpenAI).
+   * Returns the raw rendered template string without parsing.
+   */
+  protected renderRawLLMTemplate(systemPrompt: string, userMessage: string, assistantMessage: string = ''): string {
+    const profile = this.getProfile();
+    const templateName = profile.template || 'chatml';
+    const templatesDir = path.join(dirname(fileURLToPath(import.meta.url)), '..', 'llm_templates');
+    const templatePath = path.join(templatesDir, `${templateName}.njk`);
+    
+    if (!fs.existsSync(templatePath)) {
+      throw new Error(`Template file not found: ${templatePath}`);
+    }
+    
+    const template = fs.readFileSync(templatePath, 'utf-8');
+    
+    // Support both simple (chatml) and complex (magidoniasmall) templates
+    let templateVars: any = {
+      system_prompt: systemPrompt,
+      user_message: userMessage,
+      assistant_message: assistantMessage,
+    };
+    
+    // For templates that support message arrays (like magidoniasmall)
+    if (templateName === 'magidoniasmall' || templateName === 'magidonia') {
+      templateVars.messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+        ...(assistantMessage ? [{ role: 'assistant', content: assistantMessage }] : []),
+      ];
+      templateVars.system = systemPrompt;
+      templateVars.tools = null; // No tools in raw LLM rendering
+      templateVars.isThinkSet = false; // Check if system prompt contains /think
+      templateVars.think = systemPrompt.includes('/think');
+    }
+    
+    const rendered = this.env.renderString(template, templateVars);
+    
+    return rendered;
+  }
+
+  /**
+   * Call custom LLM (non-OpenAI) with rendered prompt.
+   * Used by agents that use custom profile types.
+   */
+  protected async callCustomLLM(systemPrompt: string, userMessage: string, assistantMessage: string = ''): Promise<string> {
+    try {
+      const profile = this.getProfile();
+      const renderedPrompt = this.renderRawLLMTemplate(systemPrompt, userMessage, assistantMessage);
+      
+      console.log(`[Agent ${this.agentName}] Calling custom LLM with profile ${profile.template} template`);
+      
+      return await customLLMRequest(profile, renderedPrompt);
+    } catch (error: any) {
+      console.error(`Custom LLM call failed for agent ${this.agentName}:`, error);
+      
+      // Provide a fallback response based on agent type
+      switch (this.agentName) {
+        case 'character':
+          return "I apologize, but I'm having trouble responding right now. Could you try rephrasing your message?";
+        case 'narrator':
+          return "The scene remains as it was. The environment is quiet and unchanged.";
+        case 'director':
+          return '{"guidance": "Continue the conversation naturally.", "characters": []}';
+        case 'world':
+          return '{"updates": []}';
+        case 'summarize':
+          return "Unable to generate summary at this time.";
+        case 'visual':
+          return "Unable to generate visual content at this time.";
+        case 'creator':
+          return "Unable to create content at this time.";
+        default:
+          return "I apologize, but I'm experiencing technical difficulties.";
+      }
+    }
   }
 
   abstract run(context: AgentContext): Promise<string>;

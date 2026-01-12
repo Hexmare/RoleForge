@@ -19,6 +19,7 @@ import Spinner from './components/Spinner';
 import { ToastProvider } from './components/Toast';
 import ComfyConfigModal from './components/ComfyConfigModal';
 import ConfigModal from './components/ConfigModal';
+import { LLMConfigModal } from './components/LLMConfigModal';
 
 interface Message {
   role: 'user' | 'ai';
@@ -65,11 +66,12 @@ function App() {
   const [regenErrors, setRegenErrors] = useState<Record<number, string>>({});
   const [imageModalUrl, setImageModalUrl] = useState<string | null>(null);
   const [imageModalPrompt, setImageModalPrompt] = useState<string | null>(null);
-  const [currentTab, setCurrentTab] = useState<'chat'|'characters'|'lore'|'personas'|'comfyui'|'worlds'>('chat');
+  const [currentTab, setCurrentTab] = useState<'chat'|'characters'|'lore'|'personas'|'comfyui'|'worlds'|'llm'>('chat');
   const [modalType, setModalType] = useState<string | null>(null);
   const [modalInitial, setModalInitial] = useState<any>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [showLLMConfigModal, setShowLLMConfigModal] = useState(false);
   const lastNextClickRef = useRef<Record<number, number>>({});
 
   // Panel state for new UI
@@ -1072,6 +1074,7 @@ function App() {
         <TopBar 
           onLeftToggle={() => setLeftPanelOpen(!leftPanelOpen)}
           onConfigClick={() => { setCurrentTab('config'); setModalType(null); }}
+          onLLMConfigClick={() => setShowLLMConfigModal(true)}
           onRightToggle={() => setRightPanelOpen(!rightPanelOpen)}
           onChatClick={() => {
             setCurrentTab('chat');
@@ -1235,6 +1238,7 @@ function App() {
         <ArcEditor visible={modalType === 'arc-new' || modalType === 'arc-edit'} initial={modalInitial} onClose={closeModal} onSave={saveArc} />
         <SceneEditor visible={modalType === 'scene-new' || modalType === 'scene-edit'} initial={modalInitial} onClose={closeModal} onSave={saveScene} />
         <ComfyConfigModal visible={modalType === 'comfyui'} onClose={() => setModalType(null)} />
+        {showLLMConfigModal && <LLMConfigModal onClose={() => setShowLLMConfigModal(false)} />}
         {imageModalUrl && (
           <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-300" onClick={() => { setImageModalUrl(null); setImageModalPrompt(null); }}>
             <div className="glass p-4 rounded-lg max-w-4xl w-full mx-4 max-h-[90vh]" onClick={(e) => e.stopPropagation()}>

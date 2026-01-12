@@ -1033,6 +1033,144 @@ app.put('/api/settings/persona', (req, res) => {
   res.json({ persona, changes: (result as any).changes || 1 });
 });
 
+// LLM Configuration API
+app.get('/api/llm/config', (req, res) => {
+  try {
+    const config = configManager.getConfig();
+    res.json({
+      defaultProfile: config.defaultProfile,
+      profiles: config.profiles,
+      agents: config.agents
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/llm/config', express.json(), (req, res) => {
+  try {
+    const { defaultProfile, profiles, agents } = req.body;
+    
+    // Validate that profiles exist
+    if (profiles && typeof profiles === 'object') {
+      const defaultProfExists = Object.keys(profiles).includes(defaultProfile);
+      if (!defaultProfExists) {
+        return res.status(400).json({ error: `Default profile "${defaultProfile}" not found in profiles` });
+      }
+    }
+    
+    // Read current config
+    const configPath = path.join(__dirname, '..', 'config.json');
+    const currentConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    
+    // Update with new values
+    if (defaultProfile !== undefined) currentConfig.defaultProfile = defaultProfile;
+    if (profiles !== undefined) currentConfig.profiles = profiles;
+    if (agents !== undefined) currentConfig.agents = agents;
+    
+    // Write back
+    fs.writeFileSync(configPath, JSON.stringify(currentConfig, null, 2));
+    
+    // Reload config manager
+    configManager.reload();
+    
+    res.json({ success: true, config: currentConfig });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/llm/profiles', (req, res) => {
+  try {
+    const config = configManager.getConfig();
+    const profiles = Object.entries(config.profiles || {}).map(([name, profile]: any) => ({
+      name,
+      ...profile
+    }));
+    res.json(profiles);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/llm/profiles', express.json(), (req, res) => {
+  try {
+    const { name, profile } = req.body;
+    
+    if (!name || !profile) {
+      return res.status(400).json({ error: 'Name and profile data required' });
+    }
+    
+    const configPath = path.join(__dirname, '..', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    
+    config.profiles[name] = profile;
+    
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    configManager.reload();
+    
+    res.json({ success: true, profile: { name, ...profile } });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/llm/profiles/:name', express.json(), (req, res) => {
+  try {
+    const { name } = req.params;
+    const profileData = req.body;
+    
+    const configPath = path.join(__dirname, '..', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    
+    if (!config.profiles[name]) {
+      return res.status(404).json({ error: `Profile "${name}" not found` });
+    }
+    
+    config.profiles[name] = { ...config.profiles[name], ...profileData };
+    
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    configManager.reload();
+    
+    res.json({ success: true, profile: { name, ...config.profiles[name] } });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/llm/profiles/:name', (req, res) => {
+  try {
+    const { name } = req.params;
+    
+    const configPath = path.join(__dirname, '..', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    
+    if (!config.profiles[name]) {
+      return res.status(404).json({ error: `Profile "${name}" not found` });
+    }
+    
+    delete config.profiles[name];
+    
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    configManager.reload();
+    
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/llm/templates', (req, res) => {
+  try {
+    const templatesDir = path.join(__dirname, 'llm_templates');
+    const templates = fs.readdirSync(templatesDir)
+      .filter(f => f.endsWith('.njk'))
+      .map(f => f.replace('.njk', ''));
+    res.json(templates);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Characters CRUD
 app.get('/api/characters', (req, res) => {
