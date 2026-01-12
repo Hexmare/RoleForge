@@ -98,6 +98,29 @@ const Chat: React.FC<ChatProps> = ({
   const [selectedMessages, setSelectedMessages] = useState<Set<number>>(new Set());
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
 
+  // Handler for Regenerate button
+  const handleRegenerateMessages = () => {
+    if (!selectedScene) return;
+    setCurrentAgent('Regenerating');
+    fetch(`/api/scenes/${selectedScene}/messages/regenerate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+      .then(res => res.json())
+      .then(data => {
+        console.log('Regeneration result:', data);
+        onMessagesRefresh();
+      })
+      .catch(e => {
+        alert('Failed to regenerate messages');
+        console.warn('Regeneration error:', e);
+      })
+      .finally(() => {
+        setCurrentAgent(null);
+        setMenuOpen(false);
+      });
+  };
+
   // Auto-scroll to bottom when new messages arrive (unless user scrolled up)
   useEffect(() => {
     if (!userScrolledUp) {
@@ -406,6 +429,13 @@ const Chat: React.FC<ChatProps> = ({
                 >
                   Delete Posts
                 </button>
+                  <button
+                    className="chat-menu-item"
+                    onClick={handleRegenerateMessages}
+                    disabled={!selectedScene}
+                  >
+                    Regenerate
+                  </button>
                 <button
                   className="chat-menu-item"
                   onClick={async () => {

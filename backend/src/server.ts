@@ -59,7 +59,7 @@ app.use(express.json());
 app.use('/public', express.static(path.join(process.cwd(), 'public')));
 
 // Ensure avatars folder exists
-const avatarsDir = path.join(process.cwd(), 'frontend', 'public', 'avatars');
+const avatarsDir = path.join(process.cwd(), 'public', 'avatars');
 try { fs.mkdirSync(avatarsDir, { recursive: true }); } catch (e) { /* ignore */ }
 
 const storage = multer.diskStorage({
@@ -398,6 +398,58 @@ app.post('/api/scenes/:sceneId/summarize', async (req, res) => {
 });
 
 // Messages
+// Regenerate all messages after the last user message in a scene
+app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
+  const { sceneId } = req.params;
+  try {
+    // Get all messages for the scene, ordered by messageNumber ASC
+    const allMessages = db.prepare('SELECT * FROM Messages WHERE sceneId = ? ORDER BY messageNumber ASC').all(Number(sceneId));
+    // Find the last user message index
+    let lastUserIdx = -1;
+    for (let i = 0; i < allMessages.length; i++) {
+      if (allMessages[i].sender && String(allMessages[i].sender).startsWith('user')) {
+        lastUserIdx = i;
+      }
+    }
+    if (lastUserIdx === -1 || lastUserIdx === allMessages.length - 1) {
+      return res.json({ regenerated: [], message: 'No messages to regenerate after last user message.' });
+    }
+    // Prepare history up to and including last user message
+    const history = allMessages.slice(0, lastUserIdx + 1).map(m => `${m.sender}: ${m.message}`);
+    const userMsg = allMessages[lastUserIdx];
+    // Build session context
+    const sessionContext = await orchestrator.buildSessionContext(Number(sceneId));
+    // Patch orchestrator's history so only messages up to last user message are used
+    if (orchestrator && typeof orchestrator === 'object' && Array.isArray(orchestrator.history)) {
+      orchestrator.history = history.slice();
+    }
+    // Call orchestrator.processUserInput with the last user message
+    const persona = userMsg.sender.includes(':') ? userMsg.sender.split(':').pop() : 'default';
+    const activeCharacters = sessionContext.activeCharacters.map(c => c.id || c.name);
+    const result = await orchestrator.processUserInput(userMsg.message, persona, activeCharacters, Number(sceneId));
+    // Remove all messages after lastUserIdx
+    const toDelete = allMessages.slice(lastUserIdx + 1);
+    for (const msg of toDelete) {
+      MessageService.deleteMessage(msg.id);
+    }
+    // Insert new messages from orchestrator response
+    let nextMsgNum = allMessages[lastUserIdx].messageNumber + 1;
+    const regenerated = [];
+    for (const r of result.responses) {
+      const saved = MessageService.logMessage(Number(sceneId), r.sender, r.content, [], {}, r.sender === 'Narrator' ? 'narrator' : (r.sender.startsWith('user') ? 'user' : 'character'));
+      // Update messageNumber to keep sequence
+      db.prepare('UPDATE Messages SET messageNumber = ? WHERE id = ?').run(nextMsgNum, saved.id);
+      regenerated.push({ id: saved.id, newContent: r.content });
+      nextMsgNum++;
+    }
+    // Optionally emit socket event to update clients
+    try { io.to(`scene-${sceneId}`).emit('messagesRegenerated', { sceneId: Number(sceneId), regenerated }); } catch (e) { console.warn('Failed to emit messagesRegenerated', e); }
+    return res.json({ regenerated });
+  } catch (e) {
+    console.error('Failed to regenerate messages:', e);
+    return res.status(500).json({ error: 'Failed to regenerate messages', detail: String(e) });
+  }
+});
 app.get('/api/scenes/:sceneId/messages', (req, res) => {
   const { sceneId } = req.params;
   const limit = Number(req.query.limit || 100);

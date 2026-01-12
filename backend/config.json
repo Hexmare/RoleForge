@@ -1,5 +1,5 @@
 {
-  "defaultProfile": "openai",
+  "defaultProfile": "kobold",
   "features": {
     "visualAgentEnabled": true,
     "socketAckLogs": true,
