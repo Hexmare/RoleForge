@@ -325,6 +325,8 @@ const Chat: React.FC<ChatProps> = ({
                             return 'World Agent is updating the story state...';
                           case 'Summarize':
                             return 'Summarizing conversation history...';
+                          case 'Resetting':
+                            return 'Resetting scene...';
                           case 'Visual':
                             return 'Visual Agent is generating an image...';
                           case 'Creator':
@@ -408,17 +410,19 @@ const Chat: React.FC<ChatProps> = ({
                   className="chat-menu-item"
                   onClick={async () => {
                     if (!selectedScene) return;
+                    const confirmed = window.confirm('This will permanently clear all messages and reset scene details (except description and location). Are you sure?');
+                    if (!confirmed) return;
                     try {
-                      setCurrentAgent('Summarize');
-                      const response = await fetch(`/api/scenes/${selectedScene}/summarize`, { method: 'POST' });
+                      setCurrentAgent('Resetting');
+                      const response = await fetch(`/api/scenes/${selectedScene}/reset`, { method: 'POST' });
                       if (!response.ok) {
-                        throw new Error('Summarization failed');
+                        throw new Error('Reset failed');
                       }
-                      // Refresh messages to show any updates
+                      // Refresh messages to show empty chat
                       onMessagesRefresh();
                     } catch (e) {
-                      console.warn('Failed to trigger summarization', e);
-                      alert('Failed to summarize scene');
+                      console.warn('Failed to reset scene', e);
+                      alert('Failed to reset scene');
                     } finally {
                       setCurrentAgent(null);
                       setMenuOpen(false);
@@ -426,7 +430,7 @@ const Chat: React.FC<ChatProps> = ({
                   }}
                   disabled={!selectedScene}
                 >
-                  Summarize Now
+                  Reset Scene
                 </button>
               </div>
             )}

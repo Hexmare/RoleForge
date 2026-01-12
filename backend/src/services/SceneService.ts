@@ -1,5 +1,7 @@
 import db from '../database';
 import MessageService from './MessageService';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export const SceneService = {
   create(arcId: number, title: string, description?: string, location?: string, timeOfDay?: string, orderIndex?: number) {
@@ -44,6 +46,81 @@ export const SceneService = {
     
     const stmt = db.prepare('DELETE FROM Scenes WHERE id = ?');
     const result = stmt.run(id);
+    return { changes: result.changes };
+  },
+
+  // Helper function to remove directory and clean up empty parent directories
+  _cleanupGeneratedImages(worldId: number, campaignId: number, arcId: number, sceneId: number) {
+    try {
+      const basePath = path.join(process.cwd(), 'backend', 'public', 'generated');
+      const scenePath = path.join(basePath, String(worldId), String(campaignId), String(arcId), String(sceneId));
+      
+      // Remove scene directory if it exists
+      if (fs.existsSync(scenePath)) {
+        fs.rmSync(scenePath, { recursive: true, force: true });
+        console.log(`Removed generated images directory: ${scenePath}`);
+      }
+      
+      // Check and remove empty parent directories
+      const arcPath = path.dirname(scenePath);
+      if (fs.existsSync(arcPath) && fs.readdirSync(arcPath).length === 0) {
+        fs.rmdirSync(arcPath);
+        console.log(`Removed empty arc directory: ${arcPath}`);
+        
+        const campaignPath = path.dirname(arcPath);
+        if (fs.existsSync(campaignPath) && fs.readdirSync(campaignPath).length === 0) {
+          fs.rmdirSync(campaignPath);
+          console.log(`Removed empty campaign directory: ${campaignPath}`);
+          
+          const worldPath = path.dirname(campaignPath);
+          if (fs.existsSync(worldPath) && fs.readdirSync(worldPath).length === 0) {
+            fs.rmdirSync(worldPath);
+            console.log(`Removed empty world directory: ${worldPath}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error cleaning up generated images:', error);
+    }
+  },
+
+  reset(id: number) {
+    const existing = this.getById(id);
+    if (!existing) return { error: 'Scene not found' };
+
+    // Get hierarchy IDs for image cleanup
+    const arcRow = db.prepare('SELECT * FROM Arcs WHERE id = ?').get(existing.arcId) as any;
+    if (!arcRow) return { error: 'Arc not found' };
+    
+    const campaignRow = db.prepare('SELECT * FROM Campaigns WHERE id = ?').get(arcRow.campaignId) as any;
+    if (!campaignRow) return { error: 'Campaign not found' };
+    
+    const worldRow = db.prepare('SELECT * FROM Worlds WHERE id = ?').get(campaignRow.worldId) as any;
+    if (!worldRow) return { error: 'World not found' };
+
+    // Clear all messages for this scene
+    db.prepare('DELETE FROM Messages WHERE sceneId = ?').run(id);
+
+    // Clean up generated images
+    this._cleanupGeneratedImages(worldRow.id, campaignRow.id, arcRow.id, id);
+
+    // Reset scene details except description and location
+    const stmt = db.prepare('UPDATE Scenes SET title = ?, timeOfDay = ?, worldState = ?, lastWorldStateMessageNumber = ?, characterStates = ?, summary = ?, lastSummarizedMessageId = ?, summaryTokenCount = ?, activeCharacters = ?, notes = ?, backgroundImage = ?, locationRelationships = ? WHERE id = ?');
+    const result = stmt.run(
+      existing.title, // keep title
+      existing.timeOfDay, // keep timeOfDay
+      '{}', // reset worldState
+      0, // reset lastWorldStateMessageNumber
+      '{}', // reset characterStates
+      null, // reset summary
+      null, // reset lastSummarizedMessageId
+      null, // reset summaryTokenCount
+      null, // reset activeCharacters
+      null, // reset notes
+      null, // reset backgroundImage
+      null, // reset locationRelationships
+      id
+    );
     return { changes: result.changes };
   },
 

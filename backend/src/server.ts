@@ -185,6 +185,11 @@ app.delete('/api/scenes/:id', (req, res) => {
   res.json(SceneService.delete(Number(id)));
 });
 
+app.post('/api/scenes/:id/reset', (req, res) => {
+  const { id } = req.params;
+  res.json(SceneService.reset(Number(id)));
+});
+
 // Lorebooks API
 app.get('/api/lorebooks', (req, res) => {
   try {

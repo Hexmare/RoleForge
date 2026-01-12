@@ -3,6 +3,7 @@ import React from 'react';
 interface TopBarProps {
   onLeftToggle: () => void;
   onRightToggle: () => void;
+  onConfigClick?: () => void;
   onChatClick?: () => void;
   onCharacterClick?: () => void;
   onLoreClick?: () => void;
@@ -17,6 +18,7 @@ interface TopBarProps {
 const TopBar: React.FC<TopBarProps> = ({ 
   onLeftToggle, 
   onRightToggle, 
+  onConfigClick,
   onChatClick,
   onCharacterClick,
   onLoreClick,
@@ -38,6 +40,15 @@ const TopBar: React.FC<TopBarProps> = ({
         >
           ☰
         </button>
+        {onConfigClick && (
+          <button
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-panel-tertiary transition-colors text-text-primary"
+            onClick={onConfigClick}
+            aria-label="Open configuration"
+          >
+            ⚙️
+          </button>
+        )}
         {onChatClick && (
           <button 
             className="w-8 h-8 flex items-center justify-center rounded hover:bg-panel-tertiary transition-colors text-text-primary" 

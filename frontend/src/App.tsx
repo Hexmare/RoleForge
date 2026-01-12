@@ -18,6 +18,7 @@ import ActiveCharacterComponent from './components/ActiveCharacterComponent';
 import Spinner from './components/Spinner';
 import { ToastProvider } from './components/Toast';
 import ComfyConfigModal from './components/ComfyConfigModal';
+import ConfigModal from './components/ConfigModal';
 
 interface Message {
   role: 'user' | 'ai';
@@ -1070,6 +1071,7 @@ function App() {
       <div className="w-screen h-screen flex overflow-hidden relative">
         <TopBar 
           onLeftToggle={() => setLeftPanelOpen(!leftPanelOpen)}
+          onConfigClick={() => { setCurrentTab('config'); setModalType(null); }}
           onRightToggle={() => setRightPanelOpen(!rightPanelOpen)}
           onChatClick={() => {
             setCurrentTab('chat');
@@ -1140,6 +1142,7 @@ function App() {
             {currentTab === 'lore' && <LoreManager version={lorebooksVersion} />}
             {currentTab === 'personas' && <PersonaManager />}
             {currentTab === 'comfyui' && <ComfyConfigModal visible={true} onClose={() => setCurrentTab('chat')} isModal={false} />}
+            {currentTab === 'config' && <ConfigModal onClose={() => setCurrentTab('chat')} />}
             {currentTab === 'worlds' && <WorldManager onRefresh={fetchWorlds} onSelectScene={handleSceneChange} selectedScene={selectedScene} />}
             </div>
           </main>

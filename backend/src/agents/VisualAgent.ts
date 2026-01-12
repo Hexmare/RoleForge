@@ -195,6 +195,7 @@ export class VisualAgent extends BaseAgent {
           };
 
           workflow = replaceTokens(parsed);
+          console.log('[ComfyUI] Worklow :', JSON.stringify(workflow));
         }
       }
     } catch (e) {

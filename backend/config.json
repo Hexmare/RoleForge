@@ -1,5 +1,5 @@
 {
-  "defaultProfile": "kobold",
+  "defaultProfile": "openai",
   "features": {
     "visualAgentEnabled": true,
     "socketAckLogs": true,
@@ -9,7 +9,7 @@
   "comfyui": {
     "endpoint": "http://localhost:8188",
     "workflow": "Default_Comfy_Workflow.json",
-    "model": "svision_240429.safetensors",
+    "model": "pornCraftByStableYogi_v30FP16.safetensors",
     "vae": "qwen_image_vae.safetensors",
     "sampler": "euler",
     "scheduler": "simple",
@@ -26,9 +26,20 @@
   "profiles": {
     "openai": {
       "type": "openai",
-      "apiKey": "sk-dummy-key",
-      "baseURL": "http://localhost:5001/v1",
-      "model": "koboldcpp"
+      "baseURL": "http://192.168.88.88:5001/v1",
+      "model": "koboldcpp/mistralai_Ministral-3-14B-Reasoning-2512-Q5_K_M",
+      "template": "chatml",
+      "sampler": {
+        "temperature": 0.8,
+        "topP": 0.9,
+        "max_completion_tokens": 512,
+        "frequencyPenalty": 1.1,
+        "presencePenalty": 1.1,
+        "maxContextTokens": 2048,
+        "forceJson": true,
+        "n": 1
+      },
+      "stream": true
     },
     "kobold": {
       "type": "openai",

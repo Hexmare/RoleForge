@@ -796,9 +796,40 @@ export class Orchestrator {
         );
         console.log(`[/image] Matched ${matchedEntities.length} entities: [${matchedEntities.map((e: any) => e.name).join(', ')}]`);
         
-        // If no entities found, reject the command
+        // If no entities found, pass the raw prompt directly to VisualAgent
+        // to generate an SD prompt, then generate the image.
         if (matchedEntities.length === 0) {
-          return { responses: [{ sender: 'System', content: 'No characters or personas found in your prompt. Please mention specific character/persona names.' }], lore: [] };
+          console.log(`[/image] No characters or personas found; generating image from raw prompt`);
+          const visualAgent = this.agents.get('visual')! as any;
+          try {
+            this.emitAgentStatus('Visual', 'start', sceneId);
+            
+            // Pass raw prompt to VisualAgent to generate SD prompt
+            const visualContext: AgentContext = {
+              userInput: imagePrompt,
+              imagePrompt: imagePrompt,
+              userPersona: this.getPersona(personaName),
+            } as any;
+            
+            // Get SD prompt from VisualAgent
+            const sdPrompt = await visualAgent.run(visualContext);
+            console.log(`[/image] Generated SD prompt: ${String(sdPrompt).substring(0, 150)}...`);
+            
+            // Generate actual image from SD prompt
+            const imageUrl = await visualAgent.generateImage(sdPrompt);
+            console.log(`[/image] Image generated: ${imageUrl}`);
+            
+            this.emitAgentStatus('Visual', 'complete', sceneId);
+            
+            // Return markdown image tag
+            const meta = { prompt: sdPrompt, urls: [imageUrl], current: 0 };
+            const md = `![${JSON.stringify(meta)}](${imageUrl})`;
+            return { responses: [{ sender: 'Visual', content: md }], lore: imageSessionContext?.lore || [] };
+          } catch (err) {
+            console.error('[/image] Image generation failed for open prompt', err);
+            this.emitAgentStatus('Visual', 'complete', sceneId);
+            return { responses: [{ sender: 'System', content: 'Image generation failed.' }], lore: [] };
+          }
         }
         
         // Use the dedicated visual-image template with matched entities
