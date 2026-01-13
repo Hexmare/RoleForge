@@ -28,7 +28,6 @@ export class Orchestrator {
   private worldState: Record<string, any> = {};
   private trackers: { stats: Record<string, any>; objectives: string[]; relationships: Record<string, string> } = { stats: {}, objectives: [], relationships: {} };
   private characterStates: Record<string, any> = {};
-  private userPersonaState: Record<string, any> = {};
   private history: string[] = [];
   private sceneSummary: string = '';
 
@@ -246,8 +245,7 @@ export class Orchestrator {
         summaryTokenCount: sceneRow.summaryTokenCount,
         worldState: sceneRow.worldState ? JSON.parse(sceneRow.worldState) : {},
         lastWorldStateMessageNumber: sceneRow.lastWorldStateMessageNumber || 0,
-        characterStates: sceneRow.characterStates ? JSON.parse(sceneRow.characterStates) : {},
-        userPersonaState: sceneRow.userPersonaState ? JSON.parse(sceneRow.userPersonaState) : {}
+        characterStates: sceneRow.characterStates ? JSON.parse(sceneRow.characterStates) : {}
       },
       activeCharacters: activeCharactersResolved,
       worldState: { elapsedMinutes: campaignState.elapsedMinutes, dynamicFacts: campaignState.dynamicFacts },
@@ -261,7 +259,6 @@ export class Orchestrator {
     this.worldState = sessionContext.scene.worldState || sessionContext.worldState.dynamicFacts || {};
     this.trackers = sessionContext.trackers;
     this.characterStates = sessionContext.scene.characterStates || {};
-    this.userPersonaState = sessionContext.scene.userPersonaState || {};
 
     return sessionContext;
   }
@@ -671,8 +668,8 @@ export class Orchestrator {
     const recentMessages = this.db.prepare('SELECT message, sender FROM Messages WHERE sceneId = ? AND messageNumber > ? ORDER BY messageNumber').all(sceneId!, lastMessageNumber) as any[];
     const recentEvents = recentMessages.map(m => `${m.sender}: ${m.message}`);
     
-    // Get current user persona state from separate field
-    const userPersonaState = { ...this.userPersonaState };
+    // Get current user persona state from character states
+    const userPersonaState = characterStates[personaName || 'user'] || {};
     
     const worldContext = {
       ...context,
@@ -740,17 +737,23 @@ export class Orchestrator {
         if (worldParsed.worldState) {
           Object.assign(this.worldState, worldParsed.worldState);
           worldStateChanged = true;
-        }
-        // Handle user persona state updates directly from response
-        if (worldParsed.userPersonaState && typeof worldParsed.userPersonaState === 'object') {
-          console.log('[WORLD] Updating user persona state directly:', worldParsed.userPersonaState);
-          // Merge provided state fields, avoiding 'default' values
-          for (const [key, value] of Object.entries(worldParsed.userPersonaState)) {
-            if (value && value !== 'default' && value !== 'Default') {
-              this.userPersonaState[key] = value;
+          // Handle user persona state updates from worldState
+          if (worldParsed.worldState.userPersonaState && typeof worldParsed.worldState.userPersonaState === 'object') {
+            console.log('[WORLD] Updating user persona state from worldState:', worldParsed.worldState.userPersonaState);
+            // Merge provided state fields, avoiding 'default' values
+            const userPersonaKey = personaName || 'user';
+            if (!characterStates[userPersonaKey]) {
+              characterStates[userPersonaKey] = {};
             }
+            for (const [key, value] of Object.entries(worldParsed.worldState.userPersonaState)) {
+              if (value && value !== 'default' && value !== 'Default') {
+                characterStates[userPersonaKey][key] = value;
+              }
+            }
+            console.log('[WORLD] User persona state after update:', characterStates[userPersonaKey]);
+            // Remove userPersonaState from worldState after processing
+            delete this.worldState.userPersonaState;
           }
-          console.log('[WORLD] User persona state after update:', this.userPersonaState);
         }
         // NOTE: WorldAgent should NOT modify character states - those are handled by CharacterAgent only
         if (worldParsed.trackers) {
@@ -772,8 +775,7 @@ export class Orchestrator {
       const newLastMessageNumber = currentMaxMessageNumber?.maxNum || 0;
       SceneService.update(sceneId!, {
         worldState: this.worldState,
-        lastWorldStateMessageNumber: newLastMessageNumber,
-        userPersonaState: this.userPersonaState
+        lastWorldStateMessageNumber: newLastMessageNumber
       });
     }
     
@@ -888,7 +890,7 @@ export class Orchestrator {
         }
         characterStates[charName] = newState;
         // Save updated character state to scene immediately
-        SceneService.update(sceneId!, { characterStates, userPersonaState: this.userPersonaState });
+        SceneService.update(sceneId!, { characterStates });
         this.characterStates = characterStates;
         // Emit state update immediately for this character
         this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates });
@@ -1153,13 +1155,7 @@ export class Orchestrator {
     this.worldState = {};
     this.trackers = { stats: {}, objectives: [], relationships: {} };
     this.characterStates = {};
-    this.userPersonaState = {};
     this.sceneSummary = '';
-  }
-
-  // Public method to set history (used for regeneration)
-  setHistory(history: string[]) {
-    this.history = history;
   }
 
   async createCharacter(context: AgentContext): Promise<string> {

@@ -38,6 +38,8 @@ export interface AgentContext {
   maxCompletionTokens?: number; // For response length limits
   previousWorldState?: Record<string, any>; // For WorldAgent - previous state
   characterStates?: Record<string, any>; // For WorldAgent - all character states
+  scene?: any; // For WorldAgent - current scene info
+  trackers?: any; // For WorldAgent - current trackers (stats, objectives, relationships)
 }
 
 export abstract class BaseAgent {
