@@ -73,7 +73,10 @@
       "llmProfile": "default"
     },
     "world": {
-      "llmProfile": "default"
+      "llmProfile": "default",
+      "sampler": {
+        "max_completion_tokens": 2048
+      }
     },
     "summarize": {
       "llmProfile": "default",

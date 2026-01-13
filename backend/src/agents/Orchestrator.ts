@@ -665,26 +665,7 @@ export class Orchestrator {
           Object.assign(this.worldState, worldUpdate.worldState);
           worldStateChanged = true;
         }
-        if (worldUpdate.characterStates) {
-          // Clean up "Default" values and merge character states
-          const cleanedStates: Record<string, any> = {};
-          for (const [charName, state] of Object.entries(worldUpdate.characterStates)) {
-            if (typeof state === 'object' && state !== null) {
-              const cleanedState: any = {};
-              for (const [key, value] of Object.entries(state)) {
-                // Skip default values - if value is 'Default' or 'default', keep existing or skip
-                if (value && value !== 'default' && value !== 'Default') {
-                  cleanedState[key] = value;
-                } else if (characterStates[charName]?.[key]) {
-                  // Keep existing value if it's not 'default'
-                  cleanedState[key] = characterStates[charName][key];
-                }
-              }
-              cleanedStates[charName] = { ...characterStates[charName], ...cleanedState };
-            }
-          }
-          Object.assign(characterStates, cleanedStates);
-        }
+        // NOTE: WorldAgent should NOT modify character states - those are handled by CharacterAgent only
         if (worldUpdate.trackers) {
           // Normalize objectives to array if it's an object
           if (worldUpdate.trackers.objectives && typeof worldUpdate.trackers.objectives === 'object' && !Array.isArray(worldUpdate.trackers.objectives)) {
@@ -710,9 +691,7 @@ export class Orchestrator {
               Object.assign(this.worldState, worldUpdate.worldState);
               worldStateChanged = true;
             }
-            if (worldUpdate.characterStates) {
-              Object.assign(characterStates, worldUpdate.characterStates);
-            }
+            // NOTE: WorldAgent should NOT modify character states - those are handled by CharacterAgent only
             if (worldUpdate.trackers) {
               // Normalize objectives to array if it's an object
               if (worldUpdate.trackers.objectives && typeof worldUpdate.trackers.objectives === 'object' && !Array.isArray(worldUpdate.trackers.objectives)) {
@@ -746,7 +725,7 @@ export class Orchestrator {
     }
     
     // Emit updated state to frontend
-    this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { state: this.worldState, trackers: this.trackers, characterStates });
+    this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { state: this.worldState, trackers: this.trackers });
     
     context.worldState = this.worldState;
 
@@ -838,6 +817,13 @@ export class Orchestrator {
           }
           characterStates[charName] = newState;
           console.log(`[CHARACTER] Character state after update:`, newState);
+          
+          // Save updated character state to scene immediately
+          SceneService.update(sceneId!, { characterStates });
+          this.characterStates = characterStates;
+          
+          // Emit state update immediately for this character
+          this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates });
         }
         
         const response = { sender: charName, content };
@@ -851,11 +837,13 @@ export class Orchestrator {
       }
     }
 
-    // Save updated character states to scene
-    SceneService.update(sceneId!, { characterStates });
-    this.characterStates = characterStates; // Update instance
-    // Emit character states update
-    this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates: this.characterStates });
+    // Final save and emit (in case any updates weren't already saved per-character)
+    if (Object.keys(characterStates).length > 0) {
+      SceneService.update(sceneId!, { characterStates });
+      this.characterStates = characterStates; // Update instance
+      // Emit final character states update as safety measure
+      this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates: this.characterStates });
+    }
 
     return { responses, lore: sessionContext.lore };
   }

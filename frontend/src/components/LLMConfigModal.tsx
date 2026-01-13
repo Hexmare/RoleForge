@@ -34,6 +34,7 @@ export const LLMConfigModal: React.FC<LLMConfigModalProps> = ({ onClose }) => {
   const [templates, setTemplates] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'profiles' | 'agents'>('profiles');
   const [editingProfile, setEditingProfile] = useState<string | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [newProfileName, setNewProfileName] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -249,54 +250,71 @@ export const LLMConfigModal: React.FC<LLMConfigModalProps> = ({ onClose }) => {
             <p style={{ color: '#a1a8b8', fontSize: '14px' }}>
               Assign which LLM profile each agent should use. Leave empty to use the default profile.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
-              {Object.entries(config.agents || {}).map(([agentName, agentConfig]: any) => (
-                <div key={agentName} style={{ padding: '15px', background: '#252b3b', borderRadius: '4px', border: '1px solid #2a3142' }}>
-                  <h4 style={{ marginTop: 0, color: '#e6e8ec' }}>{agentName}</h4>
-                  <div style={{ marginBottom: '10px' }}>
-                    <label style={{ color: '#a1a8b8' }}>Profile:</label>
-                    <select 
-                      value={agentConfig.llmProfile || 'default'}
-                      onChange={e => {
+            
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ color: '#a1a8b8', display: 'block', marginBottom: '8px' }}>Select Agent:</label>
+              <select 
+                value={selectedAgent || ''}
+                onChange={e => setSelectedAgent(e.target.value || null)}
+                style={{ padding: '10px', width: '300px', background: '#1a1f2e', color: '#e6e8ec', border: '1px solid #2a3142', borderRadius: '4px', fontSize: '14px' }}
+              >
+                <option value="">Choose an agent...</option>
+                {Object.keys(config.agents || {}).map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
+
+            {selectedAgent && config.agents && config.agents[selectedAgent] && (
+              <div style={{ padding: '20px', background: '#252b3b', borderRadius: '4px', border: '1px solid #2a3142', maxWidth: '500px' }}>
+                <h4 style={{ marginTop: 0, marginBottom: '15px', color: '#e6e8ec' }}>{selectedAgent}</h4>
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{ color: '#a1a8b8', display: 'block', marginBottom: '8px' }}>Profile:</label>
+                  <select 
+                    value={config.agents[selectedAgent].llmProfile || 'default'}
+                    onChange={e => {
+                      setConfig(prev => {
+                        if (!prev) return prev;
+                        const newAgents = { ...prev.agents };
+                        if (!newAgents[selectedAgent]) newAgents[selectedAgent] = {};
+                        newAgents[selectedAgent].llmProfile = e.target.value === 'default' ? 'default' : e.target.value;
+                        return { ...prev, agents: newAgents };
+                      });
+                    }}
+                    style={{ padding: '8px', width: '100%', background: '#1a1f2e', color: '#e6e8ec', border: '1px solid #2a3142', borderRadius: '4px' }}
+                  >
+                    <option value="default">default</option>
+                    {Object.keys(config.profiles).map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                <details style={{ marginTop: '15px' }}>
+                  <summary style={{ cursor: 'pointer', fontWeight: 'bold', color: '#e6e8ec', padding: '8px 0' }}>Sampler Overrides</summary>
+                  <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #2a3142' }}>
+                    <SamplerOverrides 
+                      agentName={selectedAgent}
+                      sampler={config.agents[selectedAgent].sampler || {}}
+                      onChange={(sampler) => {
                         setConfig(prev => {
                           if (!prev) return prev;
                           const newAgents = { ...prev.agents };
-                          if (!newAgents[agentName]) newAgents[agentName] = {};
-                          newAgents[agentName].llmProfile = e.target.value === 'default' ? 'default' : e.target.value;
+                          if (!newAgents[selectedAgent]) newAgents[selectedAgent] = {};
+                          newAgents[selectedAgent].sampler = sampler;
                           return { ...prev, agents: newAgents };
                         });
                       }}
-                      style={{ marginLeft: '10px', padding: '5px', width: '100%', marginTop: '5px', background: '#1a1f2e', color: '#e6e8ec', border: '1px solid #2a3142', borderRadius: '4px' }}
-                    >
-                      <option value="default">default</option>
-                      {Object.keys(config.profiles).map(name => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </select>
+                    />
                   </div>
-                  {agentConfig.sampler && (
-                    <details style={{ marginTop: '10px' }}>
-                      <summary style={{ cursor: 'pointer', fontWeight: 'bold', color: '#e6e8ec' }}>Sampler Overrides</summary>
-                      <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #2a3142' }}>
-                        <SamplerOverrides 
-                          agentName={agentName}
-                          sampler={agentConfig.sampler}
-                          onChange={(sampler) => {
-                            setConfig(prev => {
-                              if (!prev) return prev;
-                              const newAgents = { ...prev.agents };
-                              if (!newAgents[agentName]) newAgents[agentName] = {};
-                              newAgents[agentName].sampler = sampler;
-                              return { ...prev, agents: newAgents };
-                            });
-                          }}
-                        />
-                      </div>
-                    </details>
-                  )}
-                </div>
-              ))}
-            </div>
+                </details>
+              </div>
+            )}
+
+            {!selectedAgent && (
+              <div style={{ padding: '20px', background: '#1a1f2e', borderRadius: '4px', color: '#a1a8b8', textAlign: 'center' }}>
+                Select an agent from the dropdown above to configure its settings.
+              </div>
+            )}
           </div>
         )}
 
@@ -603,22 +621,17 @@ interface SamplerOverridesProps {
 
 const SamplerOverrides: React.FC<SamplerOverridesProps> = ({ sampler, onChange }) => {
   const updateSampler = (key: string, value: any) => {
-    onChange({ ...sampler, [key]: value });
+    const newSampler = { ...sampler };
+    if (value === undefined || value === '') {
+      delete newSampler[key];
+    } else {
+      newSampler[key] = value;
+    }
+    onChange(newSampler);
   };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
-      <div>
-        <label style={{ color: '#a1a8b8', fontSize: '14px' }}>Max Completion Tokens:</label>
-        <input 
-          type="number" 
-          min="1"
-          value={sampler.max_completion_tokens || ''}
-          onChange={e => updateSampler('max_completion_tokens', e.target.value ? parseInt(e.target.value) : undefined)}
-          style={{ width: '100%', padding: '5px', marginTop: '3px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
-          placeholder="Leave empty for default"
-        />
-      </div>
       <div>
         <label style={{ color: '#a1a8b8', fontSize: '14px' }}>Temperature:</label>
         <input 
@@ -626,11 +639,95 @@ const SamplerOverrides: React.FC<SamplerOverridesProps> = ({ sampler, onChange }
           step="0.1" 
           min="0" 
           max="2"
-          value={sampler.temperature || ''}
+          value={sampler.temperature !== undefined ? sampler.temperature : ''}
           onChange={e => updateSampler('temperature', e.target.value ? parseFloat(e.target.value) : undefined)}
           style={{ width: '100%', padding: '5px', marginTop: '3px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
           placeholder="Leave empty for default"
         />
+        <small style={{ color: '#6b7280' }}>0-2, higher = more creative</small>
+      </div>
+
+      <div>
+        <label style={{ color: '#a1a8b8', fontSize: '14px' }}>Top P:</label>
+        <input 
+          type="number" 
+          step="0.1" 
+          min="0" 
+          max="1"
+          value={sampler.topP !== undefined ? sampler.topP : ''}
+          onChange={e => updateSampler('topP', e.target.value ? parseFloat(e.target.value) : undefined)}
+          style={{ width: '100%', padding: '5px', marginTop: '3px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+          placeholder="Leave empty for default"
+        />
+        <small style={{ color: '#6b7280' }}>0-1, nucleus sampling</small>
+      </div>
+
+      <div>
+        <label style={{ color: '#a1a8b8', fontSize: '14px' }}>Max Completion Tokens:</label>
+        <input 
+          type="number" 
+          min="1"
+          value={sampler.max_completion_tokens !== undefined ? sampler.max_completion_tokens : ''}
+          onChange={e => updateSampler('max_completion_tokens', e.target.value ? parseInt(e.target.value) : undefined)}
+          style={{ width: '100%', padding: '5px', marginTop: '3px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+          placeholder="Leave empty for default"
+        />
+        <small style={{ color: '#6b7280' }}>Max tokens in response</small>
+      </div>
+
+      <div>
+        <label style={{ color: '#a1a8b8', fontSize: '14px' }}>Max Context Tokens:</label>
+        <input 
+          type="number" 
+          min="1"
+          value={sampler.maxContextTokens !== undefined ? sampler.maxContextTokens : ''}
+          onChange={e => updateSampler('maxContextTokens', e.target.value ? parseInt(e.target.value) : undefined)}
+          style={{ width: '100%', padding: '5px', marginTop: '3px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+          placeholder="Leave empty for default"
+        />
+        <small style={{ color: '#6b7280' }}>Max context window</small>
+      </div>
+
+      <div>
+        <label style={{ color: '#a1a8b8', fontSize: '14px' }}>Frequency Penalty:</label>
+        <input 
+          type="number" 
+          step="0.1" 
+          min="0" 
+          max="2"
+          value={sampler.frequencyPenalty !== undefined ? sampler.frequencyPenalty : ''}
+          onChange={e => updateSampler('frequencyPenalty', e.target.value ? parseFloat(e.target.value) : undefined)}
+          style={{ width: '100%', padding: '5px', marginTop: '3px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+          placeholder="Leave empty for default"
+        />
+        <small style={{ color: '#6b7280' }}>Penalize repeated tokens</small>
+      </div>
+
+      <div>
+        <label style={{ color: '#a1a8b8', fontSize: '14px' }}>Presence Penalty:</label>
+        <input 
+          type="number" 
+          step="0.1" 
+          min="0" 
+          max="2"
+          value={sampler.presencePenalty !== undefined ? sampler.presencePenalty : ''}
+          onChange={e => updateSampler('presencePenalty', e.target.value ? parseFloat(e.target.value) : undefined)}
+          style={{ width: '100%', padding: '5px', marginTop: '3px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+          placeholder="Leave empty for default"
+        />
+        <small style={{ color: '#6b7280' }}>Penalize new tokens</small>
+      </div>
+
+      <div style={{ gridColumn: '1 / -1' }}>
+        <label style={{ color: '#a1a8b8', fontSize: '14px' }}>Stop Sequences (comma-separated):</label>
+        <input 
+          type="text"
+          value={sampler.stop ? sampler.stop.join(', ') : ''}
+          onChange={e => updateSampler('stop', e.target.value ? e.target.value.split(',').map(s => s.trim()).filter(s => s) : undefined)}
+          style={{ width: '100%', padding: '5px', marginTop: '3px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+          placeholder="Leave empty for default (e.g., END, ###, User:)"
+        />
+        <small style={{ color: '#6b7280' }}>Strings where generation stops</small>
       </div>
     </div>
   );
