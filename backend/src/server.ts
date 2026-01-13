@@ -2265,8 +2265,13 @@ io.on('connection', (socket) => {
         try { MessageService.logMessage(sceneId, `user:${persona}`, input, activeCharacters || [], {}); } catch (e) { console.warn('Failed to log user message', e); }
       }
 
+      // Callback for streaming character responses
+      const onCharacterResponse = (response: { sender: string; content: string }) => {
+        socket.emit('characterResponse', response);
+      };
+
       // Process through Orchestrator
-      const result = await orchestrator.processUserInput(input, persona, activeCharacters, sceneId);
+      const result = await orchestrator.processUserInput(input, persona, activeCharacters, sceneId, onCharacterResponse);
       const { responses, lore } = result;
 
       // Persist responses to messages if scene provided

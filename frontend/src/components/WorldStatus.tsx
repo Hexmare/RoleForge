@@ -52,6 +52,8 @@ export const WorldStatus: React.FC<WorldStatusProps> = ({ sessionContext }) => {
     worldState: true,
     trackers: true,
     characters: false,
+    objectives: false,
+    relationships: false,
   });
 
   const [expandedCharacters, setExpandedCharacters] = useState<ExpandedSections>({});
@@ -117,27 +119,77 @@ export const WorldStatus: React.FC<WorldStatusProps> = ({ sessionContext }) => {
               )}
 
               {sessionContext.trackers.objectives && sessionContext.trackers.objectives.length > 0 && (
-                <div>
-                  <h4 className="font-medium text-text-primary mb-2">Objectives</h4>
-                  <ul className="list-disc list-inside text-text-secondary space-y-1">
-                    {sessionContext.trackers.objectives.map((obj: string, idx: number) => (
-                      <li key={idx}>{obj}</li>
-                    ))}
-                  </ul>
+                <div className="border border-border-color rounded-lg overflow-hidden bg-panel-secondary">
+                  <button
+                    onClick={() => setExpandedSections((prev) => ({ ...prev, objectives: !prev.objectives }))}
+                    className="w-full flex items-center gap-2 p-2 hover:bg-panel-primary transition-colors font-medium text-text-primary"
+                    style={{ fontSize: '10px' }}
+                  >
+                    <span
+                      className={`inline-block transform transition-transform ${expandedSections.objectives ? '' : '-rotate-90'}`}
+                      style={{ width: '14px', height: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      ▼
+                    </span>
+                    <span>Objectives</span>
+                  </button>
+                  {expandedSections.objectives && (
+                    <div className="p-3 border-t border-border-color">
+                      <ul className="list-disc list-inside text-text-secondary space-y-1">
+                        {sessionContext.trackers.objectives.map((obj: any, idx: number) => {
+                          const objStr = typeof obj === 'string' ? obj : (obj?.description || JSON.stringify(obj));
+                          const owner = typeof obj === 'object' && obj?.owner ? ` (${obj.owner})` : '';
+                          return (
+                            <li key={idx}>
+                              {objStr}
+                              {owner && <span className="text-text-muted text-xs">{owner}</span>}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
 
               {sessionContext.trackers.relationships &&
                 Object.keys(sessionContext.trackers.relationships).length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-text-primary mb-2">Relationships</h4>
-                    <ul className="list-disc list-inside text-text-secondary space-y-1">
-                      {Object.entries(sessionContext.trackers.relationships).map(([key, value]) => (
-                        <li key={key}>
-                          <span className="font-medium">{key}:</span> {String(value)}
-                        </li>
-                      ))}
-                    </ul>
+                  <div className="border border-border-color rounded-lg overflow-hidden bg-panel-secondary">
+                    <button
+                      onClick={() => setExpandedSections((prev) => ({ ...prev, relationships: !prev.relationships }))}
+                      className="w-full flex items-center gap-2 p-2 hover:bg-panel-primary transition-colors font-medium text-text-primary"
+                      style={{ fontSize: '10px' }}
+                    >
+                      <span
+                        className={`inline-block transform transition-transform ${expandedSections.relationships ? '' : '-rotate-90'}`}
+                        style={{ width: '14px', height: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        ▼
+                      </span>
+                      <span>Relationships</span>
+                    </button>
+                    {expandedSections.relationships && (
+                      <div className="p-3 border-t border-border-color">
+                        <ul className="list-disc list-inside text-text-secondary space-y-1">
+                          {Object.entries(sessionContext.trackers.relationships).map(([key, value]) => (
+                            <li key={key}>
+                              <span className="font-medium">{key}</span>
+                              {typeof value === 'object' && value !== null ? (
+                                <ul className="list-disc list-inside ml-4 mt-1 space-y-0.5">
+                                  {Object.entries(value).map(([relKey, relValue]) => (
+                                    <li key={relKey}>
+                                      <span className="font-medium">{relKey}:</span> {String(relValue)}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <span> {String(value)}</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
             </div>

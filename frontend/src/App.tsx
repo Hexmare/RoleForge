@@ -545,7 +545,16 @@ function App() {
   };
 
   useEffect(() => {
+    socket.on('characterResponse', (data: { sender: string; content: string }) => {
+      // Add character response immediately as it streams in
+      const newMsg: Message = { role: 'ai', sender: data.sender, content: data.content };
+      setMessages(prev => [...prev, newMsg]);
+      // End streaming after first response arrives
+      setIsStreaming(false);
+    });
+
     socket.on('aiResponse', (data: { responses: { sender: string; content: string }[], lore: string[] }) => {
+      // For backwards compatibility, still handle batch responses
       const newMsgs: Message[] = data.responses.map(res => ({ role: 'ai', sender: res.sender, content: res.content }));
       setMessages(prev => [...prev, ...newMsgs]);
       // Also refresh authoritative messages from server for the current scene
@@ -563,6 +572,7 @@ function App() {
     });
 
     return () => {
+      socket.off('characterResponse');
       socket.off('aiResponse');
       socket.off('activeCharactersUpdated');
     };

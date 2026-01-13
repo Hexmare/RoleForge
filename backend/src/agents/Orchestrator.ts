@@ -397,7 +397,7 @@ export class Orchestrator {
     return keywords.some(keyword => lowerInput.includes(keyword));
   }
 
-  async processUserInput(userInput: string, personaName: string = 'default', activeCharacters?: string[], sceneId?: number): Promise<{ responses: { sender: string; content: string }[], lore: string[] }> {
+  async processUserInput(userInput: string, personaName: string = 'default', activeCharacters?: string[], sceneId?: number, onCharacterResponse?: (response: { sender: string; content: string }) => void): Promise<{ responses: { sender: string; content: string }[], lore: string[] }> {
     // Load scene summary from database if sceneId is provided
     if (sceneId && !this.sceneSummary) {
       const sceneRow = this.db.prepare('SELECT summary FROM Scenes WHERE id = ?').get(sceneId) as any;
@@ -617,9 +617,14 @@ export class Orchestrator {
     const recentMessages = this.db.prepare('SELECT message, sender FROM Messages WHERE sceneId = ? AND messageNumber > ? ORDER BY messageNumber').all(sceneId!, lastMessageNumber) as any[];
     const recentEvents = recentMessages.map(m => `${m.sender}: ${m.message}`);
     
+    // Get current user persona state from character states
+    const userPersonaState = characterStates[personaName || 'user'] || {};
+    
     const worldContext = {
       ...context,
       previousWorldState: sessionContext.scene.worldState,
+      userPersonaState,
+      scene: sessionContext.scene,
       recentEvents,
       trackers: sessionContext.trackers
     };
@@ -835,8 +840,14 @@ export class Orchestrator {
           console.log(`[CHARACTER] Character state after update:`, newState);
         }
         
-        responses.push({ sender: charName, content });
+        const response = { sender: charName, content };
+        responses.push(response);
         this.history.push(`${charName}: ${content}`);
+        
+        // Emit response immediately if callback provided
+        if (onCharacterResponse) {
+          onCharacterResponse(response);
+        }
       }
     }
 
