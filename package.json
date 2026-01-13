@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
-    "gpt-tokenizer": "^3.4.0"
+    "gpt-tokenizer": "^3.4.0",
+    "jsonrepair": "^3.13.1"
   }
 }

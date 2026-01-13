@@ -14,7 +14,16 @@ Active characters available: {{ activeCharacterNames | default('None') }}
 
 Analyze the scene and decide:
 - A short guidance directive (50–100 words) for the story pacing and engagement.
-- Which characters should respond to the user's input (based on relevance, presence, and story logic). Choose only from the active characters if specified. Read into the message and use logic. If there is a plural reference such as "How are all of you," this would suggest that user is talking to all characters. If there is one character, and the message says "I look at you." the message is obviously in reference to the 1 active character"
+- Which characters should respond to the user's input. 
+
+CRITICAL: Identify ALL characters who are directly mentioned, spoken to, or logically involved in the user's input. Look for:
+- Explicit mentions by name (e.g., "Annie", "Raven")
+- Pronouns referring to specific characters (e.g., "she" when only one female character is present)
+- Actions directed at characters (e.g., "turning to Annie", "talking to Raven")
+- Characters who are present and would naturally respond to the situation
+- Characters who are being addressed or referenced in dialogue
+
+Choose from the active characters list, but prioritize characters who are clearly involved in the current interaction. If the user is addressing multiple characters or the scene involves multiple characters, include all relevant ones.
 
 Output only a valid JSON object in this format:
 {"guidance": "your directive here", "characters": ["name1", "name2"] or []}

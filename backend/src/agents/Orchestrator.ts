@@ -3,6 +3,7 @@ import { ConfigManager } from '../configManager.js';
 import * as nunjucks from 'nunjucks';
 import * as fs from 'fs';
 import * as path from 'path';
+
 import { NarratorAgent } from './NarratorAgent.js';
 import { CharacterAgent } from './CharacterAgent.js';
 import { DirectorAgent } from './DirectorAgent.js';
@@ -16,6 +17,7 @@ import Database from 'better-sqlite3';
 import { Server } from 'socket.io';
 import LorebookService from '../services/LorebookService.js';
 import { matchLoreEntries } from '../utils/loreMatcher.js';
+import tryJsonRepair from '../utils/jsonRepair.js';
 
 export class Orchestrator {
   private configManager: ConfigManager;
@@ -475,7 +477,46 @@ export class Orchestrator {
       const summarizeAgent = this.agents.get('summarize')!;
       console.log('Calling SummarizeAgent');
       this.emitAgentStatus('Summarize', 'start', sceneId);
-      const summary = await summarizeAgent.run(context);
+      let summary: string = '';
+      let summarizeParsed: any = null;
+      let summarizeRetries = 0;
+      let summarizeLastError: any = null;
+      while (summarizeRetries < 3) {
+        const summarizeResponse = await summarizeAgent.run(context);
+        try {
+          summarizeParsed = JSON.parse(summarizeResponse);
+          break;
+        } catch (e) {
+          summarizeLastError = e;
+          const repaired = tryJsonRepair(summarizeResponse);
+          if (repaired) {
+            try {
+              summarizeParsed = JSON.parse(repaired);
+              break;
+            } catch (e2) {
+              summarizeLastError = e2;
+            }
+          }
+          const jsonMatch = summarizeResponse.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              summarizeParsed = JSON.parse(jsonMatch[0]);
+              break;
+            } catch (innerE) {
+              summarizeLastError = innerE;
+            }
+          }
+        }
+        summarizeRetries++;
+      }
+      if (summarizeParsed && summarizeParsed.summary) {
+        summary = summarizeParsed.summary;
+      } else if (summarizeParsed && typeof summarizeParsed === 'string') {
+        summary = summarizeParsed;
+      } else {
+        summary = '';
+        console.warn('SummarizeAgent failed to parse/repair JSON after', summarizeRetries, 'attempts:', summarizeLastError);
+      }
       console.log('SummarizeAgent completed');
       this.emitAgentStatus('Summarize', 'complete', sceneId);
       this.sceneSummary = summary;
@@ -500,55 +541,65 @@ export class Orchestrator {
     // Parse output: JSON {"guidance": "...", "characters": [...]}
     let directorGuidance = '';
     let charactersToRespond: string[] = [];
-    try {
-      // Strip ```json wrapper if present
+    let directorParsed: any = null;
+    let directorRetries = 0;
+    let directorLastError: any = null;
+    while (directorRetries < 3) {
       let cleanedOutput = directorOutput.trim();
       if (cleanedOutput.startsWith('```json') && cleanedOutput.endsWith('```')) {
-        cleanedOutput = cleanedOutput.slice(7, -3).trim(); // remove ```json and ```
+        cleanedOutput = cleanedOutput.slice(7, -3).trim();
       }
-      // Try direct JSON parsing
-      let directorJson = JSON.parse(cleanedOutput);
-      
-      // Check if we got a valid response object/array
-      if (Array.isArray(directorJson)) {
-        // If it's an array, check if first element is a valid object
-        if (directorJson.length > 0 && typeof directorJson[0] === 'object' && directorJson[0] !== null) {
-          directorJson = directorJson[0];
-        } else {
-          // Array of numbers or invalid - treat as parse failure
-          throw new Error('Invalid array response');
-        }
-      } else if (typeof directorJson !== 'object' || directorJson === null) {
-        // Not an object or array - treat as parse failure
-        throw new Error('Invalid response type');
-      }
-      
-      directorGuidance = directorJson.guidance || '';
-        charactersToRespond = Array.isArray(directorJson.characters) ? directorJson.characters : [];
-    } catch (e) {
-      console.warn('DirectorAgent returned invalid JSON, trying extraction:', directorOutput, e);
-      // Fallback: try to extract JSON from response if direct parsing fails
       try {
-        let directorJson = JSON.parse(this.extractFirstJson(directorOutput) || directorOutput);
-        // Handle both object and array responses
-        if (Array.isArray(directorJson)) {
-          directorJson = directorJson[0] || {};
-        }
-        directorGuidance = directorJson.guidance || '';
-        charactersToRespond = Array.isArray(directorJson.characters) ? directorJson.characters : [];
-      } catch (fallbackError) {
-        console.warn('DirectorAgent JSON extraction also failed:', fallbackError);
-        // Fallback: try old format
-        const guidanceMatch = directorOutput.match(/Guidance:\s*(.+?)(?:\n|$)/i);
-        const charactersMatch = directorOutput.match(/Characters:\s*(.+?)(?:\n|$)/i);
-        if (guidanceMatch) {
-          directorGuidance = guidanceMatch[1].trim();
-        }
-        if (charactersMatch) {
-          const charsStr = charactersMatch[1].trim();
-          if (charsStr.toLowerCase() !== 'none') {
-            charactersToRespond = charsStr.split(',').map(c => c.trim()).filter(c => c);
+        directorParsed = JSON.parse(cleanedOutput);
+        break;
+      } catch (e) {
+        directorLastError = e;
+        // Try jsonrepair
+        const repaired = tryJsonRepair(cleanedOutput);
+        if (repaired) {
+          try {
+            directorParsed = JSON.parse(repaired);
+            break;
+          } catch (e2) {
+            directorLastError = e2;
           }
+        }
+        // Try to extract JSON object from within the string
+        const jsonMatch = cleanedOutput.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            directorParsed = JSON.parse(jsonMatch[0]);
+            break;
+          } catch (innerE) {
+            directorLastError = innerE;
+          }
+        }
+      }
+      directorRetries++;
+    }
+    if (directorParsed) {
+      // Check if we got a valid response object/array
+      if (Array.isArray(directorParsed)) {
+        if (directorParsed.length > 0 && typeof directorParsed[0] === 'object' && directorParsed[0] !== null) {
+          directorParsed = directorParsed[0];
+        } else {
+          directorParsed = {};
+        }
+      }
+      directorGuidance = directorParsed.guidance || '';
+      charactersToRespond = Array.isArray(directorParsed.characters) ? directorParsed.characters : [];
+    } else {
+      console.warn('DirectorAgent failed to parse/repair JSON after', directorRetries, 'attempts:', directorLastError);
+      // Fallback: try old format
+      const guidanceMatch = directorOutput.match(/Guidance:\s*(.+?)(?:\n|$)/i);
+      const charactersMatch = directorOutput.match(/Characters:\s*(.+?)(?:\n|$)/i);
+      if (guidanceMatch) {
+        directorGuidance = guidanceMatch[1].trim();
+      }
+      if (charactersMatch) {
+        const charsStr = charactersMatch[1].trim();
+        if (charsStr.toLowerCase() !== 'none') {
+          charactersToRespond = charsStr.split(',').map(c => c.trim()).filter(c => c);
         }
       }
     }
@@ -562,7 +613,7 @@ export class Orchestrator {
       if (activeCharacters && activeCharacters.length > 0) {
         charactersToRespond = [activeCharacters[0]];
       } else {
-        charactersToRespond = []; // No characters to respond
+        charactersToRespond = [];
       }
     }
     context.directorGuidance = directorGuidance;
@@ -637,76 +688,68 @@ export class Orchestrator {
     // Parse JSON response from WorldAgent (enforced by response_format)
     let worldStateChanged = false;
     let trackersChanged = false;
-    try {
-      // Strip ```json wrapper if present
+    let worldParsed: any = null;
+    let worldRetries = 0;
+    let worldLastError: any = null;
+    while (worldRetries < 3) {
       let cleanedOutput = worldUpdateStr.trim();
       if (cleanedOutput.startsWith('```json') && cleanedOutput.endsWith('```')) {
-        cleanedOutput = cleanedOutput.slice(7, -3).trim(); // remove ```json and ```
+        cleanedOutput = cleanedOutput.slice(7, -3).trim();
       }
-      let worldUpdate = JSON.parse(cleanedOutput);
-      
-      // Handle both object and array responses
-      if (Array.isArray(worldUpdate)) {
-        // If it's an array, check if first element is a valid object
-        if (worldUpdate.length > 0 && typeof worldUpdate[0] === 'object' && worldUpdate[0] !== null) {
-          worldUpdate = worldUpdate[0];
-        } else {
-          // Array of invalid data - treat as parse failure
-          throw new Error('Invalid array response from WorldAgent');
+      try {
+        worldParsed = JSON.parse(cleanedOutput);
+        break;
+      } catch (e) {
+        worldLastError = e;
+        // Try jsonrepair
+        const repaired = tryJsonRepair(cleanedOutput);
+        if (repaired) {
+          try {
+            worldParsed = JSON.parse(repaired);
+            break;
+          } catch (e2) {
+            worldLastError = e2;
+          }
         }
-      } else if (typeof worldUpdate !== 'object' || worldUpdate === null) {
-        // Not an object or array - treat as parse failure
-        throw new Error('Invalid response type from WorldAgent');
+        // Try to extract JSON object from within the string
+        const jsonMatch = cleanedOutput.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            worldParsed = JSON.parse(jsonMatch[0]);
+            break;
+          } catch (innerE) {
+            worldLastError = innerE;
+          }
+        }
       }
-      
-      // Check if we got a valid response object
-      if (!worldUpdate.unchanged) {
-        if (worldUpdate.worldState) {
-          Object.assign(this.worldState, worldUpdate.worldState);
+      worldRetries++;
+    }
+    if (worldParsed) {
+      // Handle both object and array responses
+      if (Array.isArray(worldParsed)) {
+        if (worldParsed.length > 0 && typeof worldParsed[0] === 'object' && worldParsed[0] !== null) {
+          worldParsed = worldParsed[0];
+        } else {
+          worldParsed = {};
+        }
+      }
+      if (!worldParsed.unchanged) {
+        if (worldParsed.worldState) {
+          Object.assign(this.worldState, worldParsed.worldState);
           worldStateChanged = true;
         }
         // NOTE: WorldAgent should NOT modify character states - those are handled by CharacterAgent only
-        if (worldUpdate.trackers) {
+        if (worldParsed.trackers) {
           // Normalize objectives to array if it's an object
-          if (worldUpdate.trackers.objectives && typeof worldUpdate.trackers.objectives === 'object' && !Array.isArray(worldUpdate.trackers.objectives)) {
-            worldUpdate.trackers.objectives = Object.values(worldUpdate.trackers.objectives).map((obj: any) => typeof obj === 'string' ? obj : obj.description || JSON.stringify(obj));
+          if (worldParsed.trackers.objectives && typeof worldParsed.trackers.objectives === 'object' && !Array.isArray(worldParsed.trackers.objectives)) {
+            worldParsed.trackers.objectives = Object.values(worldParsed.trackers.objectives).map((obj: any) => typeof obj === 'string' ? obj : obj.description || JSON.stringify(obj));
           }
-          Object.assign(this.trackers, worldUpdate.trackers);
+          Object.assign(this.trackers, worldParsed.trackers);
           trackersChanged = true;
         }
       }
-    } catch (e) {
-      console.warn('WorldAgent returned invalid JSON:', worldUpdateStr, e);
-      // Fallback: try to extract JSON from response if direct parsing fails
-      const jsonStr = this.extractFirstJson(worldUpdateStr);
-      if (jsonStr) {
-        try {
-          let worldUpdate = JSON.parse(jsonStr);
-          // Handle both object and array responses
-          if (Array.isArray(worldUpdate)) {
-            worldUpdate = worldUpdate[0] || {};
-          }
-          if (!worldUpdate.unchanged) {
-            if (worldUpdate.worldState) {
-              Object.assign(this.worldState, worldUpdate.worldState);
-              worldStateChanged = true;
-            }
-            // NOTE: WorldAgent should NOT modify character states - those are handled by CharacterAgent only
-            if (worldUpdate.trackers) {
-              // Normalize objectives to array if it's an object
-              if (worldUpdate.trackers.objectives && typeof worldUpdate.trackers.objectives === 'object' && !Array.isArray(worldUpdate.trackers.objectives)) {
-                worldUpdate.trackers.objectives = Object.values(worldUpdate.trackers.objectives).map((obj: any) => typeof obj === 'string' ? obj : obj.description || JSON.stringify(obj));
-              }
-              Object.assign(this.trackers, worldUpdate.trackers);
-              trackersChanged = true;
-            }
-          }
-        } catch (fallbackError) {
-          console.warn('WorldAgent JSON extraction also failed:', fallbackError);
-        }
-      } else {
-        console.warn('No JSON found in WorldAgent response:', worldUpdateStr);
-      }
+    } else {
+      console.warn('WorldAgent failed to parse/repair JSON after', worldRetries, 'attempts:', worldLastError);
     }
     
     // Save updated world state to scene if it changed
@@ -760,80 +803,87 @@ export class Orchestrator {
       };
       console.log(`[CHARACTER] Calling CharacterAgent for "${charName}"`);
       console.log(`[CHARACTER] Character profile: name=${characterData?.name}, includes lore: ${!!context.formattedLore}`);
+      let characterResponse: string | null = null;
+      let characterParsed: any = null;
+      let characterRetries = 0;
+      let characterLastError: any = null;
       this.emitAgentStatus(charName, 'start', sceneId);
-      const characterResponse = await characterAgent.run(characterContext);
-      console.log(`[CHARACTER] CharacterAgent for "${charName}" completed`);
-      console.log(`[CHARACTER] Raw response length: ${characterResponse?.length || 0} chars`);
-      console.log(`[CHARACTER] First 200 chars of response: ${characterResponse?.substring(0, 200) || 'EMPTY'}`);
-      this.emitAgentStatus(charName, 'complete', sceneId);
-      if (characterResponse) {
-        // Strip ```json wrapper if present
-        let cleanedResponse = characterResponse.trim();
-        console.log(`[CHARACTER] Attempting JSON parse on response...`);
-        if (cleanedResponse.startsWith('```json') && cleanedResponse.endsWith('```')) {
-          console.log(`[CHARACTER] Stripping \`\`\`json wrapper`);
-          cleanedResponse = cleanedResponse.slice(7, -3).trim();
-          console.log(`[CHARACTER] After stripping: ${cleanedResponse.substring(0, 100)}...`);
+      while (characterRetries < 3) {
+        if (characterRetries > 0) {
+          console.warn(`[CHARACTER] Retrying CharacterAgent for "${charName}" (attempt ${characterRetries + 1})`);
         }
-        let parsed;
-        try {
-          console.log(`[CHARACTER] Parsing JSON...`);
-          parsed = JSON.parse(cleanedResponse);
-          console.log(`[CHARACTER] JSON parse SUCCESS. Keys: ${Object.keys(parsed).join(', ')}`);
-        } catch (e) {
-          // If direct parsing fails, try to extract JSON object
-          console.warn(`[CHARACTER] JSON parse FAILED: ${e instanceof Error ? e.message : e}`);
-          console.log(`[CHARACTER] Attempting JSON extraction...`);
-          
-          // Try to find JSON object in response
-          const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            try {
-              parsed = JSON.parse(jsonMatch[0]);
-              console.log(`[CHARACTER] JSON extraction SUCCESS. Keys: ${Object.keys(parsed).join(', ')}`);
-            } catch (innerE) {
-              console.warn(`[CHARACTER] JSON extraction also failed: ${innerE instanceof Error ? innerE.message : innerE}`);
-              console.log(`[CHARACTER] Treating response as plain text`);
-              parsed = { response: cleanedResponse, characterState: null };
-            }
-          } else {
-            // If parsing fails, treat as plain text
-            console.log(`[CHARACTER] No JSON object found. Treating response as plain text`);
-            parsed = { response: cleanedResponse, characterState: null };
+        if (characterRetries === 0) {
+          characterResponse = await characterAgent.run(characterContext);
+        } else {
+          // On retry, re-run the agent for a new output
+          characterResponse = await characterAgent.run(characterContext);
+        }
+        console.log(`[CHARACTER] CharacterAgent for "${charName}" completed`);
+        console.log(`[CHARACTER] Raw response length: ${characterResponse?.length || 0} chars`);
+        console.log(`[CHARACTER] First 200 chars of response: ${characterResponse?.substring(0, 200) || 'EMPTY'}`);
+        this.emitAgentStatus(charName, 'complete', sceneId);
+        if (characterResponse) {
+          // Strip ```json wrapper if present
+          let cleanedResponse = characterResponse.trim();
+          if (cleanedResponse.startsWith('```json') && cleanedResponse.endsWith('```')) {
+            cleanedResponse = cleanedResponse.slice(7, -3).trim();
           }
-        }
-        const content = parsed.response;
-        console.log(`[CHARACTER] Extracted content length: ${content?.length || 0} chars`);
-        
-        // Update character state if provided in response
-        if (parsed.characterState && typeof parsed.characterState === 'object') {
-          console.log(`[CHARACTER] Updating character state for ${charName}:`, parsed.characterState);
-          // Merge provided state fields, avoiding 'default' values
-          const newState = { ...characterStates[charName] };
-          for (const [key, value] of Object.entries(parsed.characterState)) {
-            if (value && value !== 'default' && value !== 'Default') {
-              newState[key] = value;
+          // Try direct parse
+          try {
+            characterParsed = JSON.parse(cleanedResponse);
+            break;
+          } catch (e) {
+            characterLastError = e;
+            // Try jsonrepair
+            const repaired = tryJsonRepair(cleanedResponse);
+            if (repaired) {
+              try {
+                characterParsed = JSON.parse(repaired);
+                break;
+              } catch (e2) {
+                characterLastError = e2;
+              }
+            }
+            // Try to extract JSON object from within the string
+            const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              try {
+                characterParsed = JSON.parse(jsonMatch[0]);
+                break;
+              } catch (innerE) {
+                characterLastError = innerE;
+              }
             }
           }
-          characterStates[charName] = newState;
-          console.log(`[CHARACTER] Character state after update:`, newState);
-          
-          // Save updated character state to scene immediately
-          SceneService.update(sceneId!, { characterStates });
-          this.characterStates = characterStates;
-          
-          // Emit state update immediately for this character
-          this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates });
         }
-        
-        const response = { sender: charName, content };
-        responses.push(response);
-        this.history.push(`${charName}: ${content}`);
-        
-        // Emit response immediately if callback provided
-        if (onCharacterResponse) {
-          onCharacterResponse(response);
+        characterRetries++;
+      }
+      if (!characterParsed) {
+        console.warn(`[CHARACTER] Failed to parse/repair JSON after ${characterRetries} attempts:`, characterLastError);
+        characterParsed = { response: characterResponse || '', characterState: null };
+      }
+      const content = characterParsed.response;
+      // Update character state if provided in response
+      if (characterParsed.characterState && typeof characterParsed.characterState === 'object') {
+        const newState = { ...characterStates[charName] };
+        for (const [key, value] of Object.entries(characterParsed.characterState)) {
+          if (value && value !== 'default' && value !== 'Default') {
+            newState[key] = value;
+          }
         }
+        characterStates[charName] = newState;
+        // Save updated character state to scene immediately
+        SceneService.update(sceneId!, { characterStates });
+        this.characterStates = characterStates;
+        // Emit state update immediately for this character
+        this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates });
+      }
+      const response = { sender: charName, content };
+      responses.push(response);
+      this.history.push(`${charName}: ${content}`);
+      // Emit response immediately if callback provided
+      if (onCharacterResponse) {
+        onCharacterResponse(response);
       }
     }
 
@@ -938,7 +988,46 @@ export class Orchestrator {
         
         console.log(`[/image] Calling VisualAgent with ${matchedEntities.length} matched entities`);
         this.emitAgentStatus('Visual', 'start', sceneId);
-        const visualResult = await visualAgent.run(visualContext);
+        let visualResult: string = '';
+        let visualParsed: any = null;
+        let visualRetries = 0;
+        let visualLastError: any = null;
+        while (visualRetries < 3) {
+          const visualResponse = await visualAgent.run(visualContext);
+          try {
+            visualParsed = JSON.parse(visualResponse);
+            break;
+          } catch (e) {
+            visualLastError = e;
+            const repaired = tryJsonRepair(visualResponse);
+            if (repaired) {
+              try {
+                visualParsed = JSON.parse(repaired);
+                break;
+              } catch (e2) {
+                visualLastError = e2;
+              }
+            }
+            const jsonMatch = visualResponse.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              try {
+                visualParsed = JSON.parse(jsonMatch[0]);
+                break;
+              } catch (innerE) {
+                visualLastError = innerE;
+              }
+            }
+          }
+          visualRetries++;
+        }
+        if (visualParsed && visualParsed.content) {
+          visualResult = visualParsed.content;
+        } else if (visualParsed && typeof visualParsed === 'string') {
+          visualResult = visualParsed;
+        } else {
+          visualResult = '';
+          console.warn('VisualAgent failed to parse/repair JSON after', visualRetries, 'attempts:', visualLastError);
+        }
         console.log('[/image] VisualAgent completed');
         this.emitAgentStatus('Visual', 'complete', sceneId);
         return { responses: [{ sender: 'Visual', content: visualResult }], lore: imageSessionContext?.lore || [] };

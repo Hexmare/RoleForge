@@ -38,8 +38,10 @@ IMPORTANT GUIDELINES:
 - Focus on world-level facts, not individual character states
 - DO NOT modify clothingWorn, mood, activity, position, or location for any character
 - DO NOT use "default" or "Default" as values
+- DO NOT include recent events or interactions in the trackers - use them only as context to determine what world facts changed
 - If nothing changed in the world state, output {"unchanged": true}
 - Preserve all existing world state facts unless explicitly changed by the narrative
+- Trackers should contain only persistent, world-level information that affects future scenes
 
 Output a JSON object with "worldState" and "trackers" fields only. The "trackers" object should have "stats" (object), "objectives" (array of strings), and "relationships" (object) fields. If nothing changed, output {"unchanged": true}
 
