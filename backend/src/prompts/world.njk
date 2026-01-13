@@ -26,23 +26,30 @@ User action: {{ userInput }}
 
 Update the world state and trackers with any changes that have occurred. This could include dynamic facts, stats, objectives, or relationships.
 
-DO NOT modify character states, clothing, mood, activity, position, or location. Those are controlled by:
-- The USER for their own persona's attire and state
+For the USER PERSONA STATE: You MAY update the user's clothing, mood, activity, position, or location based on their described actions in the recent events. Include these updates directly in a "userPersonaState" field at the top level of your JSON response.
+
+DO NOT modify OTHER character states, clothing, mood, activity, position, or location. Those are controlled by:
 - The CHARACTER AGENT for individual character responses and state changes
 
-Your role is FACTS ONLY: Track world-level information like plot points, locations visited, NPCs encountered, environmental conditions, etc.
+Your role is FACTS ONLY: Track world-level information like current plot points, current location, NPCs encountered, environmental conditions, arousals, what is currently happening, etc.
 
 If this is the first message in the scene (previousWorldState is empty), initialize basic world state facts about the scene.
 
 IMPORTANT GUIDELINES:
 - Focus on world-level facts, not individual character states
-- DO NOT modify clothingWorn, mood, activity, position, or location for any character
+- DO NOT modify clothingWorn, mood, activity, position, or location for ANY character except the user persona
+- For the user persona, update their state based on their described actions (e.g., if they say "I take off my shirt", update clothingWorn)
 - DO NOT use "default" or "Default" as values
 - DO NOT include recent events or interactions in the trackers - use them only as context to determine what world facts changed
 - If nothing changed in the world state, output {"unchanged": true}
-- Preserve all existing world state facts unless explicitly changed by the narrative
+- Preserve all existing current world state facts unless explicitly changed by the narrative
 - Trackers should contain only persistent, world-level information that affects future scenes
+- Always output valid JSON
+- do not include history of events or states, only the current state
+- do not change details without clear narrative justification
+- do not invent new facts without narrative basis
+- do not include any details not directed by this prompt
 
-Output a JSON object with "worldState" and "trackers" fields only. The "trackers" object should have "stats" (object), "objectives" (array of strings), and "relationships" (object) fields. If nothing changed, output {"unchanged": true}
+Output a JSON object with "worldState", "userPersonaState", and "trackers" fields only. The "trackers" object should have "stats" (object), "objectives" (array of strings), and "relationships" (object) fields. If nothing changed, output {"unchanged": true}
 
 IMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON. Do not add explanations, comments, or formatting. Output only the JSON object.

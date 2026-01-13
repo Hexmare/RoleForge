@@ -124,7 +124,7 @@ describe('LLM Template System', () => {
 
   describe('Template Format Uniqueness', () => {
     it('each template should have distinct formatting', () => {
-      const contents = {};
+      const contents: { [key: string]: string } = {};
       for (const name of templateNames) {
         const filePath = path.join(templatesDir, `${name}.njk`);
         contents[name] = fs.readFileSync(filePath, 'utf-8');

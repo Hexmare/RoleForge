@@ -415,17 +415,17 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
       return res.json({ regenerated: [], message: 'No messages to regenerate after last user message.' });
     }
     // Prepare history up to and including last user message
-    const history = allMessages.slice(0, lastUserIdx + 1).map(m => `${m.sender}: ${m.message}`);
+    const history = allMessages.slice(0, lastUserIdx + 1).map((m: any) => `${m.sender}: ${m.message}`);
     const userMsg = allMessages[lastUserIdx];
     // Build session context
     const sessionContext = await orchestrator.buildSessionContext(Number(sceneId));
     // Patch orchestrator's history so only messages up to last user message are used
-    if (orchestrator && typeof orchestrator === 'object' && Array.isArray(orchestrator.history)) {
-      orchestrator.history = history.slice();
+    if (orchestrator && typeof orchestrator === 'object') {
+      orchestrator.setHistory(history.slice());
     }
     // Call orchestrator.processUserInput with the last user message
     const persona = userMsg.sender.includes(':') ? userMsg.sender.split(':').pop() : 'default';
-    const activeCharacters = sessionContext.activeCharacters.map(c => c.id || c.name);
+    const activeCharacters = sessionContext ? sessionContext.activeCharacters.map(c => c.id || c.name) : [];
     const result = await orchestrator.processUserInput(userMsg.message, persona, activeCharacters, Number(sceneId));
     // Remove all messages after lastUserIdx
     const toDelete = allMessages.slice(lastUserIdx + 1);
