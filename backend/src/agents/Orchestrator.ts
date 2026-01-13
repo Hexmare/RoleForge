@@ -50,6 +50,63 @@ export class Orchestrator {
     }
   }
 
+  /**
+   * Extract character state fields from character description when Default values are present
+   * Attempts to parse clothing, mood, activity, and position from the description text
+   */
+  private extractStateFromDescription(character: any): Partial<any> {
+    const state: any = {};
+    if (!character?.description) return state;
+
+    const desc = character.description.toLowerCase();
+    
+    // Try to extract clothing/outfit info
+    if (!character.currentOutfit || character.currentOutfit === 'default') {
+      const clothingPatterns = [
+        /wearing\s+(.+?)(?:\.|,|and)/i,
+        /dressed in\s+(.+?)(?:\.|,|and)/i,
+        /outfit:\s+(.+?)(?:\.|,|and)/i,
+        /clothes?:\s+(.+?)(?:\.|,|and)/i,
+      ];
+      for (const pattern of clothingPatterns) {
+        const match = desc.match(pattern);
+        if (match) {
+          state.clothingWorn = match[1].trim();
+          break;
+        }
+      }
+    }
+
+    // Try to extract mood/personality
+    if (!character.mood || character.mood === 'default' || character.mood === 'neutral') {
+      const moodKeywords = ['cheerful', 'happy', 'sad', 'angry', 'calm', 'anxious', 'confident', 'shy', 'curious', 'determined', 'amused', 'serious', 'playful', 'reserved', 'outgoing'];
+      for (const mood of moodKeywords) {
+        if (desc.includes(mood)) {
+          state.mood = mood;
+          break;
+        }
+      }
+    }
+
+    // Try to extract activity/occupation
+    if (!character.activity || character.activity === 'default' || character.activity === 'present') {
+      const activityPatterns = [
+        /(?:is|works? as|acts? as)\s+(?:a\s+)?(.+?)(?:\.|,|and)/i,
+        /occupation:\s+(.+?)(?:\.|,|and)/i,
+        /role:\s+(.+?)(?:\.|,|and)/i,
+      ];
+      for (const pattern of activityPatterns) {
+        const match = desc.match(pattern);
+        if (match) {
+          state.activity = match[1].trim();
+          break;
+        }
+      }
+    }
+
+    return state;
+  }
+
   // Recreate a single agent instance (useful when config changes)
   public reloadAgent(agentName: string): boolean {
     try {
@@ -517,24 +574,26 @@ export class Orchestrator {
     const characterStates = { ...sessionContext.scene.characterStates };
     const userPersonaName = personaName || 'user';
     if (!characterStates[userPersonaName]) {
+      const userPersona = context.userPersona;
       characterStates[userPersonaName] = {
-        clothingWorn: 'default',
-        mood: 'neutral',
-        activity: 'interacting',
+        clothingWorn: userPersona.currentOutfit || userPersona.appearance?.aesthetic || 'casual attire',
+        mood: userPersona.personality?.split(',')[0]?.trim() || 'neutral',
+        activity: userPersona.occupation || 'interacting',
         location: sessionContext.scene.location || 'unknown',
         position: 'standing'
       };
     }
     for (const char of sessionContext.activeCharacters) {
       if (!characterStates[char.name]) {
+        const extractedState = this.extractStateFromDescription(char);
         characterStates[char.name] = {
-          clothingWorn: char.outfit || 'default',
-          mood: 'neutral',
-          activity: 'present',
+          clothingWorn: extractedState.clothingWorn || char.currentOutfit || char.appearance?.aesthetic || 'casual attire',
+          mood: extractedState.mood || char.personality?.split(',')[0]?.trim() || 'neutral',
+          activity: extractedState.activity || char.occupation || 'present',
           location: sessionContext.scene.location || 'unknown',
           position: 'standing'
         };
-        console.log(`Initialized character state for ${char.name}`);
+        console.log(`Initialized character state for ${char.name}:`, characterStates[char.name]);
       }
     }
     console.log('Character states after initialization:', Object.keys(characterStates));
@@ -602,7 +661,24 @@ export class Orchestrator {
           worldStateChanged = true;
         }
         if (worldUpdate.characterStates) {
-          Object.assign(characterStates, worldUpdate.characterStates);
+          // Clean up "Default" values and merge character states
+          const cleanedStates: Record<string, any> = {};
+          for (const [charName, state] of Object.entries(worldUpdate.characterStates)) {
+            if (typeof state === 'object' && state !== null) {
+              const cleanedState: any = {};
+              for (const [key, value] of Object.entries(state)) {
+                // Skip default values - if value is 'Default' or 'default', keep existing or skip
+                if (value && value !== 'default' && value !== 'Default') {
+                  cleanedState[key] = value;
+                } else if (characterStates[charName]?.[key]) {
+                  // Keep existing value if it's not 'default'
+                  cleanedState[key] = characterStates[charName][key];
+                }
+              }
+              cleanedStates[charName] = { ...characterStates[charName], ...cleanedState };
+            }
+          }
+          Object.assign(characterStates, cleanedStates);
         }
         if (worldUpdate.trackers) {
           // Normalize objectives to array if it's an object
@@ -744,6 +820,21 @@ export class Orchestrator {
         }
         const content = parsed.response;
         console.log(`[CHARACTER] Extracted content length: ${content?.length || 0} chars`);
+        
+        // Update character state if provided in response
+        if (parsed.characterState && typeof parsed.characterState === 'object') {
+          console.log(`[CHARACTER] Updating character state for ${charName}:`, parsed.characterState);
+          // Merge provided state fields, avoiding 'default' values
+          const newState = { ...characterStates[charName] };
+          for (const [key, value] of Object.entries(parsed.characterState)) {
+            if (value && value !== 'default' && value !== 'Default') {
+              newState[key] = value;
+            }
+          }
+          characterStates[charName] = newState;
+          console.log(`[CHARACTER] Character state after update:`, newState);
+        }
+        
         responses.push({ sender: charName, content });
         this.history.push(`${charName}: ${content}`);
       }

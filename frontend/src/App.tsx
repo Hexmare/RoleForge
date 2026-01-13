@@ -13,6 +13,7 @@ import ConfirmModal from './components/ConfirmModal';
 import Chat from './components/Chat';
 import TopBar from './components/TopBar';
 import Panel from './components/Panel';
+import { WorldStatus } from './components/WorldStatus';
 import PersonaComponent from './components/PersonaComponent';
 import ActiveCharacterComponent from './components/ActiveCharacterComponent';
 import Spinner from './components/Spinner';
@@ -238,6 +239,22 @@ function App() {
     setPersonas(data);
     if (data.length > 0 && !data.find((p: any) => p.name === selectedPersona)) {
       setSelectedPersona(data[0].name);
+    }
+  };
+
+  const refreshSessionContext = async () => {
+    if (!selectedScene) return;
+    try {
+      const res = await fetch(`/api/scenes/${selectedScene}/session`);
+      if (res.ok) {
+        const session = await res.json();
+        console.log('Refreshed session context:', session);
+        setSessionContext(session);
+        const ids = (session.activeCharacters || []).map((c: any) => c.id).filter(Boolean);
+        setActiveCharacters(ids);
+      }
+    } catch (e) {
+      console.warn('Failed to refresh session context', e);
     }
   };
 
@@ -1138,6 +1155,7 @@ function App() {
                 characters={characters}
                 onUpdateMessage={updateMessageContent}
                 onMessagesRefresh={() => selectedScene && loadMessages(selectedScene)}
+                onSessionRefresh={refreshSessionContext}
                 socket={socket}
               />
             )}
@@ -1153,80 +1171,8 @@ function App() {
           {/* Right Panel */}
           {rightPanelOpen && (
             <Panel side="right" open={true} onToggle={() => setRightPanelOpen(false)} title="World Status">
-              <div className="space-y-4">
-                {sessionContext?.worldState && (
-                  <div>
-                    <h3 className="text-md font-semibold text-text-primary mb-2">World State</h3>
-                    <div className="bg-panel-secondary p-3 rounded text-sm text-text-secondary font-mono overflow-x-auto">
-                      <pre>{JSON.stringify(sessionContext.worldState, null, 2)}</pre>
-                    </div>
-                  </div>
-                )}
-                {sessionContext?.trackers && (
-                  <div>
-                    <h3 className="text-md font-semibold text-text-primary mb-2">Trackers</h3>
-                    <div className="space-y-2">
-                      <div>
-                        <h4 className="text-sm font-medium text-text-primary">Stats</h4>
-                        {sessionContext.trackers.stats && Object.keys(sessionContext.trackers.stats).length > 0 ? (
-                          <ul className="list-disc list-inside text-sm text-text-secondary">
-                            {Object.entries(sessionContext.trackers.stats).map(([key, value]) => (
-                              <li key={key}>{key}: {String(value)}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <div className="text-sm text-text-secondary">No stats tracked</div>
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-medium text-text-primary">Objectives</h4>
-                        {sessionContext.trackers.objectives && sessionContext.trackers.objectives.length > 0 ? (
-                          <ul className="list-disc list-inside text-sm text-text-secondary">
-                            {sessionContext.trackers.objectives.map((obj: string, idx: number) => (
-                              <li key={idx}>{obj}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <div className="text-sm text-text-secondary">No objectives set</div>
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-medium text-text-primary">Relationships</h4>
-                        {sessionContext.trackers.relationships && Object.keys(sessionContext.trackers.relationships).length > 0 ? (
-                          <ul className="list-disc list-inside text-sm text-text-secondary">
-                            {Object.entries(sessionContext.trackers.relationships).map(([key, value]) => (
-                              <li key={key}>{key}: {String(value)}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <div className="text-sm text-text-secondary">No relationships tracked</div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {sessionContext?.scene?.characterStates && Object.keys(sessionContext.scene.characterStates).length > 0 && (
-                  <div>
-                    <h3 className="text-md font-semibold text-text-primary mb-2">Character States</h3>
-                    <div className="space-y-2">
-                      {Object.entries(sessionContext.scene.characterStates).map(([charName, state]: [string, any]) => (
-                        <div key={charName} className="bg-panel-secondary p-2 rounded text-sm">
-                          <div className="font-medium text-text-primary">{charName}</div>
-                          <div className="text-text-secondary space-y-1">
-                            <div>Location: {state.location || 'unknown'}</div>
-                            <div>Position: {state.position || 'unknown'}</div>
-                            <div>Activity: {state.activity || 'unknown'}</div>
-                            <div>Mood: {state.mood || 'unknown'}</div>
-                            <div>Clothing: {state.clothingWorn || 'unknown'}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {!sessionContext?.worldState && !sessionContext?.trackers && (!sessionContext?.scene?.characterStates || Object.keys(sessionContext.scene.characterStates).length === 0) && (
-                  <div className="text-text-secondary text-sm">No world status available</div>
-                )}
+              <div className="p-4">
+                <WorldStatus sessionContext={sessionContext} />
               </div>
             </Panel>
           )}

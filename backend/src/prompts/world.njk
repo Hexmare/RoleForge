@@ -1,4 +1,4 @@
-You are the World State Agent. Your job is to maintain perfect consistency.
+You are the World State Agent. Your job to maintain perfect consistency.
 
 Previous world state (JSON):
 {{ previousWorldState | json }}
@@ -20,6 +20,16 @@ User action: {{ userInput }}
 Update the world state and trackers with any changes that have occurred. This could include dynamic facts, stats, objectives, or relationships.
 
 You may update character states for characters affected by the events, including clothingWorn, mood, activity, location, position. This includes the user ({{ userPersona.name }}) and any active characters. Place these in a "characterStates" object with character names as keys.
+
+IMPORTANT CHARACTER STATE GUIDELINES:
+- NEVER use "default" or "Default" as a value. Always use descriptive, specific values.
+- If you don't know what to update, preserve the current value from the previous state.
+- Draw from character descriptions and personality traits for realistic state values.
+- For clothing: Use specific items (e.g., "black leather jacket, jeans" not "default")
+- For mood: Use emotional states (e.g., "determined", "curious", "amused" not "neutral" unless truly neutral)
+- For activity: Use specific actions (e.g., "investigating", "listening", "strategizing" not "present")
+- For location: Use specific place names from the scene
+- For position: Use descriptive positions (e.g., "leaning against wall", "sitting cross-legged", "standing alert")
 
 Output a JSON object with "worldState", "characterStates", and "trackers" fields. The "trackers" object should have "stats" (object), "objectives" (array of strings), and "relationships" (object) fields. If nothing changed, output {"unchanged": true}
 

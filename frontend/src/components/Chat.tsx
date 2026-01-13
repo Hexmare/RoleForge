@@ -70,6 +70,7 @@ interface ChatProps {
   characters: Character[];
   onUpdateMessage: (id: number, content: string) => void;
   onMessagesRefresh: () => void;
+  onSessionRefresh?: () => void;
   socket: Socket;
 }
 
@@ -86,6 +87,7 @@ const Chat: React.FC<ChatProps> = ({
   characters,
   onUpdateMessage,
   onMessagesRefresh,
+  onSessionRefresh,
   socket,
 }) => {
   const chatWindowRef = useRef<HTMLDivElement>(null);
@@ -450,6 +452,10 @@ const Chat: React.FC<ChatProps> = ({
                       }
                       // Refresh messages to show empty chat
                       onMessagesRefresh();
+                      // Also refresh session context to reset trackers and state
+                      if (onSessionRefresh) {
+                        onSessionRefresh();
+                      }
                     } catch (e) {
                       console.warn('Failed to reset scene', e);
                       alert('Failed to reset scene');
