@@ -4,7 +4,7 @@
     {%- if message.role == "user" %}
         {%- if remainingMessages <= 2 and tools %}[AVAILABLE_TOOLS]{{ tools | safe }}[/AVAILABLE_TOOLS]
         {%- endif %}[INST]{{ message.content }}[/INST]
-        {%- if remainingMessages == 1 %}[SYSTEM_PROMPT]{{ system }}[/SYSTEM_PROMPT]<think>
+        {%- if remainingMessages == 1 %}[SYSTEM_PROMPT]{{ system_prompt }}[/SYSTEM_PROMPT]<think>
         {%- endif %}
     {%- elif message.role == "assistant" %}
         {%- if isThinkSet and isLast and message.thinking %}<think>{{ message.thinking }}</think>
