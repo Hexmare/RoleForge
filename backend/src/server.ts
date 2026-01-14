@@ -398,52 +398,121 @@ app.post('/api/scenes/:sceneId/summarize', async (req, res) => {
 });
 
 // Messages
-// Regenerate all messages after the last user message in a scene
+// Regenerate all AI messages in the current round (excluding user messages)
 app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
   const { sceneId } = req.params;
   try {
-    // Get all messages for the scene, ordered by messageNumber ASC
-    const allMessages = db.prepare('SELECT * FROM Messages WHERE sceneId = ? ORDER BY messageNumber ASC').all(Number(sceneId));
-    // Find the last user message index
-    let lastUserIdx = -1;
-    for (let i = 0; i < allMessages.length; i++) {
-      if (allMessages[i].sender && String(allMessages[i].sender).startsWith('user')) {
-        lastUserIdx = i;
+    const sceneIdNum = Number(sceneId);
+    
+    // Get the current scene to find current round
+    const scene = db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?').get(sceneIdNum) as any;
+    if (!scene) {
+      return res.status(404).json({ error: 'Scene not found' });
+    }
+    
+    let roundToRegenerate = scene.currentRoundNumber;
+    
+    // Get all messages in the current round
+    let currentRoundMessages = MessageService.getRoundMessages(sceneIdNum, roundToRegenerate);
+    
+    // If current round has no messages, try the previous round (last completed round)
+    if (currentRoundMessages.length === 0 && roundToRegenerate > 1) {
+      roundToRegenerate = roundToRegenerate - 1;
+      currentRoundMessages = MessageService.getRoundMessages(sceneIdNum, roundToRegenerate);
+    }
+    
+    if (currentRoundMessages.length === 0) {
+      return res.json({ regenerated: [], message: 'No messages to regenerate in current round.' });
+    }
+    
+    // Find the user message in the current round (if any)
+    const userMessageInRound = currentRoundMessages.find((m: any) => m.sender && String(m.sender).toLowerCase().startsWith('user'));
+    
+    let triggerMessage: string;
+    let persona: string;
+    
+    if (userMessageInRound) {
+      // Normal round: regenerate based on user message
+      triggerMessage = userMessageInRound.message;
+      persona = userMessageInRound.sender.includes(':') ? userMessageInRound.sender.split(':').pop() : 'default';
+    } else {
+      // AI-only round (continue round): regenerate based on previous round's character messages
+      const previousRound = roundToRegenerate - 1;
+      if (previousRound < 1) {
+        return res.json({ regenerated: [], message: 'No previous round to continue from.' });
       }
+      
+      const previousRoundMessages = MessageService.getRoundMessages(sceneIdNum, previousRound);
+      // Get only character messages (not user) from previous round
+      const characterMessagesFromLastRound = previousRoundMessages
+        .filter((msg: any) => msg.sender && !String(msg.sender).toLowerCase().startsWith('user'))
+        .map((msg: any) => `${msg.sender}: ${msg.message}`)
+        .join('\n\n');
+      
+      triggerMessage = characterMessagesFromLastRound 
+        ? `[System: Continue scene. Previous character messages:\n${characterMessagesFromLastRound}\n\nRegenerating this round.]`
+        : '[System: Regenerate scene continuation]';
+      
+      persona = 'system';
     }
-    if (lastUserIdx === -1 || lastUserIdx === allMessages.length - 1) {
-      return res.json({ regenerated: [], message: 'No messages to regenerate after last user message.' });
-    }
-    // Prepare history up to and including last user message
-    const history = allMessages.slice(0, lastUserIdx + 1).map(m => `${m.sender}: ${m.message}`);
-    const userMsg = allMessages[lastUserIdx];
+    
+    // Get all messages BEFORE the round being regenerated as history
+    const allPreviousMessages = db.prepare('SELECT * FROM Messages WHERE sceneId = ? AND roundNumber < ? ORDER BY messageNumber ASC').all(sceneIdNum, roundToRegenerate) as any[];
+    const history = allPreviousMessages.map(m => `${m.sender}: ${m.message}`);
+    
     // Build session context
-    const sessionContext = await orchestrator.buildSessionContext(Number(sceneId));
-    // Patch orchestrator's history so only messages up to last user message are used
-    if (orchestrator && typeof orchestrator === 'object' && Array.isArray(orchestrator.history)) {
-      orchestrator.history = history.slice();
+    const sessionContext = await orchestrator.buildSessionContext(sceneIdNum);
+    
+    // Patch orchestrator's history to use all previous messages
+    if (orchestrator && typeof orchestrator === 'object' && (orchestrator as any).history) {
+      (orchestrator as any).history = history.slice();
     }
-    // Call orchestrator.processUserInput with the last user message
-    const persona = userMsg.sender.includes(':') ? userMsg.sender.split(':').pop() : 'default';
+    
+    // Get active characters from context
     const activeCharacters = sessionContext.activeCharacters.map(c => c.id || c.name);
-    const result = await orchestrator.processUserInput(userMsg.message, persona, activeCharacters, Number(sceneId));
-    // Remove all messages after lastUserIdx
-    const toDelete = allMessages.slice(lastUserIdx + 1);
-    for (const msg of toDelete) {
+    
+    // Call orchestrator.processUserInput to regenerate responses
+    const result = await orchestrator.processUserInput(triggerMessage, persona, activeCharacters, sceneIdNum);
+    
+    // Delete all AI messages from current round
+    const aiMessagesInRound = currentRoundMessages.filter((m: any) => !m.sender || !String(m.sender).toLowerCase().startsWith('user'));
+    for (const msg of aiMessagesInRound) {
       MessageService.deleteMessage(msg.id);
     }
-    // Insert new messages from orchestrator response
-    let nextMsgNum = allMessages[lastUserIdx].messageNumber + 1;
+    
+    // Determine where to start messageNumbers
+    let nextMsgNum: number;
+    if (userMessageInRound) {
+      // For user-triggered rounds, start after the user message
+      nextMsgNum = userMessageInRound.messageNumber + 1;
+    } else {
+      // For AI-only rounds, start after the last message before current round
+      const lastPreviousMessage = allPreviousMessages[allPreviousMessages.length - 1];
+      nextMsgNum = lastPreviousMessage ? lastPreviousMessage.messageNumber + 1 : 1;
+    }
+    
     const regenerated = [];
+    
+    // Insert new messages from orchestrator response
     for (const r of result.responses) {
-      const saved = MessageService.logMessage(Number(sceneId), r.sender, r.content, [], {}, r.sender === 'Narrator' ? 'narrator' : (r.sender.startsWith('user') ? 'user' : 'character'));
+      const saved = MessageService.logMessage(
+        sceneIdNum,
+        r.sender,
+        r.content,
+        [],
+        {},
+        r.sender === 'Narrator' ? 'narrator' : (r.sender && String(r.sender).toLowerCase().startsWith('user') ? 'user' : 'character'),
+        roundToRegenerate // Ensure messages are logged to the round being regenerated
+      );
       // Update messageNumber to keep sequence
       db.prepare('UPDATE Messages SET messageNumber = ? WHERE id = ?').run(nextMsgNum, saved.id);
       regenerated.push({ id: saved.id, newContent: r.content });
       nextMsgNum++;
     }
-    // Optionally emit socket event to update clients
-    try { io.to(`scene-${sceneId}`).emit('messagesRegenerated', { sceneId: Number(sceneId), regenerated }); } catch (e) { console.warn('Failed to emit messagesRegenerated', e); }
+    
+    // Emit socket event to update clients
+    try { io.to(`scene-${sceneIdNum}`).emit('messagesRegenerated', { sceneId: sceneIdNum, regenerated }); } catch (e) { console.warn('Failed to emit messagesRegenerated', e); }
+    
     return res.json({ regenerated });
   } catch (e) {
     console.error('Failed to regenerate messages:', e);
