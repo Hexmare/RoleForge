@@ -40,6 +40,11 @@ async function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function cleanPromptBackslashes(text: string): string {
+  // Replace all instances of \\\ with \
+  return text.replace(/\\\\\\/g, '\\');
+}
+
 function estimateTokens(text: string): number {
   return countTokens(text);
 }
@@ -161,6 +166,12 @@ async function attemptChatCompletion(
 
   // Trim messages based on max context tokens
   const trimmedMessages = trimMessages(messages, profile.sampler?.maxContextTokens || 0);
+  
+  // Clean up backslashes in all messages
+  const cleanedMessages = trimmedMessages.map(msg => ({
+    ...msg,
+    content: cleanPromptBackslashes(msg.content)
+  }));
 
   const samplerOptions = profile.sampler ? {
     temperature: profile.sampler.temperature,
@@ -178,7 +189,7 @@ async function attemptChatCompletion(
 
   const baseOptions = {
     model,
-    messages: trimmedMessages,
+    messages: cleanedMessages,
     ...samplerOptions,
     ...formatOptions,
   };
