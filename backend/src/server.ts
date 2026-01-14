@@ -185,9 +185,18 @@ app.delete('/api/scenes/:id', (req, res) => {
   res.json(SceneService.delete(Number(id)));
 });
 
-app.post('/api/scenes/:id/reset', (req, res) => {
+app.post('/api/scenes/:id/reset', async (req, res) => {
   const { id } = req.params;
-  res.json(SceneService.reset(Number(id)));
+  try {
+    const result = await SceneService.reset(Number(id));
+    if (result.error) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.json({ success: true, message: `Scene reset successfully. Round number reset to 1. Vector data for this scene cleared.`, ...result });
+  } catch (error) {
+    console.error('Failed to reset scene:', error);
+    res.status(500).json({ error: 'Failed to reset scene', detail: String(error) });
+  }
 });
 
 // Lorebooks API
@@ -520,6 +529,37 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
     // Emit socket event to update clients
     try { io.to(`scene-${sceneIdNum}`).emit('messagesRegenerated', { sceneId: sceneIdNum, regenerated }); } catch (e) { console.warn('Failed to emit messagesRegenerated', e); }
     
+    // Task 6.2: Re-vectorize the regenerated round
+    // Fetch the regenerated messages and vectorize them
+    try {
+      const regeneratedMessages = MessageService.getRoundMessages(sceneIdNum, roundToRegenerate);
+      const vectorizationAgent = orchestrator.getAgents().get('vectorization');
+      if (vectorizationAgent && regeneratedMessages.length > 0) {
+        const vectorContext: any = {
+          sceneId: sceneIdNum,
+          roundNumber: roundToRegenerate,
+          messages: regeneratedMessages,
+          activeCharacters: activeCharacters,
+          userInput: '',
+          history: [],
+          worldState: sessionContext?.world || {},
+          trackers: {},
+          characterStates: sessionContext?.scene?.characterStates || {},
+          lore: [],
+          formattedLore: '',
+          userPersona: {}
+        };
+        
+        await vectorizationAgent.run(vectorContext).catch((err: any) => {
+          console.warn(`[REGENERATE] VectorizationAgent failed for round ${roundToRegenerate}:`, err);
+        });
+        console.log(`[REGENERATE] Re-vectorized round ${roundToRegenerate} with ${regeneratedMessages.length} messages`);
+      }
+    } catch (e) {
+      console.warn('[REGENERATE] Failed to re-vectorize round:', e);
+      // Non-blocking - don't fail the regenerate if vectorization fails
+    }
+    
     return res.json({ regenerated });
   } catch (e) {
     console.error('Failed to regenerate messages:', e);
@@ -547,10 +587,23 @@ app.post('/api/scenes/:sceneId/chat', async (req, res) => {
   try {
     const sceneIdNum = Number(sceneId);
     
-    // Get current round
+    // Read the current round number from Scenes table (the AUTHORITY)
     const scene = db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?')
       .get(sceneIdNum) as any;
     const currentRound = scene?.currentRoundNumber || 1;
+
+    // Check if this round record exists, if not create it
+    const roundExists = db.prepare(
+      'SELECT id FROM SceneRounds WHERE sceneId = ? AND roundNumber = ?'
+    ).get(sceneIdNum, currentRound) as any;
+    
+    if (!roundExists) {
+      db.prepare(`
+        INSERT INTO SceneRounds (sceneId, roundNumber, status, activeCharacters)
+        VALUES (?, ?, 'in-progress', ?)
+      `).run(sceneIdNum, currentRound, JSON.stringify(activeCharacters || []));
+      console.log(`[CHAT] Created round ${currentRound} record for scene ${sceneIdNum}`);
+    }
 
     // Create user message with roundNumber
     const userMsg = MessageService.logMessage(
@@ -583,13 +636,18 @@ app.post('/api/scenes/:sceneId/chat', async (req, res) => {
       }
     );
 
+    // Task 6.1: Complete the round after all characters have responded
+    // completeRound() now handles: completing previous round, incrementing round number, creating new round
+    const nextRoundNumber = await orchestrator.completeRound(sceneIdNum, activeCharacters || []);
+    console.log(`[CHAT] Round ${currentRound} completed. Next round is ${nextRoundNumber}`);
+
     // Return response with round information
     res.json({
       success: true,
       roundNumber: currentRound,
       userMessage: userMsg,
       characterResponses: result.responses,
-      nextRoundNumber: currentRound + 1
+      nextRoundNumber: nextRoundNumber
     });
   } catch (error) {
     console.error('Chat endpoint error:', error);
@@ -2463,9 +2521,33 @@ io.on('connection', (socket) => {
     try {
       console.log('User:', input);
 
+      let currentRound = 1;
+      
+      // Get current round number from database and ensure round record exists
+      if (sceneId) {
+        const scene = db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?')
+          .get(sceneId) as any;
+        currentRound = scene?.currentRoundNumber || 1;
+        
+        // Check if this round record exists, if not create it
+        const roundExists = db.prepare(
+          'SELECT id FROM SceneRounds WHERE sceneId = ? AND roundNumber = ?'
+        ).get(sceneId, currentRound) as any;
+        
+        if (!roundExists) {
+          db.prepare(`
+            INSERT INTO SceneRounds (sceneId, roundNumber, status, activeCharacters)
+            VALUES (?, ?, 'in-progress', ?)
+          `).run(sceneId, currentRound, JSON.stringify(activeCharacters || []));
+          console.log(`[SOCKET] Created round ${currentRound} record for scene ${sceneId}`);
+        }
+      }
+
       // Log user message if scene provided
       if (sceneId && !input.startsWith('/')) {
-        try { MessageService.logMessage(sceneId, `user:${persona}`, input, activeCharacters || [], {}); } catch (e) { console.warn('Failed to log user message', e); }
+        try { 
+          MessageService.logMessage(sceneId, `user:${persona}`, input, activeCharacters || [], {}, 'user', currentRound); 
+        } catch (e) { console.warn('Failed to log user message', e); }
       }
 
       // Callback for streaming character responses
@@ -2513,7 +2595,7 @@ io.on('connection', (socket) => {
                 // Save message content and metadata separately
                 let metaObj: any = null;
                 try { metaObj = altData && typeof altData === 'object' ? altData : null; } catch { metaObj = null; }
-                const saved = MessageService.logMessage(sceneId, r.sender, `![](${stored.localUrl})`, [], metaObj || { prompt: imgMatch[1], urls: [stored.localUrl], current: 0 }, 'image');
+                const saved = MessageService.logMessage(sceneId, r.sender, `![](${stored.localUrl})`, [], metaObj || { prompt: imgMatch[1], urls: [stored.localUrl], current: 0 }, 'image', currentRound);
                 try { io.to(`scene-${sceneId}`).emit('imageStored', { message: saved, originalUrl: origUrl, localUrl: stored.localUrl, size: stored.size, width: stored.width, height: stored.height }); } catch (e) { console.warn('Failed to emit imageStored', e); }
                 continue;
               }
@@ -2526,8 +2608,18 @@ io.on('connection', (socket) => {
             } else if (r.sender === 'Narrator') {
               source = 'narrator';
             }
-            MessageService.logMessage(sceneId, r.sender, content, [], {}, source);
+            MessageService.logMessage(sceneId, r.sender, content, [], {}, source, currentRound);
           } catch (e) { console.warn('Failed to log AI response', e); }
+        }
+      }
+
+      // Complete the round after all responses (only if sceneId provided)
+      if (sceneId && Array.isArray(responses) && responses.length > 0) {
+        try {
+          const nextRoundNumber = await orchestrator.completeRound(sceneId, activeCharacters || []);
+          console.log(`[SOCKET] Round ${currentRound} completed. Next round is ${nextRoundNumber}`);
+        } catch (e) {
+          console.error('[SOCKET] Failed to complete round:', e);
         }
       }
 

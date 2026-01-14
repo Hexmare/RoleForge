@@ -1,6 +1,7 @@
 import db from '../database';
 import MessageService from './MessageService';
 import CampaignService from './CampaignService';
+import { VectorStoreFactory } from '../utils/vectorStoreFactory.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -91,7 +92,7 @@ export const SceneService = {
     }
   },
 
-  reset(id: number) {
+  async reset(id: number) {
     const existing = this.getById(id);
     if (!existing) return { error: 'Scene not found' };
 
@@ -108,15 +109,20 @@ export const SceneService = {
     // Clear all messages for this scene
     db.prepare('DELETE FROM Messages WHERE sceneId = ?').run(id);
 
+    // Clear all round metadata for this scene
+    db.prepare('DELETE FROM SceneRounds WHERE sceneId = ?').run(id);
+
     // Clean up generated images
     this._cleanupGeneratedImages(worldRow.id, campaignRow.id, arcRow.id, id);
 
     // Reset scene details except description and location
-    const stmt = db.prepare('UPDATE Scenes SET title = ?, timeOfDay = ?, worldState = ?, lastWorldStateMessageNumber = ?, characterStates = ?, summary = ?, lastSummarizedMessageId = ?, summaryTokenCount = ?, activeCharacters = ?, notes = ?, backgroundImage = ?, locationRelationships = ? WHERE id = ?');
+    // Also reset currentRoundNumber to 1
+    // NOTE: Keep worldState as it's shared across the world, not scene-specific
+    const stmt = db.prepare('UPDATE Scenes SET title = ?, timeOfDay = ?, worldState = ?, lastWorldStateMessageNumber = ?, characterStates = ?, summary = ?, lastSummarizedMessageId = ?, summaryTokenCount = ?, activeCharacters = ?, notes = ?, backgroundImage = ?, locationRelationships = ?, currentRoundNumber = ? WHERE id = ?');
     const result = stmt.run(
       existing.title, // keep title
       existing.timeOfDay, // keep timeOfDay
-      '{}', // reset worldState
+      existing.worldState, // KEEP worldState - it's shared across the world
       0, // reset lastWorldStateMessageNumber
       '{}', // reset characterStates
       null, // reset summary
@@ -126,8 +132,91 @@ export const SceneService = {
       null, // reset notes
       null, // reset backgroundImage
       null, // reset locationRelationships
+      1, // reset currentRoundNumber to 1
       id
     );
+
+    // Delete vectorized data for this specific scene only (not all character vectors)
+    try {
+      const vectorStore = VectorStoreFactory.getVectorStore();
+      if (vectorStore) {
+        // Parse active characters from the scene
+        let activeCharacters: string[] = [];
+        try {
+          const sceneData = this.getById(id);
+          if (sceneData?.activeCharacters) {
+            const parsed = typeof sceneData.activeCharacters === 'string' 
+              ? JSON.parse(sceneData.activeCharacters) 
+              : sceneData.activeCharacters;
+            activeCharacters = Array.isArray(parsed) 
+              ? parsed.map((c: any) => typeof c === 'string' ? c : c.name || c.id)
+              : [];
+          }
+        } catch (e) {
+          console.warn('[SCENE_RESET] Failed to parse active characters:', e);
+        }
+
+        // Query and delete memories that belong to THIS scene only
+        const deletePromises = [];
+        for (const characterName of activeCharacters) {
+          const scope = `world_${worldRow.id}_char_${characterName}`;
+          
+          // Query all memories in this character's scope
+          try {
+            const allMemories = await vectorStore.query('*', scope, 1000, 0.0);
+            
+            // Filter to only memories from this scene
+            const memoriesToDelete = allMemories.filter((memory: any) => {
+              return memory.metadata?.sceneId === id;
+            });
+
+            // Delete only the memories from this scene
+            for (const memory of memoriesToDelete) {
+              deletePromises.push(
+                vectorStore.deleteMemory(memory.id, scope).catch((err: any) => {
+                  console.warn(`[SCENE_RESET] Failed to delete memory ${memory.id}:`, err);
+                })
+              );
+            }
+
+            console.log(`[SCENE_RESET] Found ${memoriesToDelete.length} memories for ${characterName} in scene ${id}`);
+          } catch (err) {
+            console.warn(`[SCENE_RESET] Failed to query memories for character ${characterName}:`, err);
+          }
+        }
+
+        // Also query and delete from multi-character shared scope
+        const multiScope = `world_${worldRow.id}_multi`;
+        try {
+          const allMemories = await vectorStore.query('*', multiScope, 1000, 0.0);
+          const memoriesToDelete = allMemories.filter((memory: any) => {
+            return memory.metadata?.sceneId === id;
+          });
+
+          for (const memory of memoriesToDelete) {
+            deletePromises.push(
+              vectorStore.deleteMemory(memory.id, multiScope).catch((err: any) => {
+                console.warn(`[SCENE_RESET] Failed to delete shared memory ${memory.id}:`, err);
+              })
+            );
+          }
+
+          console.log(`[SCENE_RESET] Found ${memoriesToDelete.length} shared memories in scene ${id}`);
+        } catch (err) {
+          console.warn(`[SCENE_RESET] Failed to query shared memories:`, err);
+        }
+
+        // Wait for all deletions
+        Promise.all(deletePromises).then(() => {
+          console.log(`[SCENE_RESET] Deleted vectors for scene ${id} only (not entire character vectors)`);
+        }).catch((err: any) => {
+          console.warn(`[SCENE_RESET] Error during vector cleanup:`, err);
+        });
+      }
+    } catch (error) {
+      console.warn('[SCENE_RESET] Failed to clean up vector store:', error);
+      // Non-blocking - don't fail the reset if vector cleanup fails
+    }
 
     // Also reset campaign trackers and dynamicFacts
     CampaignService.updateState(campaignRow.id, { trackers: {}, dynamicFacts: {} });
@@ -177,21 +266,84 @@ export const SceneService = {
     return newRound;
   },
 
-  // Task 3.3: Mark the current round as complete with metadata
-  completeRound(sceneId: number, activeCharacters: string[]): void {
+  // Task 3.3: Start a new round (create record when round begins)
+  startRound(sceneId: number, activeCharacters: string[] = []): number {
+    const scene = db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?')
+      .get(sceneId) as any;
+    if (!scene) throw new Error(`Scene ${sceneId} not found`);
+
+    const roundNumber = scene.currentRoundNumber;
+    
+    // Check if this round already exists
+    const existing = db.prepare(
+      'SELECT id FROM SceneRounds WHERE sceneId = ? AND roundNumber = ?'
+    ).get(sceneId, roundNumber) as any;
+
+    if (!existing) {
+      // Create new round record with 'in-progress' status
+      db.prepare(`
+        INSERT INTO SceneRounds (
+          sceneId, roundNumber, status, activeCharacters
+        ) VALUES (?, ?, 'in-progress', ?)
+      `).run(sceneId, roundNumber, JSON.stringify(activeCharacters));
+      console.log(`[SCENE_SERVICE] Started round ${roundNumber} for scene ${sceneId}`);
+    }
+
+    return roundNumber;
+  },
+
+  // Task 3.4: Mark the current round as complete with metadata AND start the next round
+  // This is atomic - completes previous round, advances round number, creates new round record
+  completeRound(sceneId: number, activeCharacters: string[]): number {
     const scene = db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?')
       .get(sceneId) as any;
     if (!scene) throw new Error(`Scene ${sceneId} not found`);
     
-    db.prepare(`
-      INSERT INTO SceneRounds (
-        sceneId, roundNumber, status, activeCharacters, roundCompletedAt
-      ) VALUES (?, ?, 'completed', ?, CURRENT_TIMESTAMP)
-    `).run(sceneId, scene.currentRoundNumber, JSON.stringify(activeCharacters));
+    const completedRoundNumber = scene.currentRoundNumber;
+    const nextRoundNumber = completedRoundNumber + 1;
     
-    // Increment to next round for the scene
-    db.prepare('UPDATE Scenes SET currentRoundNumber = ? WHERE id = ?')
-      .run(scene.currentRoundNumber + 1, sceneId);
+    console.log(`[SCENE_SERVICE] Completing round ${completedRoundNumber} and starting round ${nextRoundNumber} for scene ${sceneId}`);
+
+    // 1. Mark the PREVIOUS round as completed in SceneRounds
+    const existing = db.prepare(
+      'SELECT id FROM SceneRounds WHERE sceneId = ? AND roundNumber = ?'
+    ).get(sceneId, completedRoundNumber) as any;
+
+    if (existing) {
+      const result = db.prepare(`
+        UPDATE SceneRounds 
+        SET status = 'completed', activeCharacters = ?, roundCompletedAt = CURRENT_TIMESTAMP
+        WHERE sceneId = ? AND roundNumber = ?
+      `).run(JSON.stringify(activeCharacters), sceneId, completedRoundNumber);
+      console.log(`[SCENE_SERVICE] ✓ Marked round ${completedRoundNumber} as completed (changes=${result.changes})`);
+    } else {
+      const result = db.prepare(`
+        INSERT INTO SceneRounds (
+          sceneId, roundNumber, status, activeCharacters, roundCompletedAt
+        ) VALUES (?, ?, 'completed', ?, CURRENT_TIMESTAMP)
+      `).run(sceneId, completedRoundNumber, JSON.stringify(activeCharacters));
+      console.log(`[SCENE_SERVICE] ✓ Created completed round record for round ${completedRoundNumber}`);
+    }
+    
+    // 2. Increment currentRoundNumber in Scenes table (THIS IS THE AUTHORITY)
+    const updateResult = db.prepare('UPDATE Scenes SET currentRoundNumber = ? WHERE id = ?')
+      .run(nextRoundNumber, sceneId);
+    console.log(`[SCENE_SERVICE] ✓ Incremented Scenes.currentRoundNumber to ${nextRoundNumber} (changes=${updateResult.changes})`);
+
+    // 3. Create a NEW round record for the next round (in-progress status)
+    const newRoundResult = db.prepare(`
+      INSERT INTO SceneRounds (
+        sceneId, roundNumber, status, activeCharacters
+      ) VALUES (?, ?, 'in-progress', '[]')
+    `).run(sceneId, nextRoundNumber);
+    console.log(`[SCENE_SERVICE] ✓ Created new round record for round ${nextRoundNumber}`);
+
+    // Verify the state
+    const verified = db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?')
+      .get(sceneId) as any;
+    console.log(`[SCENE_SERVICE] ✓ VERIFICATION: Scene ${sceneId} currentRoundNumber=${verified?.currentRoundNumber} (expected ${nextRoundNumber})`);
+
+    return nextRoundNumber;
   },
 
   // Task 3.4: Get round metadata

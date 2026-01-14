@@ -75,6 +75,11 @@ export class Orchestrator {
     return this.currentRoundNumber;
   }
 
+  // Get agents map (for external access)
+  getAgents(): Map<string, BaseAgent> {
+    return this.agents;
+  }
+
   // Task 4.1: Track active characters in current round
   addActiveCharacter(characterName: string): void {
     if (!this.roundActiveCharacters.includes(characterName)) {
@@ -83,18 +88,22 @@ export class Orchestrator {
   }
 
   // Task 4.2: Complete the current round
-  async completeRound(sceneId: number): Promise<void> {
+  // Completes previous round, advances round number, creates new round record
+  async completeRound(sceneId: number, activeCharacters?: string[]): Promise<number> {
     try {
-      // 1. Persist round metadata to database
-      SceneService.completeRound(sceneId, this.roundActiveCharacters);
-      console.log(`[ORCHESTRATOR] Round ${this.currentRoundNumber} completed for scene ${sceneId} with characters: ${this.roundActiveCharacters.join(', ')}`);
+      const charsToPass = activeCharacters || this.roundActiveCharacters;
+      
+      // 1. Persist round metadata to database (completes previous, advances number, creates new)
+      const nextRoundNumber = SceneService.completeRound(sceneId, charsToPass);
+      console.log(`[ORCHESTRATOR] Round completed. Previous: ${this.currentRoundNumber}, Next: ${nextRoundNumber}`);
 
       // Task 4.4: Emit Socket.io event for roundCompleted
       if (this.io) {
         this.io.to(`scene-${sceneId}`).emit('roundCompleted', {
           sceneId,
           roundNumber: this.currentRoundNumber,
-          activeCharacters: this.roundActiveCharacters,
+          nextRoundNumber: nextRoundNumber,
+          activeCharacters: charsToPass,
           timestamp: new Date().toISOString()
         });
       }
@@ -108,7 +117,7 @@ export class Orchestrator {
             sceneId,
             roundNumber: this.currentRoundNumber,
             messages: roundMessages,
-            activeCharacters: this.roundActiveCharacters,
+            activeCharacters: charsToPass,
             userInput: '',
             history: [],
             worldState: this.worldState,
@@ -125,9 +134,11 @@ export class Orchestrator {
         }
       }
 
-      // 4. Increment round for next cycle
+      // 4. Increment round for next cycle in Orchestrator state (database already done)
       this.currentRoundNumber++;
       this.roundActiveCharacters = [];
+      
+      return nextRoundNumber;
     } catch (error) {
       console.error(`[ORCHESTRATOR] Failed to complete round ${this.currentRoundNumber}:`, error);
       throw error;
