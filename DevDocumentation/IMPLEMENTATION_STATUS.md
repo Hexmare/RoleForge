@@ -1,16 +1,16 @@
 # RoleForge Implementation Status
 
 **Last Updated:** January 14, 2026  
-**Status:** Phases 1-5 Complete, Phases 6-8 In Design
+**Status:** Phases 1-5 + Rounds Complete, Phases 6-8 In Design
 
 ---
 
 ## Executive Summary
 
-RoleForge is a full-stack TypeScript application providing an immersive AI-guided roleplaying experience. It features a multi-agent backend orchestrator, world/campaign/arc/scene hierarchy, character management with override system, lore injection, tracker/state management, and real-time chat via Socket.io.
+RoleForge is a full-stack TypeScript application providing an immersive AI-guided roleplaying experience. It features a multi-agent backend orchestrator, world/campaign/arc/scene hierarchy, character management with override system, lore injection, tracker/state management, persistent round tracking, and real-time chat via Socket.io.
 
-**Current Implementation**: ✅ Phase 1-5 Complete (Production Ready)
-**Remaining**: 📋 Phase 6-8 (Visual Gen, Audio, Advanced Polish)
+**Current Implementation**: ✅ Phase 1-5 + Rounds Complete (Production Ready)
+**Remaining**: 📋 Phase 6-8 (Visual Gen, Audio, Advanced Polish) → Phase 9: Vector Storage Memory
 
 ---
 
@@ -414,6 +414,64 @@ Passed to agents during processing:
 - ✅ Blockquote and inline element styling
 - ✅ Message metadata under avatars
 - ✅ Panel width constraints (384px right, 320px left)
+
+---
+
+## Phase 5b: Persistent Round Tracking ✅ COMPLETE
+
+### Overview
+Rounds are complete conversation cycles: user input → character responses → world updates → round completion. This system enables memory capture granularity for Vector Storage and provides scene continuation mechanics.
+
+### Database Schema
+- ✅ `Messages.roundNumber` column - Track which round each message belongs to
+- ✅ `Scenes.currentRoundNumber` - Current active round for scene
+- ✅ `SceneRounds` table - Metadata tracking (status, activeCharacters, timestamps, vectorization flag)
+- ✅ Indexes on `(sceneId, roundNumber)` and `(sceneId, vectorized)` for efficient queries
+
+### Backend Services
+- ✅ **MessageService**:
+  - `logMessage(roundNumber)` - Accept and store round with messages
+  - `getRoundMessages(sceneId, roundNumber)` - Query round contents
+  - `getLatestRound(sceneId)` - Get highest round number
+  - `getCurrentRoundMessages(sceneId)` - Get active round messages
+
+- ✅ **SceneService**:
+  - `initializeRound(sceneId)` - Increment to next round
+  - `completeRound(sceneId, activeCharacters)` - Persist metadata and increment
+  - `getRoundData(sceneId, roundNumber)` - Query round metadata
+  - `markRoundVectorized(sceneId, roundNumber)` - Track Vector Storage processing
+  - `getUnvectorizedRounds(sceneId)` - Queue for VectorizationAgent
+
+### Orchestrator Integration
+- ✅ `initializeRoundState()` - Load current round from database on session start
+- ✅ `getCurrentRound()` - Access current round number
+- ✅ `addActiveCharacter()` - Track character participation
+- ✅ `completeRound()` - Finalize round, increment counter, emit Socket.io event, trigger VectorizationAgent
+- ✅ `continueRound()` - AI-driven scene continuation (new round without user input)
+
+### API Endpoints
+- ✅ `POST /api/scenes/:sceneId/chat` - User input with round tracking
+- ✅ `POST /api/scenes/:sceneId/continue-round` - AI continuation endpoint
+- ✅ `GET /api/scenes/:sceneId/rounds` - List all rounds
+- ✅ `GET /api/scenes/:sceneId/rounds/:roundNumber` - Get round messages
+- ✅ `GET /api/scenes/:sceneId/rounds/:roundNumber/metadata` - Get round metadata
+
+### Socket.io Events
+- ✅ `roundCompleted` - Emitted when round finishes
+  - Payload: `{ sceneId, roundNumber, activeCharacters, timestamp }`
+- ✅ Event propagation through entire message pipeline
+
+### Vector Storage Integration Ready
+- ✅ `SceneRounds.vectorized` flag tracks processing
+- ✅ `completeRound()` hook triggers VectorizationAgent
+- ✅ `getUnvectorizedRounds()` provides processing queue
+- ✅ Round messages easily queryable for memory capture
+
+### Files
+- Migrations: `backend/migrations/005_add_round_tracking.sql`, `006_remove_scenerounds_unique_constraint.sql`
+- Services: `backend/src/services/{Message,Scene}Service.ts`
+- Orchestrator: `backend/src/agents/Orchestrator.ts`
+- API: `backend/src/server.ts` (endpoints + Socket.io handlers)
 
 ---
 
@@ -890,6 +948,14 @@ npm run dev
 - Production build optimization
 - Performance tuning (caching, context trimming)
 - Multi-user support (optional JWT auth)
+
+### Phase 9: Vector Storage Memory System (📋 Next)
+- **Prerequisite:** Phase 5b (Rounds) ✅ Complete
+- **Feature**: Long-term memory via vector embeddings
+- Local embeddings: `@xenova/transformers` (ONNX, offline)
+- Storage: Vectra (local file system, npm)
+- Integration: Post-round memory capture and query injection
+- See: `DevDocumentation/VectorStorage.md` for full specification
 
 ---
 
