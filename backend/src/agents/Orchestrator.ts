@@ -149,16 +149,18 @@ export class Orchestrator {
   // This follows the EXACT SAME PATH as processUserInput for consistency and reuse
   async continueRound(sceneId: number): Promise<void> {
     try {
-      // START A NEW ROUND (increment round counter)
-      const nextRoundNumber = SceneService.initializeRound(sceneId);
-      console.log(`[ORCHESTRATOR] Starting new round ${nextRoundNumber} for scene ${sceneId}`);
+      // Get the CURRENT round number (already incremented by the last completeRound)
+      const scene = this.db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?')
+        .get(sceneId) as any;
+      const currentRoundNumber = scene?.currentRoundNumber || 1;
+      console.log(`[ORCHESTRATOR] Continuing round ${currentRoundNumber} for scene ${sceneId}`);
       
-      // Load the new round into orchestrator state
-      this.currentRoundNumber = nextRoundNumber;
+      // Load the round into orchestrator state
+      this.currentRoundNumber = currentRoundNumber;
       this.roundActiveCharacters = [];
 
       // Get the previous round number to fetch character messages from last round
-      const previousRoundNumber = nextRoundNumber - 1;
+      const previousRoundNumber = currentRoundNumber - 1;
       const previousRoundMessages = previousRoundNumber > 0 
         ? MessageService.getRoundMessages(sceneId, previousRoundNumber)
         : [];
@@ -181,30 +183,36 @@ export class Orchestrator {
         throw new Error(`[ORCHESTRATOR] Failed to build session context for scene ${sceneId}`);
       }
 
-      // Extract active character names for the director
-      const activeCharacterNames = sessionContext.activeCharacters.map((c: any) => c.name);
+      // Extract active character UUIDs from the resolved character objects
+      // sessionContext.activeCharacters are full character objects, we need just the IDs
+      const activeCharacterUUIDs = sessionContext.activeCharacters.map((c: any) => c.id);
+      console.log(`[ORCHESTRATOR] Active character UUIDs for round ${currentRoundNumber}: ${JSON.stringify(activeCharacterUUIDs)}`);
 
       // REUSE THE EXACT SAME processUserInput PATH
       // This ensures all agent status messages, parsing, world updates, and frontend notifications happen
       await this.processUserInput(
         syntheticUserInput,
         'system', // Use 'system' as persona
-        activeCharacterNames, // Pass active characters list
+        activeCharacterUUIDs, // Pass active character UUIDs
         sceneId, // Pass scene ID for round tracking
         (response: { sender: string; content: string }) => {
+          console.log(`[CONTINUE_ROUND] Callback received response from ${response.sender}`);
           // Log character response with current round number
           MessageService.logMessage(sceneId, response.sender, response.content, [], {}, 'continue-round', this.currentRoundNumber);
           this.addActiveCharacter(response.sender);
           
-          // Emit to frontend immediately (same as userMessage Socket.io handler does)
+          // Emit to frontend immediately
           if (this.io) {
+            console.log(`[CONTINUE_ROUND] Emitting characterResponse for ${response.sender} to scene-${sceneId}`);
             this.io.to(`scene-${sceneId}`).emit('characterResponse', response);
+          } else {
+            console.warn(`[CONTINUE_ROUND] No Socket.io instance available to emit`);
           }
         }
       );
 
       // Complete the round
-      await this.completeRound(sceneId);
+      await this.completeRound(sceneId, activeCharacterUUIDs);
     } catch (error) {
       console.error(`[ORCHESTRATOR] Failed to continue round:`, error);
       throw error;
