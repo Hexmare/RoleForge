@@ -26,7 +26,13 @@ User action: {{ userInput }}
 
 Update the world state and trackers with any changes that have occurred. This could include dynamic facts, stats, objectives, or relationships.
 
-For the USER PERSONA STATE: You MAY update the user's clothing, mood, activity, position, or location based on their described actions in the recent events. Include these updates in the worldState under a "userPersonaState" key.
+For the USER PERSONA STATE: You MUST carefully parse recent events to extract and update the user's:
+- **Location/Position**: Look for words like "entered", "went to", "moved to", "arrived at", "is in", "went into"
+- **Clothing**: Look for words like "put on", "wore", "dressed in", "took off", "removed", "changed into", "is wearing"
+- **Activity/Stance**: Look for action verbs describing what they're doing (sitting, standing, hiding, running, etc.)
+- **Mood**: Look for emotional descriptors or tone indicators
+
+Include ALL extracted updates in the output under a "userPersonaState" key within worldState, even if they match existing values.
 
 DO NOT modify OTHER character states, clothing, mood, activity, position, or location. Those are controlled by:
 - The CHARACTER AGENT for individual character responses and state changes
@@ -38,16 +44,20 @@ If this is the first message in the scene (previousWorldState is empty), initial
 IMPORTANT GUIDELINES:
 - Focus on world-level facts, not individual character states
 - keep all existing world facts unless explicitly changed by recent events
-- Use recent events only as context to determine what world facts changed
+- Use recent events ACTIVELY to extract location, clothing, and activity changes for the user persona
+- Carefully parse each event to find implicit or explicit state changes
 - keep all descripttions short ,concise, and factual
 - DO NOT modify clothingWorn, mood, activity, position, or location for ANY character except the user persona
-- For the user persona, update their state based on their described actions (e.g., if they say "I take off my shirt", update clothingWorn)
+- For the user persona: EXTRACT state changes from recent events. Examples:
+  * Event: "I walk into the tavern" → Update location to "tavern"
+  * Event: "I put on my heavy coat" → Update clothingWorn to "heavy coat"
+  * Event: "I sit down at the bar" → Update activity to "sitting at the bar"
 - DO NOT use "default" or "Default" as values
 - DO NOT include recent events or interactions in the trackers - use them only as context to determine what world facts changed
-- If nothing changed in the world state, output {"unchanged": true}
+- If nothing changed in the world state AND nothing changed in user persona state, output {"unchanged": true}
 - Preserve all existing world state facts unless explicitly changed by the narrative
 - Trackers should contain only persistent, world-level information that affects future scenes
 
-Output a JSON object with "worldState" and "trackers" fields only. The "trackers" object should have "stats" (object), "objectives" (array of strings), and "relationships" (object) fields. If nothing changed, output {"unchanged": true}
+Output a JSON object with "worldState" and "trackers" fields only. The "worldState" object MUST contain a "userPersonaState" key with ALL user persona state fields (location, clothing, activity, mood, position). The "trackers" object should have "stats" (object), "objectives" (array of strings), and "relationships" (object) fields. If nothing changed, output {"unchanged": true}
 
 IMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON. Do not add explanations, comments, or formatting. Output only the JSON object.
