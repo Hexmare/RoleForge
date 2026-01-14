@@ -789,6 +789,9 @@ export class Orchestrator {
     
     context.worldState = this.worldState;
 
+    // Track responses from this turn to pass to subsequent characters
+    const turnResponses: { character: string; response: string }[] = [];
+
     for (const charName of charactersToRespond) {
       console.log(`Processing character: ${charName}`);
       
@@ -811,9 +814,21 @@ export class Orchestrator {
       }
 
       const characterAgent = new CharacterAgent(charName, this.configManager, this.env);
+      
+      // Build history with previous character responses from this turn
+      let historyToPass = this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.slice(0, -1).join('\n')}`] : this.history.slice(0, -1);
+      if (turnResponses.length > 0) {
+        const previousResponses = '\n\n[Other Characters in this turn:]\n' + turnResponses.map(r => `${r.character}: ${r.response}`).join('\n');
+        if (Array.isArray(historyToPass)) {
+          historyToPass = [...historyToPass, previousResponses];
+        } else {
+          historyToPass = [historyToPass, previousResponses];
+        }
+      }
+      
       const characterContext: AgentContext = {
         ...context,
-        history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.slice(0, -1).join('\n')}`] : this.history.slice(0, -1), // Exclude the current user input from history
+        history: historyToPass,
         character: characterData,
         characterState: characterStates[charName],
         maxCompletionTokens: (characterAgent as any).getProfile().sampler?.max_completion_tokens || 400,
@@ -909,6 +924,7 @@ export class Orchestrator {
       }
       const response = { sender: charName, content };
       responses.push(response);
+      turnResponses.push({ character: charName, response: content }); // Add to turn responses for subsequent characters
       this.history.push(`${charName}: ${content}`);
       // Emit response immediately if callback provided
       if (onCharacterResponse) {
