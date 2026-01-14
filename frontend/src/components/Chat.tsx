@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import ImageCard from './ImageCard';
 import { Socket } from 'socket.io-client';
+import type { RoundCompletedEvent } from '../types/rounds';
 
 interface Message {
   role: 'user' | 'ai';
@@ -98,6 +99,10 @@ const Chat: React.FC<ChatProps> = ({
   const [menuOpen, setMenuOpen] = useState<boolean>(false);
   const [deleteMode, setDeleteMode] = useState<boolean>(false);
   const [selectedMessages, setSelectedMessages] = useState<Set<number>>(new Set());
+  
+  // Task 6.1, 6.5: Round tracking state
+  const [currentRoundNumber, setCurrentRoundNumber] = useState<number>(1);
+  const [isProcessingRound, setIsProcessingRound] = useState<boolean>(false);
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
 
   // Handler for Regenerate button
@@ -140,6 +145,71 @@ const Chat: React.FC<ChatProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [menuOpen]);
+
+  // Listen for agent status updates
+  useEffect(() => {
+    if (!socket) return;
+    socket.on('agentStatus', (data: any) => {
+      if (data.status === 'start') {
+        setCurrentAgent(data.agent);
+      } else if (data.status === 'complete') {
+        setCurrentAgent(null);
+      }
+    });
+    return () => {
+      socket.off('agentStatus');
+    };
+  }, [socket]);
+
+  // Task 6.3: Listen for roundCompleted Socket.io event
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleRoundCompleted = (data: RoundCompletedEvent) => {
+      console.log(`[ROUNDS] Round ${data.roundNumber} completed with characters: ${data.activeCharacters.join(', ')}`);
+      
+      // Update current round number to next round
+      setCurrentRoundNumber(data.roundNumber + 1);
+      setIsProcessingRound(false);
+      
+      // Refresh messages to get the new round data
+      onMessagesRefresh();
+    };
+
+    socket.on('roundCompleted', handleRoundCompleted);
+
+    return () => {
+      socket.off('roundCompleted', handleRoundCompleted);
+    };
+  }, [socket, onMessagesRefresh]);
+
+  // Task 6.2: Handler for Continue Round button
+  const continueRound = async () => {
+    if (!selectedScene) return;
+    
+    setIsProcessingRound(true);
+    try {
+      console.log(`[ROUNDS] Requesting continue round for scene ${selectedScene}`);
+      const response = await fetch(
+        `/api/scenes/${selectedScene}/continue-round`,
+        { method: 'POST' }
+      );
+      
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('[ROUNDS] Continue round failed:', error);
+        alert(`Error: ${error.error || 'Failed to continue round'}`);
+      } else {
+        const result = await response.json();
+        console.log('[ROUNDS] Continue round initiated:', result);
+        // Success response handled by Socket.io event (roundCompleted)
+      }
+    } catch (error) {
+      console.error('[ROUNDS] Continue round error:', error);
+      alert('Failed to continue round');
+      setIsProcessingRound(false);
+    }
+  };
 
   // Listen for agent status updates
   useEffect(() => {
@@ -311,6 +381,14 @@ const Chat: React.FC<ChatProps> = ({
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-4">
         {selectedScene ? (
           <>
+            {/* Task 6.5: Round counter header */}
+            <div className="flex justify-between items-center mb-4 px-3 py-2 bg-slate-800 rounded-lg border-l-2 border-purple-500">
+              <h2 className="text-lg font-bold text-text-primary">Scene Chat</h2>
+              <div className="text-sm text-slate-400">
+                Round <span className="font-semibold text-purple-300">{currentRoundNumber}</span>
+              </div>
+            </div>
+            
             <div
               ref={chatWindowRef}
               className="flex flex-col space-y-4"
@@ -505,6 +583,16 @@ const Chat: React.FC<ChatProps> = ({
             disabled={!selectedScene || !input.trim() || deleteMode}
           >
             Send
+          </button>
+          
+          {/* Task 6.1: Continue Round button */}
+          <button
+            className="px-6 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors disabled:cursor-not-allowed"
+            onClick={continueRound}
+            disabled={!selectedScene || isProcessingRound || deleteMode}
+            title="Let characters continue the scene without new user input"
+          >
+            {isProcessingRound ? 'Continuing...' : 'Continue'}
           </button>
         </div>
       </div>

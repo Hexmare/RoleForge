@@ -326,5 +326,54 @@ try {
   console.warn('Could not ensure Scenes world state columns exist:', e);
 }
 
+// Phase 6: Round Tracking for Memory System
+// Ensure Messages.roundNumber column exists
+try {
+  const mcols = db.prepare("PRAGMA table_info('Messages')").all();
+  const hasRoundNumber = mcols.some((c: any) => c.name === 'roundNumber');
+  if (!hasRoundNumber) {
+    db.exec(`ALTER TABLE Messages ADD COLUMN roundNumber INTEGER DEFAULT 1 NOT NULL;`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_scene_round ON Messages(sceneId, roundNumber);`);
+    console.log('✓ Added roundNumber column to Messages table and created index');
+  }
+} catch (e) {
+  console.warn('Could not ensure Messages.roundNumber column exists:', e);
+}
+
+// Create SceneRounds metadata table for tracking round status and vectorization
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS SceneRounds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sceneId INTEGER NOT NULL REFERENCES Scenes(id) ON DELETE CASCADE,
+      roundNumber INTEGER NOT NULL,
+      status TEXT DEFAULT 'in-progress',
+      activeCharacters JSON NOT NULL,
+      roundStartedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      roundCompletedAt DATETIME,
+      vectorized BOOLEAN DEFAULT 0,
+      vectorizedAt DATETIME
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_scene_rounds_scene_vectorized ON SceneRounds(sceneId, vectorized);
+    CREATE INDEX IF NOT EXISTS idx_scene_rounds_status ON SceneRounds(sceneId, status);
+  `);
+  console.log('✓ Created SceneRounds metadata table with indexes');
+} catch (e) {
+  console.warn('Could not create SceneRounds table:', e);
+}
+
+// Ensure Scenes.currentRoundNumber column exists
+try {
+  const scols = db.prepare("PRAGMA table_info('Scenes')").all();
+  const hasCurrentRoundNumber = scols.some((c: any) => c.name === 'currentRoundNumber');
+  if (!hasCurrentRoundNumber) {
+    db.exec(`ALTER TABLE Scenes ADD COLUMN currentRoundNumber INTEGER DEFAULT 1;`);
+    console.log('✓ Added currentRoundNumber column to Scenes table');
+  }
+} catch (e) {
+  console.warn('Could not ensure Scenes.currentRoundNumber column exists:', e);
+}
+
 export { charactersDb };
 export default db;

@@ -12,12 +12,30 @@ User's latest input: {{ userInput }}
 
 Active characters available: {{ activeCharacterNames | default('None') }}
 
+{% if "Previous character messages" in userInput %}
+{# This is a Continue Round - no user input, AI characters continue the scene #}
+Analyze the previous character messages and decide:
+- The characters will continue the scene without new user input. Do not include the user or player character.
+- You must include direction for the characters to continue the scene naturally.
+- include all characters that you will include references to in your guidance. If you reference a character, they must be in the "characters" list.
+- A short direction/theme for how the scene should continue (50–100 words). What should happen next in the story?
+- if the scene is erotic, make the language more vivid and sensory, keeping the language dirty and explicit.
+- guide the characters to respond in a way that furthers the plot, deepens relationships, or heightens tension.
+- guide the characters to take initiative in their responses, building on what was just said, taking actions that drive the scene forward.
+- Which characters should naturally respond next? Look at who was mentioned or involved in the previous messages, or who should logically continue the conversation.
+- IMPORTANT: Only include NPC character names. Do NOT include 'user', 'Hex', or the player character in the characters list.
+
+Output only a valid JSON object in this format:
+{"guidance": "your directive here", "characters": ["name1", "name2"] or []}
+{% else %}
+{# This is a normal user input round #}
 Analyze the scene and decide:
 - A short guidance directive (50–100 words) for the story pacing and engagement.
 - if the scene is erotic, make the language more vivid and sensory, keeping the language dirty and explicit.
 - guide the characters to respond in a way that furthers the plot, deepens relationships, or heightens tension.
-- guide the characters to take initative in their responses, avoiding simple acknowledgments, and take actions that drive the scene forward.
-- Which characters should respond to the user's input. 
+- guide the characters to take initiative in their responses, avoiding simple acknowledgments, and take actions that drive the scene forward.
+- Which characters should respond to the user's input.
+- IMPORTANT: Only include NPC character names. Do NOT include 'user', 'Hex', or the player character in the characters list.
 
 CRITICAL: Identify ALL characters who are directly mentioned, spoken to, or logically involved in the user's input. Look for:
 - Explicit mentions by name (e.g., "Annie", "Raven")
@@ -30,4 +48,7 @@ Choose from the active characters list, but prioritize characters who are clearl
 
 Output only a valid JSON object in this format:
 {"guidance": "your directive here", "characters": ["name1", "name2"] or []}
+{% endif %}
+
 IMPORTANT: Every double quote (") inside the guidance text MUST be escaped as \".
+IMPORTANT: Use "characters" field (not "selectedCharacters").

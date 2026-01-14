@@ -61,34 +61,41 @@
   },
   "agents": {
     "narrator": {
-      "llmProfile": "default"
+      "llmProfile": "default",
+      "returnsJson": false
     },
     "character": {
       "llmProfile": "default",
+      "returnsJson": true,
       "sampler": {
         "max_completion_tokens": 400
       }
     },
     "director": {
-      "llmProfile": "default"
+      "llmProfile": "default",
+      "returnsJson": true
     },
     "world": {
       "llmProfile": "default",
+      "returnsJson": true,
       "sampler": {
         "max_completion_tokens": 2048
       }
     },
     "summarize": {
       "llmProfile": "default",
+      "returnsJson": false,
       "sampler": {
         "max_completion_tokens": 1024
       }
     },
     "visual": {
-      "llmProfile": "default"
+      "llmProfile": "default",
+      "returnsJson": false
     },
     "creator": {
       "llmProfile": "default",
+      "returnsJson": true,
       "sampler": {
         "max_completion_tokens": 4096
       }

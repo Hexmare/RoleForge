@@ -21,8 +21,13 @@ export const SceneService = {
     return db.prepare('SELECT * FROM Scenes WHERE arcId = ? ORDER BY orderIndex').all(arcId);
   },
 
+  // Task 3.1: Updated to include currentRoundNumber
   getById(id: number) {
-    return db.prepare('SELECT * FROM Scenes WHERE id = ?').get(id);
+    const scene = db.prepare('SELECT * FROM Scenes WHERE id = ?').get(id);
+    if (scene && typeof scene.currentRoundNumber === 'undefined') {
+      scene.currentRoundNumber = 1;
+    }
+    return scene;
   },
 
   update(id: number, fields: any) {
@@ -159,6 +164,59 @@ export const SceneService = {
       activeCharacters,
       selectedPersona
     };
+  },
+
+  // Task 3.2: Initialize a new round in the scene
+  initializeRound(sceneId: number): number {
+    const latest = MessageService.getLatestRound(sceneId);
+    const newRound = latest + 1;
+    
+    db.prepare('UPDATE Scenes SET currentRoundNumber = ? WHERE id = ?')
+      .run(newRound, sceneId);
+    
+    return newRound;
+  },
+
+  // Task 3.3: Mark the current round as complete with metadata
+  completeRound(sceneId: number, activeCharacters: string[]): void {
+    const scene = db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?')
+      .get(sceneId) as any;
+    if (!scene) throw new Error(`Scene ${sceneId} not found`);
+    
+    db.prepare(`
+      INSERT INTO SceneRounds (
+        sceneId, roundNumber, status, activeCharacters, roundCompletedAt
+      ) VALUES (?, ?, 'completed', ?, CURRENT_TIMESTAMP)
+    `).run(sceneId, scene.currentRoundNumber, JSON.stringify(activeCharacters));
+    
+    // Increment to next round for the scene
+    db.prepare('UPDATE Scenes SET currentRoundNumber = ? WHERE id = ?')
+      .run(scene.currentRoundNumber + 1, sceneId);
+  },
+
+  // Task 3.4: Get round metadata
+  getRoundData(sceneId: number, roundNumber: number): any {
+    return db.prepare(
+      'SELECT * FROM SceneRounds WHERE sceneId = ? AND roundNumber = ?'
+    ).get(sceneId, roundNumber) || null;
+  },
+
+  // Task 3.5: Mark a round as processed by VectorizationAgent
+  markRoundVectorized(sceneId: number, roundNumber: number): void {
+    db.prepare(`
+      UPDATE SceneRounds 
+      SET vectorized = 1, vectorizedAt = CURRENT_TIMESTAMP 
+      WHERE sceneId = ? AND roundNumber = ?
+    `).run(sceneId, roundNumber);
+  },
+
+  // Task 3.6: Get all unvectorized rounds (for VectorizationAgent queue)
+  getUnvectorizedRounds(sceneId: number): any[] {
+    return db.prepare(`
+      SELECT * FROM SceneRounds 
+      WHERE sceneId = ? AND status = 'completed' AND vectorized = 0
+      ORDER BY roundNumber ASC
+    `).all(sceneId);
   }
 };
 

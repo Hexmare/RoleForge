@@ -463,6 +463,121 @@ app.post('/api/scenes/:sceneId/messages', (req, res) => {
   res.json(MessageService.logMessage(Number(sceneId), sender, message, charactersPresent || [], metadata || {}));
 });
 
+// Task 5.1: Chat endpoint with round tracking
+app.post('/api/scenes/:sceneId/chat', async (req, res) => {
+  const { sceneId } = req.params;
+  const { message: userMessage, persona = 'default', activeCharacters } = req.body;
+
+  try {
+    const sceneIdNum = Number(sceneId);
+    
+    // Get current round
+    const scene = db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?')
+      .get(sceneIdNum) as any;
+    const currentRound = scene?.currentRoundNumber || 1;
+
+    // Create user message with roundNumber
+    const userMsg = MessageService.logMessage(
+      sceneIdNum,
+      'User',
+      userMessage,
+      activeCharacters || [],
+      { source: 'user-input' },
+      'user',
+      currentRound
+    );
+
+    // Generate character responses
+    const result = await orchestrator.processUserInput(
+      userMessage,
+      persona,
+      activeCharacters,
+      sceneIdNum
+    );
+
+    // Return response with round information
+    res.json({
+      success: true,
+      roundNumber: currentRound,
+      userMessage: userMsg,
+      characterResponses: result.responses,
+      nextRoundNumber: currentRound + 1
+    });
+  } catch (error) {
+    console.error('Chat endpoint error:', error);
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+// Task 5.2: Continue Round endpoint
+app.post('/api/scenes/:sceneId/continue-round', async (req, res) => {
+  const { sceneId } = req.params;
+
+  try {
+    const sceneIdNum = Number(sceneId);
+
+    // Trigger orchestrator to continue
+    // This will emit agentStatus, characterResponse, stateUpdated, and roundCompleted via Socket.io
+    await orchestrator.continueRound(sceneIdNum);
+
+    // Get updated scene
+    const scene = db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?')
+      .get(sceneIdNum) as any;
+    
+    // The messages that were just created are in the round that was JUST COMPLETED
+    // Since completeRound increments the round, we need to subtract 1 to get the round that was completed
+    const completedRound = (scene?.currentRoundNumber || 2) - 1;
+    const messages = MessageService.getRoundMessages(sceneIdNum, completedRound);
+    
+    res.json({
+      success: true,
+      roundNumber: completedRound,
+      messages
+    });
+  } catch (error) {
+    console.error('Continue round error:', error);
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+// Task 5.4: Get all messages for a specific round
+app.get('/api/scenes/:sceneId/rounds/:roundNumber', (req, res) => {
+  const { sceneId, roundNumber } = req.params;
+  try {
+    const messages = MessageService.getRoundMessages(Number(sceneId), Number(roundNumber));
+    res.json({ messages });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+// Task 5.4: Get all rounds for a scene
+app.get('/api/scenes/:sceneId/rounds', (req, res) => {
+  const { sceneId } = req.params;
+  try {
+    const rounds = db.prepare(`
+      SELECT DISTINCT roundNumber 
+      FROM Messages 
+      WHERE sceneId = ? 
+      ORDER BY roundNumber DESC
+    `).all(Number(sceneId));
+    res.json({ rounds });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+// Task 5.4: Get round metadata
+app.get('/api/scenes/:sceneId/rounds/:roundNumber/metadata', (req, res) => {
+  const { sceneId, roundNumber } = req.params;
+  try {
+    const metadata = SceneService.getRoundData(Number(sceneId), Number(roundNumber));
+    res.json({ metadata });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
 app.put('/api/messages/:id', (req, res) => {
   const { id } = req.params;
   const { message, metadata } = req.body;

@@ -13,6 +13,7 @@ import { VisualAgent } from './VisualAgent.js';
 import { CreatorAgent } from './CreatorAgent.js';
 import CharacterService from '../services/CharacterService.js';
 import SceneService from '../services/SceneService.js';
+import MessageService from '../services/MessageService.js';
 import Database from 'better-sqlite3';
 import { Server } from 'socket.io';
 import LorebookService from '../services/LorebookService.js';
@@ -30,6 +31,10 @@ export class Orchestrator {
   private characterStates: Record<string, any> = {};
   private history: string[] = [];
   private sceneSummary: string = '';
+  
+  // Task 4.1: Round tracking properties
+  private currentRoundNumber: number = 1;
+  private roundActiveCharacters: string[] = [];
 
   constructor(configManager: ConfigManager, env: nunjucks.Environment, db: Database.Database, io?: Server) {
     this.configManager = configManager;
@@ -39,6 +44,7 @@ export class Orchestrator {
 
     // Initialize agents
     this.agents.set('narrator', new NarratorAgent(configManager, env));
+    this.agents.set('character', new CharacterAgent('', configManager, env));
     this.agents.set('director', new DirectorAgent(configManager, env));
     this.agents.set('world', new WorldAgent(configManager, env));
     this.agents.set('summarize', new SummarizeAgent(configManager, env));
@@ -49,6 +55,145 @@ export class Orchestrator {
   private emitAgentStatus(agentName: string, status: 'start' | 'complete', sceneId?: number) {
     if (this.io && sceneId) {
       this.io.to(`scene-${sceneId}`).emit('agentStatus', { agent: agentName, status });
+    }
+  }
+
+  // Task 4.1: Initialize round state from database
+  async initializeRoundState(sceneId: number): Promise<void> {
+    const scene = this.db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?')
+      .get(sceneId) as any;
+    this.currentRoundNumber = scene?.currentRoundNumber || 1;
+    this.roundActiveCharacters = [];
+    console.log(`[ORCHESTRATOR] Round initialized: scene=${sceneId}, roundNumber=${this.currentRoundNumber}`);
+  }
+
+  // Task 4.1: Get current round number
+  getCurrentRound(): number {
+    return this.currentRoundNumber;
+  }
+
+  // Task 4.1: Track active characters in current round
+  addActiveCharacter(characterName: string): void {
+    if (!this.roundActiveCharacters.includes(characterName)) {
+      this.roundActiveCharacters.push(characterName);
+    }
+  }
+
+  // Task 4.2: Complete the current round
+  async completeRound(sceneId: number): Promise<void> {
+    try {
+      // 1. Persist round metadata to database
+      SceneService.completeRound(sceneId, this.roundActiveCharacters);
+      console.log(`[ORCHESTRATOR] Round ${this.currentRoundNumber} completed for scene ${sceneId} with characters: ${this.roundActiveCharacters.join(', ')}`);
+
+      // Task 4.4: Emit Socket.io event for roundCompleted
+      if (this.io) {
+        this.io.to(`scene-${sceneId}`).emit('roundCompleted', {
+          sceneId,
+          roundNumber: this.currentRoundNumber,
+          activeCharacters: this.roundActiveCharacters,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // 3. Trigger VectorizationAgent if available (fire and forget)
+      if (this.agents.has('vectorization')) {
+        const vectorizationAgent = this.agents.get('vectorization');
+        if (vectorizationAgent) {
+          const roundMessages = MessageService.getRoundMessages(sceneId, this.currentRoundNumber);
+          const context: AgentContext = {
+            sceneId,
+            roundNumber: this.currentRoundNumber,
+            messages: roundMessages,
+            activeCharacters: this.roundActiveCharacters,
+            userInput: '',
+            history: [],
+            worldState: this.worldState,
+            trackers: this.trackers,
+            characterStates: this.characterStates,
+            lore: [],
+            formattedLore: '',
+            userPersona: {}
+          };
+
+          vectorizationAgent.run(context).catch((err: any) => {
+            console.warn(`[ORCHESTRATOR] VectorizationAgent failed for round ${this.currentRoundNumber}:`, err);
+          });
+        }
+      }
+
+      // 4. Increment round for next cycle
+      this.currentRoundNumber++;
+      this.roundActiveCharacters = [];
+    } catch (error) {
+      console.error(`[ORCHESTRATOR] Failed to complete round ${this.currentRoundNumber}:`, error);
+      throw error;
+    }
+  }
+
+  // Task 4.3: Continue round without user input (AI-driven continuation)
+  // This follows the EXACT SAME PATH as processUserInput for consistency and reuse
+  async continueRound(sceneId: number): Promise<void> {
+    try {
+      // START A NEW ROUND (increment round counter)
+      const nextRoundNumber = SceneService.initializeRound(sceneId);
+      console.log(`[ORCHESTRATOR] Starting new round ${nextRoundNumber} for scene ${sceneId}`);
+      
+      // Load the new round into orchestrator state
+      this.currentRoundNumber = nextRoundNumber;
+      this.roundActiveCharacters = [];
+
+      // Get the previous round number to fetch character messages from last round
+      const previousRoundNumber = nextRoundNumber - 1;
+      const previousRoundMessages = previousRoundNumber > 0 
+        ? MessageService.getRoundMessages(sceneId, previousRoundNumber)
+        : [];
+      
+      // Filter out user messages - only include character responses
+      const characterMessagesFromLastRound = previousRoundMessages
+        .filter((msg: any) => msg.source !== 'user')
+        .map((msg: any) => `${msg.character}: ${msg.message}`)
+        .join('\n\n');
+
+      // Build synthetic user input that triggers AI-to-AI continuation
+      // This tells the director we're continuing the scene
+      const syntheticUserInput = characterMessagesFromLastRound 
+        ? `[System: Continue scene. Previous character messages:\n${characterMessagesFromLastRound}\n\nDecide which characters should continue the scene.]`
+        : '[System: Continue scene]';
+
+      // Load session context to get active characters
+      const sessionContext = await this.buildSessionContext(sceneId);
+      if (!sessionContext) {
+        throw new Error(`[ORCHESTRATOR] Failed to build session context for scene ${sceneId}`);
+      }
+
+      // Extract active character names for the director
+      const activeCharacterNames = sessionContext.activeCharacters.map((c: any) => c.name);
+
+      // REUSE THE EXACT SAME processUserInput PATH
+      // This ensures all agent status messages, parsing, world updates, and frontend notifications happen
+      await this.processUserInput(
+        syntheticUserInput,
+        'system', // Use 'system' as persona
+        activeCharacterNames, // Pass active characters list
+        sceneId, // Pass scene ID for round tracking
+        (response: { sender: string; content: string }) => {
+          // Log character response with current round number
+          MessageService.logMessage(sceneId, response.sender, response.content, [], {}, 'continue-round', this.currentRoundNumber);
+          this.addActiveCharacter(response.sender);
+          
+          // Emit to frontend immediately (same as userMessage Socket.io handler does)
+          if (this.io) {
+            this.io.to(`scene-${sceneId}`).emit('characterResponse', response);
+          }
+        }
+      );
+
+      // Complete the round
+      await this.completeRound(sceneId);
+    } catch (error) {
+      console.error(`[ORCHESTRATOR] Failed to continue round:`, error);
+      throw error;
     }
   }
 
@@ -400,6 +545,11 @@ export class Orchestrator {
   }
 
   async processUserInput(userInput: string, personaName: string = 'default', activeCharacters?: string[], sceneId?: number, onCharacterResponse?: (response: { sender: string; content: string }) => void): Promise<{ responses: { sender: string; content: string }[], lore: string[] }> {
+    // Task 4.1: Initialize round state if sceneId provided
+    if (sceneId) {
+      await this.initializeRoundState(sceneId);
+    }
+
     // Load scene summary from database if sceneId is provided
     if (sceneId && !this.sceneSummary) {
       const sceneRow = this.db.prepare('SELECT summary FROM Scenes WHERE id = ?').get(sceneId) as any;
@@ -926,6 +1076,8 @@ export class Orchestrator {
       responses.push(response);
       turnResponses.push({ character: charName, response: content }); // Add to turn responses for subsequent characters
       this.history.push(`${charName}: ${content}`);
+      // Task 4.4: Track character participation in current round
+      this.addActiveCharacter(charName);
       // Emit response immediately if callback provided
       if (onCharacterResponse) {
         onCharacterResponse(response);

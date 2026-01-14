@@ -22,7 +22,7 @@ interface LLMProfile {
 interface LLMConfig {
   defaultProfile: string;
   profiles: Record<string, LLMProfile>;
-  agents: Record<string, { llmProfile: string; sampler?: Record<string, any> }>;
+  agents: Record<string, { llmProfile: string; sampler?: Record<string, any>; returnsJson?: boolean }>;
 }
 
 interface LLMConfigModalProps {
@@ -307,6 +307,28 @@ export const LLMConfigModal: React.FC<LLMConfigModalProps> = ({ onClose }) => {
                     />
                   </div>
                 </details>
+                <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid #2a3142' }}>
+                  <label style={{ color: '#a1a8b8', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input 
+                      type="checkbox"
+                      checked={config.agents[selectedAgent].returnsJson ?? false}
+                      onChange={e => {
+                        setConfig(prev => {
+                          if (!prev) return prev;
+                          const newAgents = { ...prev.agents };
+                          if (!newAgents[selectedAgent]) newAgents[selectedAgent] = {};
+                          newAgents[selectedAgent].returnsJson = e.target.checked;
+                          return { ...prev, agents: newAgents };
+                        });
+                      }}
+                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                    />
+                    <span>Agent returns JSON responses</span>
+                  </label>
+                  <small style={{ color: '#6b7280', display: 'block', marginTop: '8px' }}>
+                    Check if this agent returns structured JSON. Uncheck for plaintext responses.
+                  </small>
+                </div>
               </div>
             )}
 

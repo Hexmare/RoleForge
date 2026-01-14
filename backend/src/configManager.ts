@@ -39,6 +39,7 @@ export interface AgentConfig {
   baseURL?: string;
   model?: string;
   template?: string;
+  returnsJson?: boolean; // Indicates if agent returns JSON responses
 }
 
 export interface Config {
