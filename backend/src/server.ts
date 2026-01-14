@@ -471,8 +471,15 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
     // Get active characters from context
     const activeCharacters = sessionContext.activeCharacters.map(c => c.id || c.name);
     
+    // Set the orchestrator's current round for proper tracking
+    const previousOrchRound = (orchestrator as any).currentRoundNumber;
+    (orchestrator as any).currentRoundNumber = roundToRegenerate;
+    
     // Call orchestrator.processUserInput to regenerate responses
     const result = await orchestrator.processUserInput(triggerMessage, persona, activeCharacters, sceneIdNum);
+    
+    // Restore previous round state
+    (orchestrator as any).currentRoundNumber = previousOrchRound;
     
     // Delete all AI messages from current round
     const aiMessagesInRound = currentRoundMessages.filter((m: any) => !m.sender || !String(m.sender).toLowerCase().startsWith('user'));
@@ -556,12 +563,24 @@ app.post('/api/scenes/:sceneId/chat', async (req, res) => {
       currentRound
     );
 
-    // Generate character responses
+    // Generate character responses with callback to log them
     const result = await orchestrator.processUserInput(
       userMessage,
       persona,
       activeCharacters,
-      sceneIdNum
+      sceneIdNum,
+      (response: { sender: string; content: string }) => {
+        // Log character response with current round number
+        MessageService.logMessage(
+          sceneIdNum,
+          response.sender,
+          response.content,
+          [],
+          {},
+          'user-input',
+          currentRound
+        );
+      }
     );
 
     // Return response with round information
