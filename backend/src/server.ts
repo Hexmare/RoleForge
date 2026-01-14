@@ -2279,6 +2279,11 @@ io.on('connection', (socket) => {
         for (const r of responses) {
           try {
             let content = r.content;
+            // Skip logging if content is empty or null
+            if (!content) {
+              console.warn(`Skipping message log for ${r.sender}: content is empty or null`);
+              continue;
+            }
             // If the response contains an image URL (markdown), download and store locally and replace URL
             try {
               const imgMatch = String(content).match(/!\[(.*?)\]\((.*?)\)/);

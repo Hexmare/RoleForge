@@ -827,56 +827,68 @@ export class Orchestrator {
       this.emitAgentStatus(charName, 'start', sceneId);
       while (characterRetries < 3) {
         if (characterRetries > 0) {
-          console.warn(`[CHARACTER] Retrying CharacterAgent for "${charName}" (attempt ${characterRetries + 1})`);
+          console.warn(`[CHARACTER] Retry ${characterRetries} for "${charName}"`);
         }
-        if (characterRetries === 0) {
-          characterResponse = await characterAgent.run(characterContext);
-        } else {
-          // On retry, re-run the agent for a new output
-          characterResponse = await characterAgent.run(characterContext);
-        }
-        console.log(`[CHARACTER] CharacterAgent for "${charName}" completed`);
+        // Call LLM
+        characterResponse = await characterAgent.run(characterContext);
+        console.log(`[CHARACTER] CharacterAgent for "${charName}" completed (attempt ${characterRetries + 1})`);
         console.log(`[CHARACTER] Raw response length: ${characterResponse?.length || 0} chars`);
         console.log(`[CHARACTER] First 200 chars of response: ${characterResponse?.substring(0, 200) || 'EMPTY'}`);
         this.emitAgentStatus(charName, 'complete', sceneId);
+        
         if (characterResponse) {
           // Strip ```json wrapper if present
           let cleanedResponse = characterResponse.trim();
           if (cleanedResponse.startsWith('```json') && cleanedResponse.endsWith('```')) {
             cleanedResponse = cleanedResponse.slice(7, -3).trim();
           }
+          
           // Try direct parse
           try {
             characterParsed = JSON.parse(cleanedResponse);
-            break;
+            // Validate that parsed object has content
+            if (characterParsed && characterParsed.response) {
+              console.log(`[CHARACTER] Successfully parsed JSON with content on attempt ${characterRetries + 1}`);
+              break;
+            } else {
+              characterLastError = new Error('Parsed JSON missing "response" field or empty content');
+              console.log(`[CHARACTER] Direct parse succeeded but missing content: ${characterLastError}`);
+            }
           } catch (e) {
             characterLastError = e;
+            console.log(`[CHARACTER] Direct parse failed: ${e}`);
+            
             // Try jsonrepair
             const repaired = tryJsonRepair(cleanedResponse);
             if (repaired) {
               try {
                 characterParsed = JSON.parse(repaired);
-                break;
+                // Validate that repaired JSON has content
+                if (characterParsed && characterParsed.response) {
+                  console.log(`[CHARACTER] Successfully repaired and parsed JSON with content on attempt ${characterRetries + 1}`);
+                  break;
+                } else {
+                  characterLastError = new Error('Repaired JSON missing "response" field or empty content');
+                  console.log(`[CHARACTER] Repaired parse succeeded but missing content: ${characterLastError}`);
+                }
               } catch (e2) {
                 characterLastError = e2;
+                console.log(`[CHARACTER] Repaired parse failed: ${e2}`);
+                // If repair failed, loop will retry with fresh LLM call
               }
-            }
-            // Try to extract JSON object from within the string
-            const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              try {
-                characterParsed = JSON.parse(jsonMatch[0]);
-                break;
-              } catch (innerE) {
-                characterLastError = innerE;
-              }
+            } else {
+              console.log(`[CHARACTER] jsonrepair returned null, will retry with fresh LLM call`);
             }
           }
         }
+        
         characterRetries++;
       }
+      
       if (!characterParsed) {
         console.warn(`[CHARACTER] Failed to parse/repair JSON after ${characterRetries} attempts:`, characterLastError);
+        // Treat plain text response as the character's speech
+        console.log(`[CHARACTER] Treating response as plain text: ${characterResponse?.substring(0, 100)}...`);
         characterParsed = { response: characterResponse || '', characterState: null };
       }
       const content = characterParsed.response;

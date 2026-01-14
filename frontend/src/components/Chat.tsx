@@ -169,6 +169,20 @@ const Chat: React.FC<ChatProps> = ({
   };
 
   const renderMessage = (msg: Message) => {
+    // Guard against undefined or null content
+    if (!msg.content) {
+      console.warn('Message has no content:', msg);
+      return (
+        <div className="message-row">
+          <div className="avatar">{(msg.sender || 'AI').toString().split(':').pop()?.slice(0, 2)}</div>
+          <div className="message-body">
+            <div className="message-meta"><strong>{msg.sender}</strong> {msg.timestamp ? <span className="ts">{new Date(msg.timestamp).toLocaleTimeString()}</span> : null}</div>
+            <div className="message-text"><em>(empty message)</em></div>
+          </div>
+        </div>
+      );
+    }
+
     const getAvatarForSender = (sender: string) => {
       const namePart = sender && sender.includes(':') ? sender.split(':').pop() || sender : sender;
       // First check personas (user-selected profiles), then characters
