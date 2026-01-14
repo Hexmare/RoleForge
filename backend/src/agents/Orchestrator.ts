@@ -11,6 +11,8 @@ import { WorldAgent } from './WorldAgent.js';
 import { SummarizeAgent } from './SummarizeAgent.js';
 import { VisualAgent } from './VisualAgent.js';
 import { CreatorAgent } from './CreatorAgent.js';
+import { VectorizationAgent } from './VectorizationAgent.js';
+import { getMemoryRetriever } from '../utils/memoryRetriever.js';
 import CharacterService from '../services/CharacterService.js';
 import SceneService from '../services/SceneService.js';
 import MessageService from '../services/MessageService.js';
@@ -50,6 +52,7 @@ export class Orchestrator {
     this.agents.set('summarize', new SummarizeAgent(configManager, env));
     this.agents.set('visual', new VisualAgent(configManager, env));
     this.agents.set('creator', new CreatorAgent(configManager, env));
+    this.agents.set('vectorization', new VectorizationAgent(configManager, env));
   }
 
   private emitAgentStatus(agentName: string, status: 'start' | 'complete', sceneId?: number) {
@@ -587,6 +590,26 @@ export class Orchestrator {
         formattedLore: sessionContext?.formattedLore || '',
       };
 
+      // Query memories for narrator (Phase 3)
+      if (sceneId && this.worldState?.id) {
+        try {
+          const retriever = getMemoryRetriever();
+          await retriever.initialize();
+          const memories = await retriever.queryMemories(userInput + ' ' + this.sceneSummary, {
+            worldId: this.worldState.id,
+            topK: 3,
+            minSimilarity: 0.3,
+            includeMultiCharacter: true,
+          });
+          if (memories.length > 0) {
+            context.vectorMemories = retriever.formatMemoriesForPrompt(memories);
+            console.log(`[NARRATOR] Injected ${memories.length} memories into context`);
+          }
+        } catch (error) {
+          console.warn('[NARRATOR] Memory retrieval failed (non-blocking):', error);
+        }
+      }
+
       // Call only NarratorAgent for scene description
       const narratorAgent = this.agents.get('narrator')!;
       console.log('Calling NarratorAgent');
@@ -983,6 +1006,28 @@ export class Orchestrator {
         characterState: characterStates[charName],
         maxCompletionTokens: (characterAgent as any).getProfile().sampler?.max_completion_tokens || 400,
       };
+
+      // Query memories for character (Phase 3)
+      if (sceneId && this.worldState?.id) {
+        try {
+          const retriever = getMemoryRetriever();
+          await retriever.initialize();
+          const memories = await retriever.queryMemories(userInput + ' ' + this.history.join(' ').substring(0, 500), {
+            worldId: this.worldState.id,
+            characterName: charName,
+            topK: 5,
+            minSimilarity: 0.3,
+            includeMultiCharacter: false,
+          });
+          if (memories.length > 0) {
+            characterContext.vectorMemories = retriever.formatMemoriesForPrompt(memories);
+            console.log(`[CHARACTER] ${charName}: Injected ${memories.length} memories into context`);
+          }
+        } catch (error) {
+          console.warn(`[CHARACTER] ${charName}: Memory retrieval failed (non-blocking):`, error);
+        }
+      }
+
       console.log(`[CHARACTER] Calling CharacterAgent for "${charName}"`);
       console.log(`[CHARACTER] Character profile: name=${characterData?.name}, includes lore: ${!!context.formattedLore}`);
       let characterResponse: string | null = null;

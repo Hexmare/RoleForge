@@ -40,6 +40,10 @@ export interface AgentContext {
   characterStates?: Record<string, any>; // For WorldAgent - all character states
   scene?: any; // For WorldAgent - current scene info
   trackers?: any; // For WorldAgent - current trackers (stats, objectives, relationships)
+  sceneId?: number; // For VectorizationAgent - scene identifier
+  roundNumber?: number; // For VectorizationAgent - round number
+  messages?: any[]; // For VectorizationAgent - round messages to vectorize
+  vectorMemories?: string; // For Phase 3 - formatted memories from vector store for prompt injection
 }
 
 export abstract class BaseAgent {

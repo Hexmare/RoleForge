@@ -469,7 +469,7 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
     }
     
     // Get active characters from context
-    const activeCharacters = sessionContext.activeCharacters.map(c => c.id || c.name);
+    const activeCharacters = sessionContext?.activeCharacters?.map(c => c.id || c.name) || [];
     
     // Set the orchestrator's current round for proper tracking
     const previousOrchRound = (orchestrator as any).currentRoundNumber;

@@ -36,6 +36,10 @@ Kinks: {{ character.kinks }}
 {% if character.backstory %}Backstory: {{ character.backstory }}{% endif %}
 {% if character.scenario %}Scenario: {{ character.scenario }}{% endif %}
 
+{% if vectorMemories %}
+{{ vectorMemories }}
+{% endif %}
+
 The user is {{ userPersona.name }}, a {{ userPersona.species }} {{ userPersona.race }} {{ userPersona.gender }}.
 {{ userPersona.description }}
 User Personality: {{ userPersona.personality }}
