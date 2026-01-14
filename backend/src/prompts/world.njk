@@ -37,6 +37,9 @@ If this is the first message in the scene (previousWorldState is empty), initial
 
 IMPORTANT GUIDELINES:
 - Focus on world-level facts, not individual character states
+- keep all existing world facts unless explicitly changed by recent events
+- Use recent events only as context to determine what world facts changed
+- keep all descripttions short ,concise, and factual
 - DO NOT modify clothingWorn, mood, activity, position, or location for ANY character except the user persona
 - For the user persona, update their state based on their described actions (e.g., if they say "I take off my shirt", update clothingWorn)
 - DO NOT use "default" or "Default" as values

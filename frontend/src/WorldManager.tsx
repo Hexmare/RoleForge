@@ -147,7 +147,20 @@ function WorldManager({
 
   const handleEdit = (type: EditingType, item: any) => {
     setEditing({ type, item });
-    setForm(item);
+    if (!item) {
+      // Initialize form with defaults for new items
+      if (type === 'world') {
+        setForm({ name: '', description: '' });
+      } else if (type === 'campaign') {
+        setForm({ name: '', description: '', worldId: selectedWorld });
+      } else if (type === 'arc') {
+        setForm({ name: '', description: '', orderIndex: 0 });
+      } else if (type === 'scene') {
+        setForm({ title: '', description: '', location: '', orderIndex: 0 });
+      }
+    } else {
+      setForm(item);
+    }
   };
 
   const handleDelete = async (id: number, type: string) => {

@@ -10,7 +10,16 @@ export const CampaignService = {
     const slug = slugify(name);
     const stmt = db.prepare('INSERT INTO Campaigns (worldId, slug, name, description) VALUES (?, ?, ?, ?)');
     const result = stmt.run(worldId, slug, name, description || null);
-    return { id: result.lastInsertRowid, worldId, slug, name, description };
+    const campaignId = result.lastInsertRowid as number;
+    
+    // Create initial campaign state
+    const stateStmt = db.prepare(`
+      INSERT INTO CampaignState (campaignId, currentSceneId, elapsedMinutes, dynamicFacts, trackers)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    stateStmt.run(campaignId, null, 0, '{}', JSON.stringify({ stats: {}, objectives: [], relationships: {} }));
+    
+    return { id: campaignId, worldId, slug, name, description };
   },
 
   listByWorld(worldId: number) {
@@ -38,7 +47,23 @@ export const CampaignService = {
   },
 
   getState(campaignId: number) {
-    return db.prepare('SELECT * FROM CampaignState WHERE campaignId = ?').get(campaignId);
+    const state = db.prepare('SELECT * FROM CampaignState WHERE campaignId = ?').get(campaignId);
+    if (!state) {
+      // Return default state structure if no state exists yet
+      return {
+        campaignId,
+        currentSceneId: null,
+        elapsedMinutes: 0,
+        dynamicFacts: {},
+        trackers: { stats: {}, objectives: [], relationships: {} },
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    return {
+      ...state,
+      dynamicFacts: typeof state.dynamicFacts === 'string' ? JSON.parse(state.dynamicFacts) : state.dynamicFacts,
+      trackers: typeof state.trackers === 'string' ? JSON.parse(state.trackers) : state.trackers,
+    };
   },
 
   updateState(campaignId: number, updates: { currentSceneId?: number; elapsedMinutes?: number; dynamicFacts?: any; trackers?: any }) {
@@ -58,6 +83,13 @@ export const CampaignService = {
       );
     } else {
       // Update existing state
+      const dynamicFacts = updates.dynamicFacts !== undefined 
+        ? JSON.stringify(updates.dynamicFacts) 
+        : JSON.stringify(existing.dynamicFacts);
+      const trackers = updates.trackers !== undefined 
+        ? JSON.stringify(updates.trackers) 
+        : JSON.stringify(existing.trackers);
+        
       const stmt = db.prepare(`
         UPDATE CampaignState
         SET currentSceneId = ?, elapsedMinutes = ?, dynamicFacts = ?, trackers = ?, updatedAt = CURRENT_TIMESTAMP
@@ -66,8 +98,8 @@ export const CampaignService = {
       stmt.run(
         updates.currentSceneId !== undefined ? updates.currentSceneId : existing.currentSceneId,
         updates.elapsedMinutes !== undefined ? updates.elapsedMinutes : existing.elapsedMinutes,
-        updates.dynamicFacts !== undefined ? JSON.stringify(updates.dynamicFacts) : existing.dynamicFacts,
-        updates.trackers !== undefined ? JSON.stringify(updates.trackers) : existing.trackers,
+        dynamicFacts,
+        trackers,
         campaignId
       );
     }
