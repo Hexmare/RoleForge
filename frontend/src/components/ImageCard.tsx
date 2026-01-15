@@ -21,6 +21,7 @@ const ImageCard: React.FC<Props> = ({ src, alt, messageId, selectedScene, onUpda
   const [meta, setMeta] = useState<any>(() => parseAlt(alt, src as string));
   const [currentUrl, setCurrentUrl] = useState<string>(meta?.urls?.[meta.current] || (src as string));
   const [pending, setPending] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [wrapperStyle, setWrapperStyle] = useState<React.CSSProperties | undefined>(undefined);
   const mounted = useRef(true);
@@ -80,6 +81,19 @@ const ImageCard: React.FC<Props> = ({ src, alt, messageId, selectedScene, onUpda
       return null;
     } finally { if (mounted.current) setPending(false); }
   };
+
+  const handleSaveImage = async () => {
+    try {
+      // Open image in a new tab for user to inspect/save
+      window.open(currentUrl, '_blank', 'noopener,noreferrer');
+      toast.success('Image opened in new tab');
+    } catch (e) {
+      console.warn('Open image failed', e);
+      toast.error('Failed to open image');
+    }
+  };
+
+  
   // If there are no images, don't render the ImageCard
   if (!meta || !meta.urls || meta.urls.length === 0) return null;
 
@@ -96,7 +110,8 @@ const ImageCard: React.FC<Props> = ({ src, alt, messageId, selectedScene, onUpda
   };
 
   return (
-    <span className="image-card" style={{ display: 'inline-block', lineHeight: 0, position: 'relative', ...wrapperStyle } as React.CSSProperties}>
+    <span className="image-card" style={{ display: 'inline-block', lineHeight: 0, position: 'relative', ...wrapperStyle } as React.CSSProperties}
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
       <img ref={imgRef} className="image-card-img" src={currentUrl} alt={String(alt)} onLoad={updateSize} style={{ display: 'block', cursor: pending ? 'wait' : 'pointer', opacity: pending ? 0.6 : 1 }} />
       <span className="image-controls" aria-hidden>
         <span className="controls-left">
@@ -104,6 +119,11 @@ const ImageCard: React.FC<Props> = ({ src, alt, messageId, selectedScene, onUpda
         </span>
         <span className="controls-center">
           <button className="icon regen" onClick={() => callApi('regen')} title="Regenerate image" disabled={pending}>🔁</button>
+          {hovered && (
+            <>
+              <button className="icon" onClick={handleSaveImage} title="Open image in new tab" disabled={pending} style={{ marginLeft: 6 }}>🔍</button>
+            </>
+          )}
         </span>
         <span className="controls-right">
           <button className="icon small" onClick={() => callApi('next')} title="Next image" disabled={pending}>▶</button>
