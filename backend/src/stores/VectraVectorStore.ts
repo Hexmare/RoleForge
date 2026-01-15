@@ -8,6 +8,8 @@ import path from 'path';
 import fs from 'fs/promises';
 import { VectorStoreInterface, MemoryEntry } from '../interfaces/VectorStoreInterface.js';
 import EmbeddingManager from '../utils/embeddingManager.js';
+import { createJob, setJobStatus } from '../jobs/jobStore.js';
+import { recordAudit } from '../jobs/auditLog.js';
 
 interface StoredMemory {
   id: string;
@@ -160,9 +162,21 @@ export class VectraVectorStore implements VectorStoreInterface {
           throw retryErr;
         }
       }
-
-      // Try to insert item
+      // Ensure index.json exists; if not, attempt to create index before inserting
+      const indexJsonPath = path.join(indexPath, 'index.json');
       try {
+        await fs.stat(indexJsonPath);
+      } catch {
+        try {
+          console.log(`[VECTOR_STORE] index.json missing for scope ${scope}, attempting createIndex()`);
+          await index.createIndex();
+        } catch (ciErr) {
+          console.warn(`[VECTOR_STORE] createIndex failed for scope ${scope}: ${ciErr instanceof Error ? ciErr.message : String(ciErr)}`);
+        }
+      }
+
+      // Try to insert item, with retry on ENOENT or index-not-found errors
+      const doInsert = async () => {
         await index.insertItem({
           id,
           vector,
@@ -172,28 +186,61 @@ export class VectraVectorStore implements VectorStoreInterface {
             stored_at: new Date().toISOString()
           }
         });
-      } catch (insertError) {
-        // If insertItem fails due to "Index does not exist", try creating the index
-        const errMsg = insertError instanceof Error ? insertError.message : String(insertError);
-        if (errMsg.includes('does not exist') || errMsg.includes('Index')) {
-          console.log(`[VECTOR_STORE] Index creation needed, attempting to create for scope: ${scope}`);
+      };
+
+      try {
+        await doInsert();
+        // Ensure index.json persisted: retry-read until item appears (small window)
+        const indexJsonPath2 = path.join(indexPath, 'index.json');
+        const maxAttempts = 5;
+        let foundOnDisk = false;
+        for (let a = 0; a < maxAttempts; a++) {
           try {
-            await index.createIndex();
-            // Retry the insertion
-            await index.insertItem({
-              id,
-              vector,
-              metadata: {
-                text,
-                ...metadata,
-                stored_at: new Date().toISOString()
-              }
-            });
-          } catch (retryError) {
-            throw new Error(`Failed after retry: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+            const content = await fs.readFile(indexJsonPath2, 'utf-8');
+            const parsed = JSON.parse(content);
+            const items = Array.isArray(parsed.items) ? parsed.items : [];
+            if (items.find((it: any) => it.id === id)) {
+              foundOnDisk = true;
+              break;
+            }
+          } catch {
+            // ignore and retry
           }
+          // small delay
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((r) => setTimeout(r, 40));
+        }
+        if (!foundOnDisk) {
+          console.warn(`[VECTOR_STORE] Warning: inserted item ${id} may not be persisted to index.json yet for scope ${scope}`);
+        }
+      } catch (insertError) {
+        const errMsg = insertError instanceof Error ? insertError.message : String(insertError);
+        // If the item already exists, treat as idempotent success
+        if (errMsg.includes('already exists') || errMsg.includes('already added') || errMsg.includes('duplicate')) {
+          console.warn(`[VECTOR_STORE] Insert attempted for existing item ${id} in scope ${scope}; treating as success.`);
         } else {
-          throw insertError;
+          const isEnoent = (insertError as any)?.code === 'ENOENT' || errMsg.includes('no such file') || errMsg.includes('ENOENT');
+          const needsCreate = errMsg.includes('does not exist') || errMsg.includes('Index');
+          if (isEnoent || needsCreate) {
+            console.log(`[VECTOR_STORE] Insert failed for scope ${scope} (${errMsg}), attempting createIndex and retry`);
+            try {
+              try {
+                await index.createIndex();
+              } catch (ciErr) {
+                console.warn(`[VECTOR_STORE] createIndex retry failed for scope ${scope}: ${ciErr instanceof Error ? ciErr.message : String(ciErr)}`);
+              }
+              await doInsert();
+            } catch (retryError) {
+              const retryMsg = retryError instanceof Error ? retryError.message : String(retryError);
+              if (retryMsg.includes('already exists') || retryMsg.includes('duplicate')) {
+                console.warn(`[VECTOR_STORE] Retry insert found existing item ${id} in scope ${scope}; treating as success.`);
+              } else {
+                throw new Error(`Failed after retry: ${retryMsg}`);
+              }
+            }
+          } else {
+            throw insertError;
+          }
         }
       }
 
@@ -430,13 +477,25 @@ export class VectraVectorStore implements VectorStoreInterface {
       }
 
       // Get all items as a rough count
-      const allItems = await index.queryItems(
-        new Array(768).fill(0),
-        '',
-        100000
-      );
+      let allItems: any[] = [];
+      try {
+        allItems = await index.queryItems(new Array(768).fill(0), '', 100000);
+      } catch (qe) {
+        console.warn(`[VECTOR_STORE] queryItems failed for getMemoryCount on scope ${scope}: ${qe instanceof Error ? qe.message : String(qe)}`);
+      }
 
-      return allItems.length;
+      // Also try to read index.json directly as a fallback and use the larger of the two counts
+      const indexJsonPath = path.join(this.basePath, scope, 'index.json');
+      let diskCount = 0;
+      try {
+        const content = await fs.readFile(indexJsonPath, 'utf-8');
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed.items)) diskCount = parsed.items.length;
+      } catch {
+        // ignore - file may not exist yet
+      }
+
+      return Math.max(allItems.length, diskCount);
     } catch (error) {
       console.error(`[VECTOR_STORE] Failed to get memory count for scope ${scope}:`, error);
       return 0;
@@ -460,6 +519,182 @@ export class VectraVectorStore implements VectorStoreInterface {
       console.error(`[VECTOR_STORE] Failed to delete scope ${scope}:`, error);
       throw new Error(`Failed to delete scope: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /**
+   * Delete items matching metadata filter. If `scope` provided, only that scope is checked;
+   * otherwise all scopes under `basePath` are scanned.
+   * Matching is shallow exact equality on provided keys.
+   */
+  async deleteByMetadata(
+    filter: Record<string, any>,
+    scope?: string,
+    options?: { dryRun?: boolean; confirm?: boolean; background?: boolean; confirmThreshold?: number }
+  ): Promise<void> {
+    const opts = {
+      dryRun: false,
+      confirm: false,
+      background: false,
+      confirmThreshold: 50,
+      ...(options || {})
+    };
+
+    let backgroundJobId: string | undefined;
+
+    const performDelete = async () => {
+      try {
+        const scopesToCheck: string[] = [];
+
+        if (scope) {
+          scopesToCheck.push(scope);
+        } else {
+          // list directories under basePath
+          try {
+            const entries = await fs.readdir(this.basePath, { withFileTypes: true });
+            for (const entry of entries) {
+              if (entry.isDirectory()) scopesToCheck.push(entry.name);
+            }
+          } catch (e) {
+            console.warn(`[VECTOR_STORE] Failed to list scopes for deleteByMetadata: ${e instanceof Error ? e.message : String(e)}`);
+            return;
+          }
+        }
+
+        // First pass: count matches
+        let totalMatches = 0;
+        const perScopeMatches: Record<string, string[]> = {};
+
+        for (const s of scopesToCheck) {
+          try {
+            const indexPath = path.join(this.basePath, s);
+
+            const exists = await this.scopeExists(s);
+            if (!exists) continue;
+
+            // Ensure index instance is available
+            if (!this.indexes.has(s)) {
+              try {
+                await this.init(s);
+              } catch (e) {
+                console.warn(`[VECTOR_STORE] Could not init scope ${s} for deleteByMetadata: ${e instanceof Error ? e.message : String(e)}`);
+                continue;
+              }
+            }
+
+            const index = this.indexes.get(s);
+            if (!index) continue;
+
+            // Read index.json to find matching items
+            const idxJsonPath = path.join(indexPath, 'index.json');
+            let items: any[] = [];
+            try {
+              const content = await fs.readFile(idxJsonPath, 'utf-8');
+              const parsed = JSON.parse(content);
+              items = Array.isArray(parsed.items) ? parsed.items : [];
+            } catch (readErr) {
+              // If reading index.json fails, try using vectra queryItems to list items
+              try {
+                const listed = await index.queryItems(new Array(768).fill(0), '', 100000);
+                items = listed.map((r: any) => r.item);
+              } catch (qErr) {
+                console.warn(`[VECTOR_STORE] Failed to list items for scope ${s}: ${qErr instanceof Error ? qErr.message : String(qErr)}`);
+                continue;
+              }
+            }
+
+            // Find matching item ids
+            const toDeleteIds: string[] = [];
+            for (const it of items) {
+              const meta = it.metadata || {};
+              let match = true;
+              for (const k of Object.keys(filter)) {
+                if (meta[k] !== filter[k]) {
+                  match = false;
+                  break;
+                }
+              }
+              if (match) toDeleteIds.push(it.id);
+            }
+
+            if (toDeleteIds.length > 0) {
+              perScopeMatches[s] = toDeleteIds;
+              totalMatches += toDeleteIds.length;
+            }
+          } catch (scopeErr) {
+            console.warn(`[VECTOR_STORE] Error processing scope ${s} in deleteByMetadata: ${scopeErr instanceof Error ? scopeErr.message : String(scopeErr)}`);
+          }
+        }
+
+        // Safety: if matches exceed threshold and not confirmed, throw
+        if (totalMatches >= (opts.confirmThreshold || 50) && !opts.confirm) {
+          throw new Error(`deleteByMetadata would remove ${totalMatches} items; set options.confirm=true to proceed`);
+        }
+
+        // If dryRun, just log and return
+        if (opts.dryRun) {
+          console.log(`[VECTOR_STORE] deleteByMetadata dryRun: would delete ${totalMatches} items`, perScopeMatches);
+          return;
+        }
+
+        // Perform deletions
+        for (const [s, ids] of Object.entries(perScopeMatches)) {
+          const index = this.indexes.get(s);
+          if (!index) continue;
+          for (const id of ids) {
+            try {
+              await index.deleteItem(id);
+              console.log(`[VECTOR_STORE] Deleted item ${id} from scope ${s} by metadata`);
+            } catch (delErr) {
+              console.warn(`[VECTOR_STORE] Failed to delete item ${id} from scope ${s}: ${delErr instanceof Error ? delErr.message : String(delErr)}`);
+            }
+          }
+        }
+
+        // Record audit entry for this deletion
+        try {
+          const deletedIds = Object.values(perScopeMatches).flat();
+          await recordAudit({
+            timestamp: new Date().toISOString(),
+            filter,
+            scopes: Object.keys(perScopeMatches),
+            deletedCount: totalMatches,
+            deletedIds,
+            actor: (opts as any).actor || 'system'
+          });
+        } catch (ae) {
+          console.warn('[VECTOR_STORE] Failed to record audit for deleteByMetadata:', ae instanceof Error ? ae.message : String(ae));
+        }
+
+        // If running as background job, mark completion
+        if (backgroundJobId) {
+          try {
+            setJobStatus(backgroundJobId, 'completed', { deleted: totalMatches });
+          } catch (e) {
+            console.warn('[VECTOR_STORE] Failed to set background job completion status', e);
+          }
+        }
+      } catch (error) {
+        console.error(`[VECTOR_STORE] deleteByMetadata failed:`, error);
+        if (backgroundJobId) {
+          setJobStatus(backgroundJobId, 'failed', undefined, error instanceof Error ? error.message : String(error));
+          return;
+        }
+        throw error;
+      }
+    };
+
+    if (opts.background) {
+      // create background job record and run the delete asynchronously
+      const job = createJob('deleteByMetadata', { filter, scope });
+      backgroundJobId = job.id;
+      setJobStatus(job.id, 'running');
+      performDelete()
+        .catch(err => console.error('[VECTOR_STORE] background deleteByMetadata error:', err));
+      console.log(`[VECTOR_STORE] deleteByMetadata scheduled in background (jobId=${job.id})`);
+      return;
+    }
+
+    return performDelete();
   }
 
   /**

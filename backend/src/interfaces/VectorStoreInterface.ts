@@ -93,6 +93,27 @@ export interface VectorStoreInterface {
    * @throws Error if scope doesn't exist
    */
   deleteScope(scope: string): Promise<void>;
+
+  /**
+   * Delete memories matching metadata filter.
+   * If `scope` is provided, operate only within that scope; otherwise search all scopes.
+   * The filter performs exact matches on metadata fields (shallow equality).
+   *
+   * Options:
+   * - `dryRun` : if true, do not perform deletions, only report/log what would be deleted
+   * - `confirm`: if false (default) and deletion would affect more than `confirmThreshold`, operation will throw unless `confirm` is true
+   * - `background`: if true, perform deletion asynchronously and return immediately
+   * - `confirmThreshold`: number threshold for requiring explicit confirmation (default: 50)
+   *
+   * @param filter - Partial metadata object to match for deletion
+   * @param scope - Optional scope to limit deletion
+   * @param options - Optional safety and execution flags
+   */
+  deleteByMetadata(
+    filter: Record<string, any>,
+    scope?: string,
+    options?: { dryRun?: boolean; confirm?: boolean; background?: boolean; confirmThreshold?: number }
+  ): Promise<void>;
 }
 
 /**

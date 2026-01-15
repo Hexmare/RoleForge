@@ -5,6 +5,8 @@
 
 import { pipeline, env } from '@xenova/transformers';
 import { ConfigManager } from '../configManager';
+import OpenAI from 'openai';
+import axios from 'axios';
 
 // Configure transformers to cache models locally
 env.localModelPath = './vector_models';
@@ -16,12 +18,16 @@ interface EmbeddingPipeline {
 }
 
 class EmbeddingManager {
-  private static instance: EmbeddingManager;
+  private static instances: Map<string, EmbeddingManager> = new Map();
   private embeddingPipeline: EmbeddingPipeline | null = null;
   private isInitializing = false;
   private modelName: string;
+  private provider: string;
+  private openaiClient: OpenAI | null = null;
+  private ollamaBaseUrl: string | null = null;
 
-  private constructor(modelName: string = 'Xenova/all-mpnet-base-v2') {
+  private constructor(provider: string = 'transformers', modelName: string = 'Xenova/all-mpnet-base-v2') {
+    this.provider = provider;
     this.modelName = modelName;
   }
 
@@ -39,11 +45,14 @@ class EmbeddingManager {
     return 1000;
   }
 
-  static getInstance(modelName?: string): EmbeddingManager {
-    if (!EmbeddingManager.instance) {
-      EmbeddingManager.instance = new EmbeddingManager(modelName);
+  static getInstance(provider?: string, modelName?: string): EmbeddingManager {
+    const p = provider || 'transformers';
+    const m = modelName || 'Xenova/all-mpnet-base-v2';
+    const key = `${p}:${m}`;
+    if (!EmbeddingManager.instances.has(key)) {
+      EmbeddingManager.instances.set(key, new EmbeddingManager(p, m));
     }
-    return EmbeddingManager.instance;
+    return EmbeddingManager.instances.get(key)!;
   }
 
   /**
@@ -66,12 +75,23 @@ class EmbeddingManager {
 
     this.isInitializing = true;
     try {
-      console.log(`[EMBEDDING] Initializing ${this.modelName}...`);
-      this.embeddingPipeline = await pipeline(
-        'feature-extraction',
-        this.modelName
-      ) as unknown as EmbeddingPipeline;
-      console.log(`[EMBEDDING] Initialized ${this.modelName}`);
+      const cfg = new ConfigManager().getVectorConfig() || {};
+      if (this.provider === 'transformers') {
+        console.log(`[EMBEDDING] Initializing transformers model ${this.modelName}...`);
+        this.embeddingPipeline = await pipeline('feature-extraction', this.modelName) as unknown as EmbeddingPipeline;
+        console.log(`[EMBEDDING] Initialized transformers ${this.modelName}`);
+      } else if (this.provider === 'openai') {
+        const apiKey = cfg?.apiKeys?.openai || process.env.OPENAI_API_KEY;
+        this.openaiClient = new OpenAI({ apiKey });
+        console.log('[EMBEDDING] OpenAI client initialized');
+      } else if (this.provider === 'ollama') {
+        this.ollamaBaseUrl = cfg?.ollamaBaseUrl || 'http://localhost:11434';
+        console.log('[EMBEDDING] Ollama base URL set to', this.ollamaBaseUrl);
+      } else {
+        // Unknown provider - fallback to transformers
+        console.log(`[EMBEDDING] Unknown provider ${this.provider}, falling back to transformers`);
+        this.embeddingPipeline = await pipeline('feature-extraction', this.modelName) as unknown as EmbeddingPipeline;
+      }
     } finally {
       this.isInitializing = false;
     }
@@ -92,67 +112,74 @@ class EmbeddingManager {
    * @returns Array of vectors (768 dimensions for Xenova/all-mpnet-base-v2)
    */
   async embed(text: string | string[]): Promise<number[][]> {
-    if (!this.embeddingPipeline) {
-      await this.initialize();
-    }
-
-    if (!this.embeddingPipeline) {
-      throw new Error('Failed to initialize embedding pipeline');
-    }
+    // Ensure initialization for selected provider
+    await this.initialize();
 
     try {
-      const result = await this.embeddingPipeline(text) as any;
-      
-      // Result is a Tensor object with dims, type, data, size
-      if (!result.dims || !result.data) {
-        throw new Error('Invalid tensor output from embedding pipeline');
-      }
+      if (this.provider === 'transformers') {
+        if (!this.embeddingPipeline) throw new Error('Transformers pipeline not initialized');
+        const result = await this.embeddingPipeline(text) as any;
+        if (!result.dims || !result.data) throw new Error('Invalid tensor output from embedding pipeline');
 
-      const dims = result.dims as number[];
-      const flatData = result.data as Float32Array;
-      
-      // dims format: [batch_size, num_tokens, embedding_dim]
-      // For single text: [1, num_tokens, 768]
-      // For array of texts: [num_texts, num_tokens, 768]
-      
-      const batchSize = dims[0];
-      const numTokens = dims[1];
-      const embeddingDim = dims[2];
-      
-      const vectors: number[][] = [];
-      
-      // Extract embeddings for each item in batch
-      for (let b = 0; b < batchSize; b++) {
-        // Mean pooling: average all token embeddings for this item
-        const pooledVector: number[] = new Array(embeddingDim).fill(0);
-        
-        for (let t = 0; t < numTokens; t++) {
-          for (let d = 0; d < embeddingDim; d++) {
-            // Flat index: b * (numTokens * embeddingDim) + t * embeddingDim + d
-            const flatIndex = b * (numTokens * embeddingDim) + t * embeddingDim + d;
-            pooledVector[d] += flatData[flatIndex];
+        const dims = result.dims as number[];
+        const flatData = result.data as Float32Array;
+        const batchSize = dims[0];
+        const numTokens = dims[1];
+        const embeddingDim = dims[2];
+        const vectors: number[][] = [];
+        for (let b = 0; b < batchSize; b++) {
+          const pooledVector: number[] = new Array(embeddingDim).fill(0);
+          for (let t = 0; t < numTokens; t++) {
+            for (let d = 0; d < embeddingDim; d++) {
+              const flatIndex = b * (numTokens * embeddingDim) + t * embeddingDim + d;
+              pooledVector[d] += flatData[flatIndex];
+            }
           }
+          for (let d = 0; d < embeddingDim; d++) pooledVector[d] /= numTokens;
+          let norm = 0;
+          for (let d = 0; d < embeddingDim; d++) norm += pooledVector[d] * pooledVector[d];
+          norm = Math.sqrt(norm) || 1;
+          for (let d = 0; d < embeddingDim; d++) pooledVector[d] = pooledVector[d] / norm;
+          vectors.push(pooledVector);
         }
-        
-        // Average
-        for (let d = 0; d < embeddingDim; d++) {
-          pooledVector[d] /= numTokens;
-        }
-
-        // L2-normalize the pooled vector to ensure cosine similarity is valid
-        let norm = 0;
-        for (let d = 0; d < embeddingDim; d++) {
-          norm += pooledVector[d] * pooledVector[d];
-        }
-        norm = Math.sqrt(norm) || 1;
-        for (let d = 0; d < embeddingDim; d++) {
-          pooledVector[d] = pooledVector[d] / norm;
-        }
-
-        vectors.push(pooledVector);
+        return vectors;
       }
-      
-      return vectors;
+
+      if (this.provider === 'openai') {
+        if (!this.openaiClient) throw new Error('OpenAI client not initialized');
+        const inputs = Array.isArray(text) ? text : [text];
+        const resp = await this.openaiClient.embeddings.create({ model: this.modelName, input: inputs });
+        const data = (resp as any).data || [];
+        const vectors: number[][] = data.map((d: any) => d.embedding.map((n: any) => Number(n)));
+        // normalize
+        for (const v of vectors) {
+          let norm = 0;
+          for (const x of v) norm += x * x;
+          norm = Math.sqrt(norm) || 1;
+          for (let i = 0; i < v.length; i++) v[i] = v[i] / norm;
+        }
+        return vectors;
+      }
+
+      if (this.provider === 'ollama') {
+        const cfg = new ConfigManager().getVectorConfig() || {};
+        const base = this.ollamaBaseUrl || cfg?.ollamaBaseUrl || 'http://localhost:11434';
+        const inputs = Array.isArray(text) ? text : [text];
+        // Attempt to call Ollama embeddings endpoint
+        const resp = await axios.post(`${base}/embeddings`, { model: this.modelName, input: inputs }, { timeout: 10000 });
+        const data = resp.data?.data || resp.data?.embedding || [];
+        const vectors: number[][] = Array.isArray(data[0]) ? data : [data];
+        // normalize
+        for (const v of vectors) {
+          let norm = 0;
+          for (const x of v) norm += x * x;
+          norm = Math.sqrt(norm) || 1;
+          for (let i = 0; i < v.length; i++) v[i] = v[i] / norm;
+        }
+        return vectors;
+      }
+
+      throw new Error(`Unsupported provider: ${this.provider}`);
     } catch (error) {
       console.error('[EMBEDDING] Error generating embeddings:', error);
       throw new Error(`Embedding generation failed: ${error instanceof Error ? error.message : String(error)}`);
