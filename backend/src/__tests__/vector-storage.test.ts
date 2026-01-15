@@ -21,6 +21,8 @@ describe('Vector Storage - Phase 1', () => {
   let vectorStore: VectraVectorStore;
 
   beforeEach(async () => {
+    // Ensure embedding singleton is fresh between tests
+    EmbeddingManager.resetInstances();
     // Use main vector_data path for tests with test world ID
     vectorStore = new VectraVectorStore(TEST_VECTOR_BASE_PATH);
   });

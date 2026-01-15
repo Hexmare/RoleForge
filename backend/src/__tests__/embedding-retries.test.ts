@@ -50,6 +50,7 @@ import EmbeddingManager from '../utils/embeddingManager';
 
 describe('EmbeddingManager retry behavior', () => {
   beforeEach(() => {
+    EmbeddingManager.resetInstances();
     openaiBehavior.mode = 'idle';
     openaiBehavior.calls = 0;
     openaiBehavior.failCount = 3;

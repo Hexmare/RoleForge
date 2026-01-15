@@ -32,8 +32,20 @@ describe('Job & Audit Persistence', () => {
     };
 
     await recordAudit(entry);
-    // wait briefly for append
-    await new Promise((r) => setTimeout(r, 150));
+    // wait for append (poll for file to exist)
+    const maxAttempts = 10;
+    let attempts = 0;
+    while (attempts < maxAttempts) {
+      try {
+        await fs.access(AUDIT_FILE);
+        break;
+      } catch {
+        // wait and retry
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 100));
+        attempts++;
+      }
+    }
 
     const content = await fs.readFile(AUDIT_FILE, 'utf-8');
     const lines = content.split('\n').filter(Boolean);

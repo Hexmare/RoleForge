@@ -56,6 +56,20 @@ class EmbeddingManager {
   }
 
   /**
+   * Reset in-memory instances (useful for tests to avoid cross-test singleton leakage)
+   */
+  static resetInstances(): void {
+    EmbeddingManager.instances.forEach((inst) => {
+      try {
+        // If a provider-specific client needs shutdown in future, do it here.
+      } catch (_) {
+        // ignore
+      }
+    });
+    EmbeddingManager.instances.clear();
+  }
+
+  /**
    * Initialize the embedding pipeline (lazy loading)
    * First call: ~2-5 seconds and downloads model (~500MB)
    * Subsequent calls: ~100-200ms for embeddings
@@ -154,8 +168,18 @@ class EmbeddingManager {
         const resp: any = await this.requestWithRetry(async () => {
           return await this.openaiClient!.embeddings.create({ model: this.modelName, input: inputs });
         });
-        const data = (resp as any).data || [];
-        const vectors: number[][] = data.map((d: any) => d.embedding.map((n: any) => Number(n)));
+        // Support multiple possible shapes returned by SDKs/mocks:
+        // - resp.data -> array of { embedding }
+        // - resp.data.data -> array of { embedding }
+        // - resp -> array of { embedding } (mocked server returned array)
+        let data: any = resp?.data;
+        if (!Array.isArray(data) && data && Array.isArray(data.data)) data = data.data;
+        if (!Array.isArray(data) && Array.isArray(resp)) data = resp;
+        if (!Array.isArray(data)) data = [];
+        const vectors: number[][] = data.map((d: any) => {
+          const emb = d?.embedding || d?.vector || d;
+          return Array.isArray(emb) ? emb.map((n: any) => Number(n)) : [];
+        });
         // normalize
         for (const v of vectors) {
           let norm = 0;

@@ -594,7 +594,7 @@ export class VectraVectorStore implements VectorStoreInterface {
       // the on-disk index.json. Filesystem and vectra internals can lag, so
       // retry a few times until the count stabilizes or we exhaust attempts.
       const indexJsonPath = path.join(this.basePath, scope, 'index.json');
-      const maxAttempts = 50;
+      const maxAttempts = 100;
       let lastCombined = -1;
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -624,7 +624,7 @@ export class VectraVectorStore implements VectorStoreInterface {
         lastCombined = combined;
         // Small delay before retrying
         // eslint-disable-next-line no-await-in-loop
-        await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 150));
       }
 
       return Math.max(lastCombined, 0);
