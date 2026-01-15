@@ -177,15 +177,28 @@ export class VectraVectorStore implements VectorStoreInterface {
 
       // Try to insert item, with retry on ENOENT or index-not-found errors
       const doInsert = async () => {
-        await index.insertItem({
-          id,
-          vector,
-          metadata: {
-            text,
-            ...metadata,
-            stored_at: new Date().toISOString()
+          // Normalize metadata fields to strings for robustness
+          const normalizedMeta: Record<string, any> = Object.assign({}, metadata || {});
+          const canonicalKeys = ['campaignId', 'arcId', 'sceneId', 'roundId', 'messageId', 'speakerId'];
+          for (const k of canonicalKeys) {
+            if (normalizedMeta[k] !== undefined && normalizedMeta[k] !== null) {
+              try {
+                normalizedMeta[k] = String(normalizedMeta[k]);
+              } catch {
+                // leave as-is if conversion fails
+              }
+            }
           }
-        });
+          normalizedMeta.stored_at = new Date().toISOString();
+
+          await index.insertItem({
+            id,
+            vector,
+            metadata: {
+              text,
+              ...normalizedMeta
+            }
+          });
       };
 
         try {
@@ -245,20 +258,37 @@ export class VectraVectorStore implements VectorStoreInterface {
           const needsCreate = errMsg.includes('does not exist') || errMsg.includes('Index');
           if (isEnoent || needsCreate) {
             console.log(`[VECTOR_STORE] Insert failed for scope ${scope} (${errMsg}), attempting createIndex and retry`);
-            try {
+            // Retry multiple times for transient filesystem races (especially on Windows)
+            const maxRetries = 5;
+            let succeeded = false;
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
               try {
-                await index.createIndex();
-              } catch (ciErr) {
-                console.warn(`[VECTOR_STORE] createIndex retry failed for scope ${scope}: ${ciErr instanceof Error ? ciErr.message : String(ciErr)}`);
+                try {
+                  await index.createIndex();
+                } catch (ciErr) {
+                  console.warn(`[VECTOR_STORE] createIndex retry failed for scope ${scope}: ${ciErr instanceof Error ? ciErr.message : String(ciErr)}`);
+                }
+                // small delay to allow filesystem to settle
+                // eslint-disable-next-line no-await-in-loop
+                await new Promise((r) => setTimeout(r, 120));
+                await doInsert();
+                succeeded = true;
+                break;
+              } catch (retryError) {
+                const retryMsg = retryError instanceof Error ? retryError.message : String(retryError);
+                if (retryMsg.includes('already exists') || retryMsg.includes('duplicate')) {
+                  console.warn(`[VECTOR_STORE] Retry insert found existing item ${id} in scope ${scope}; treating as success.`);
+                  succeeded = true;
+                  break;
+                }
+                // otherwise wait and retry
+                // eslint-disable-next-line no-await-in-loop
+                await new Promise((r) => setTimeout(r, 100));
               }
-              await doInsert();
-            } catch (retryError) {
-              const retryMsg = retryError instanceof Error ? retryError.message : String(retryError);
-              if (retryMsg.includes('already exists') || retryMsg.includes('duplicate')) {
-                console.warn(`[VECTOR_STORE] Retry insert found existing item ${id} in scope ${scope}; treating as success.`);
-              } else {
-                throw new Error(`Failed after retry: ${retryMsg}`);
-              }
+            }
+
+            if (!succeeded) {
+              throw new Error(`Failed after retry: ${errMsg}`);
             }
           } else {
             throw insertError;

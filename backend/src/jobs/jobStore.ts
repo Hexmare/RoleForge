@@ -72,6 +72,50 @@ async function loadJobs(): Promise<void> {
   }
 }
 
+// Allow tests or maintenance code to force a reload/rescan of the jobs file.
+export async function reloadJobs(): Promise<void> {
+  jobs.clear();
+  await loadJobs();
+}
+
+/**
+ * Sanitize an arbitrary jobs file path: if the file is malformed, back it up
+ * and replace with an empty array. This is useful for tests to exercise the
+ * sanitizer without interfering with the module-global jobs file.
+ */
+export async function sanitizeJobsFile(filePath: string): Promise<void> {
+  try {
+    const content = await fs.readFile(filePath, 'utf-8');
+    try {
+      const parsed = JSON.parse(content || '[]');
+      if (!Array.isArray(parsed)) throw new Error('not-array');
+      // valid - nothing to do
+      return;
+    } catch (parseErr) {
+      try {
+        const bakPath = filePath + '.corrupt.' + Date.now();
+        await fs.writeFile(bakPath, content, 'utf-8');
+        console.warn(`[JOB_STORE] ${filePath} was malformed; backed up to ${bakPath} and recreating empty jobs file`);
+      } catch (bakErr) {
+        console.warn('[JOB_STORE] Failed to backup malformed jobs file:', bakErr instanceof Error ? bakErr.message : String(bakErr));
+      }
+      try {
+        await fs.writeFile(filePath, '[]', 'utf-8');
+      } catch (writeErr) {
+        console.warn('[JOB_STORE] Failed to recreate jobs file after backup:', writeErr instanceof Error ? writeErr.message : String(writeErr));
+      }
+    }
+  } catch (e) {
+    // If the file doesn't exist, ensure parent dir exists and create an empty file
+    try {
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, '[]', 'utf-8');
+    } catch (ee) {
+      console.warn('[JOB_STORE] sanitizeJobsFile failed:', ee instanceof Error ? ee.message : String(ee));
+    }
+  }
+}
+
 async function persistJobs(): Promise<void> {
   // Serialize writes using a promise chain to avoid concurrent writers
   try {

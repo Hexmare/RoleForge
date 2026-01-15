@@ -10,6 +10,16 @@ export interface MemoryEntry {
   similarity?: number;
 }
 
+export interface MemoryMetadata {
+  campaignId?: string;
+  arcId?: string;
+  sceneId?: string;
+  roundId?: string;
+  messageId?: string;
+  speakerId?: string;
+  [key: string]: any;
+}
+
 export interface VectorStoreInterface {
   /**
    * Initializes the store for a specific scope (e.g., worldId_characterId).
@@ -30,7 +40,7 @@ export interface VectorStoreInterface {
    * @param scope - The memory scope for isolation
    * @throws Error if storage fails
    */
-  addMemory(id: string, text: string, metadata?: Record<string, any>, scope?: string): Promise<void>;
+  addMemory(id: string, text: string, metadata?: MemoryMetadata, scope?: string): Promise<void>;
 
   /**
    * Queries the store for relevant memories in a given scope.
@@ -110,7 +120,7 @@ export interface VectorStoreInterface {
    * @param options - Optional safety and execution flags
    */
   deleteByMetadata(
-    filter: Record<string, any>,
+    filter: Partial<MemoryMetadata>,
     scope?: string,
     options?: { dryRun?: boolean; confirm?: boolean; background?: boolean; confirmThreshold?: number }
   ): Promise<void>;

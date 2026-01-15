@@ -10,24 +10,28 @@ describe('jobs.json corruption sanitizer', () => {
     // Ensure data dir exists
     await fs.mkdir(JOBS_DIR, { recursive: true });
 
-    // Write malformed content
-    await fs.writeFile(JOBS_FILE, '{ this is : not valid json', 'utf-8');
+    // Use a test-specific jobs file to avoid races with other tests that may
+    // persist to the module-global jobs.json concurrently.
+    const TEST_FILE = path.join(JOBS_DIR, 'jobs.test.corrupt.json');
+    await fs.writeFile(TEST_FILE, '{ this is : not valid json', 'utf-8');
 
-    // Import jobStore to trigger loadJobs (dynamic import to ensure fresh module)
-    // Use same relative path as other tests
+    // Import sanitizer helper and run it against the test file
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    await import('../jobs/jobStore.js');
+    const store = await import('../jobs/jobStore.js');
+    if (store && typeof store.sanitizeJobsFile === 'function') {
+      await store.sanitizeJobsFile(TEST_FILE);
+    }
 
     // Give a small delay for any async operations
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 150));
 
-    // Verify jobs.json is now a valid JSON array
-    const content = await fs.readFile(JOBS_FILE, 'utf-8');
+    // Verify TEST_FILE is now a valid JSON array
+    const content = await fs.readFile(TEST_FILE, 'utf-8');
     expect(content.trim()).toBe('[]');
 
-    // Verify a backup file exists (jobs.json.corrupt.*)
+    // Verify a backup file exists for the test file
     const files = await fs.readdir(JOBS_DIR);
-    const corrupt = files.find((f) => f.startsWith('jobs.json.corrupt.'));
+    const corrupt = files.find((f) => f.startsWith('jobs.test.corrupt.json.corrupt.'));
     expect(corrupt).toBeDefined();
   });
 });

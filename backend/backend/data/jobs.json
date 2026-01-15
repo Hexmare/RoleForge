@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "id": "unit-test-job-1768515806301-xiiscd",
+    "type": "unit-test-job",
+    "createdAt": 1768515806301,
+    "updatedAt": 1768515806301,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true
+    }
+  },
+  {
+    "id": "unit-test-job-1768515859145-dv4ynt",
+    "type": "unit-test-job",
+    "createdAt": 1768515859145,
+    "updatedAt": 1768515859145,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true
+    }
+  }
+]

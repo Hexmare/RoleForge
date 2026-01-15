@@ -34,6 +34,15 @@ export class VectorizationAgent extends BaseAgent {
   }
 
   /**
+   * Hook to personalize memory text per-character before storage.
+   * Default implementation is pass-through; override for custom behavior.
+   */
+  protected async personalizeMemory(text: string, characterId: string, context?: any): Promise<string> {
+    // Placeholder for per-character personalization (e.g., pronouns, perspective)
+    return text;
+  }
+
+  /**
    * Main entry point for vectorization
    * Called by Orchestrator.completeRound() after each round completes
    * 
@@ -77,36 +86,64 @@ export class VectorizationAgent extends BaseAgent {
       // Store memory for each active character
       let successCount = 0;
       
-      // Get the correct worldId from sceneId
+      // Get scene/world and higher-level metadata
       let worldId = 0;
+      let campaignId: string | undefined;
+      let arcId: string | undefined;
+      let sceneName: string | undefined;
       try {
         const SceneService = (await import('../services/SceneService.js')).default;
+        const scene = SceneService.getById(sceneId);
         worldId = SceneService.getWorldIdFromSceneId(sceneId);
+        if (scene) {
+          campaignId = scene.campaignId !== undefined ? String(scene.campaignId) : undefined;
+          arcId = scene.arcId !== undefined ? String(scene.arcId) : undefined;
+          sceneName = scene.name;
+        }
       } catch (error) {
-        console.error(`[VECTORIZATION] Failed to get worldId for sceneId ${sceneId}:`, error);
+        console.error(`[VECTORIZATION] Failed to get scene/world metadata for sceneId ${sceneId}:`, error);
         return 'error';
       }
 
-      for (const characterName of activeCharacters) {
+      for (const char of activeCharacters) {
         try {
           const world = worldState?.name || 'unknown';
-          
-          // Create memory scope: world_{worldId}_char_{characterName}
-          const scope = `world_${worldId}_char_${characterName}`;
-          
-          // Create unique memory ID
-          const memoryId = `round_${roundNumber}_${characterName}_${Date.now()}`;
 
-          // Metadata for the memory
-          const metadata = {
+          // Character may be a string (name) or an object { id, name }
+          let characterId: string;
+          let characterName: string;
+          if (typeof char === 'string') {
+            characterId = String(char);
+            characterName = String(char);
+          } else if (char && typeof char === 'object') {
+            characterId = char.id ? String(char.id) : (char.name ? String(char.name) : `unknown_${Date.now()}`);
+            characterName = char.name ? String(char.name) : characterId;
+          } else {
+            characterId = `unknown_${Date.now()}`;
+            characterName = 'unknown';
+          }
+
+          // Create memory scope: world_{worldId}_char_{characterId}
+          const scope = `world_${worldId}_char_${characterId}`;
+
+          // Create unique memory ID
+          const memoryId = `round_${roundNumber}_${characterId}_${Date.now()}`;
+
+          // Metadata for the memory (canonicalized to strings where applicable)
+          const metadata: Record<string, any> = {
+            roundId: String(roundNumber),
             roundNumber,
-            sceneId,
+            sceneId: String(sceneId),
+            sceneName,
+            characterId,
             characterName,
             worldName: world,
             actors: activeCharacters,
             timestamp: new Date().toISOString(),
             type: 'round_memory'
           };
+          if (campaignId) metadata.campaignId = campaignId;
+          if (arcId) metadata.arcId = arcId;
 
           // Store FULL round memory for this character (all speakers, all messages)
           // Character needs context of what OTHERS said too, not just their own lines
