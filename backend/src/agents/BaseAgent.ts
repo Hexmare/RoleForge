@@ -78,39 +78,38 @@ export abstract class BaseAgent {
       profileName = this.configManager.getConfig().defaultProfile;
     }
 
-    const baseProfile = this.configManager.getProfile(profileName);
+    const baseProfile = this.configManager.getProfile(profileName) as any;
 
-    // Merge agent-specific overrides (all possible profile fields)
-    const mergedProfile = { ...baseProfile };
-    
-    if (agentConfig?.sampler) {
-      mergedProfile.sampler = {
-        ...baseProfile.sampler,
-        ...agentConfig.sampler
-      };
-    }
-    
+    // Defensive merge: start with base, then apply only explicit overrides
+    const mergedProfile: any = { ...baseProfile };
+
+    // Ensure sampler object exists before merging
+    mergedProfile.sampler = {
+      ...(baseProfile?.sampler || {}),
+      ...(agentConfig?.sampler || {})
+    };
+
+    // Preserve type from base unless agent explicitly provides it
+    mergedProfile.type = agentConfig?.type ?? baseProfile?.type;
+
+    // Determine format: explicit agent override -> agent returnsJson flag -> sampler.forceJson -> base profile
     if (agentConfig?.format) {
       mergedProfile.format = agentConfig.format;
+    } else if (agentConfig?.returnsJson) {
+      mergedProfile.format = 'json';
+    } else if (mergedProfile.sampler?.forceJson) {
+      mergedProfile.format = 'json';
+    } else {
+      mergedProfile.format = baseProfile?.format;
     }
 
-    if (agentConfig?.apiKey) {
-      mergedProfile.apiKey = agentConfig.apiKey;
-    }
+    // Apply other optional overrides only when provided
+    if (agentConfig?.apiKey !== undefined) mergedProfile.apiKey = agentConfig.apiKey;
+    if (agentConfig?.baseURL !== undefined) mergedProfile.baseURL = agentConfig.baseURL;
+    if (agentConfig?.model !== undefined) mergedProfile.model = agentConfig.model;
+    if (agentConfig?.template !== undefined) mergedProfile.template = agentConfig.template;
 
-    if (agentConfig?.baseURL) {
-      mergedProfile.baseURL = agentConfig.baseURL;
-    }
-
-    if (agentConfig?.model) {
-      mergedProfile.model = agentConfig.model;
-    }
-
-    if (agentConfig?.template) {
-      mergedProfile.template = agentConfig.template;
-    }
-
-    return mergedProfile;
+    return mergedProfile as LLMProfile;
   }
 
   protected async callLLM(systemPrompt: string, userMessage: string, assistantMessage: string = ''): Promise<string> {

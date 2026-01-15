@@ -18,6 +18,7 @@ interface StoredMemory {
 
 export class VectraVectorStore implements VectorStoreInterface {
   private indexes: Map<string, LocalIndex> = new Map();
+  private initPromises: Map<string, Promise<void>> = new Map();
   private embeddingManager: EmbeddingManager;
   private basePath: string;
 
@@ -35,30 +36,71 @@ export class VectraVectorStore implements VectorStoreInterface {
       return; // Already initialized
     }
 
-    try {
-      const indexPath = path.join(this.basePath, scope);
+    // If another init is in progress for this scope, wait for it
+    if (this.initPromises.has(scope)) {
+      await this.initPromises.get(scope);
+      return;
+    }
 
-      // Ensure base directory AND scope directory exist
-      await fs.mkdir(this.basePath, { recursive: true });
-      await fs.mkdir(indexPath, { recursive: true });
+    const initPromise = (async () => {
 
-      // Initialize Vectra index (it will save to the directory we just created)
-      const index = new LocalIndex(indexPath);
-      
-      // Try to load existing index, or create new one
       try {
-        // Vectra's createIndex will create index.json in the path
-        await index.createIndex();
-      } catch (createError) {
-        // If it fails due to existing file, that's OK
-        console.log(`[VECTOR_STORE] Index creation note (may already exist):`, createError instanceof Error ? createError.message : String(createError));
-      }
+        const indexPath = path.join(this.basePath, scope);
 
-      this.indexes.set(scope, index);
-      console.log(`[VECTOR_STORE] Initialized scope: ${scope}`);
-    } catch (error) {
-      console.error(`[VECTOR_STORE] Failed to initialize scope ${scope}:`, error);
-      throw new Error(`Failed to initialize vector store scope ${scope}: ${error instanceof Error ? error.message : String(error)}`);
+        // Ensure base directory AND scope directory exist
+        await fs.mkdir(this.basePath, { recursive: true });
+        await fs.mkdir(indexPath, { recursive: true });
+
+        // Initialize Vectra index (it will save to the directory we just created)
+        const index = new LocalIndex(indexPath);
+
+        // Try to load existing index, or create new one. Retry on transient failures.
+        let created = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            // Vectra's createIndex will create index.json in the path
+            await index.createIndex();
+            created = true;
+            break;
+          } catch (createError: any) {
+            const msg = createError instanceof Error ? createError.message : String(createError);
+            console.log(`[VECTOR_STORE] Index creation attempt ${attempt + 1} failed:`, msg);
+            // Ensure directory exists and retry after short delay
+            try {
+              await fs.mkdir(indexPath, { recursive: true });
+            } catch (mkErr) {
+              // ignore - we'll retry
+            }
+            await new Promise((res) => setTimeout(res, 100));
+          }
+        }
+
+        if (!created) {
+          // Final check: if index.json exists, consider it OK, otherwise throw
+          const indexJsonPath = path.join(indexPath, 'index.json');
+          try {
+            const stat = await fs.stat(indexJsonPath);
+            if (!stat.isFile()) {
+              throw new Error('index.json not created');
+            }
+          } catch (e) {
+            throw new Error(`Failed to create Vectra index at ${indexPath}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+
+        this.indexes.set(scope, index);
+        console.log(`[VECTOR_STORE] Initialized scope: ${scope}`);
+      } catch (error) {
+        console.error(`[VECTOR_STORE] Failed to initialize scope ${scope}:`, error);
+        throw new Error(`Failed to initialize vector store scope ${scope}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    })();
+
+    this.initPromises.set(scope, initPromise);
+    try {
+      await initPromise;
+    } finally {
+      this.initPromises.delete(scope);
     }
   }
 
@@ -104,7 +146,20 @@ export class VectraVectorStore implements VectorStoreInterface {
 
       // Before inserting, make sure directory exists (defensive)
       const indexPath = path.join(this.basePath, scope);
-      await fs.mkdir(indexPath, { recursive: true });
+      try {
+        await fs.mkdir(indexPath, { recursive: true });
+      } catch (mkdirErr: any) {
+        // On some Windows setups or race conditions, mkdir can fail with ENOENT
+        // Attempt to ensure basePath exists, then retry
+        console.warn(`[VECTOR_STORE] mkdir failed for ${indexPath}, retrying after ensuring base path. Error:`, mkdirErr?.message || mkdirErr);
+        try {
+          await fs.mkdir(this.basePath, { recursive: true });
+          await fs.mkdir(indexPath, { recursive: true });
+        } catch (retryErr) {
+          console.error(`[VECTOR_STORE] Failed to create directory ${indexPath} after retry:`, retryErr);
+          throw retryErr;
+        }
+      }
 
       // Try to insert item
       try {
@@ -345,6 +400,9 @@ export class VectraVectorStore implements VectorStoreInterface {
    */
   async scopeExists(scope: string): Promise<boolean> {
     try {
+      // If we've initialized the scope in-memory, consider it existing
+      if (this.indexes.has(scope)) return true;
+
       const indexPath = path.join(this.basePath, scope);
       const stat = await fs.stat(indexPath);
       return stat.isDirectory();

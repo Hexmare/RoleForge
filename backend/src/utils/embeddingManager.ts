@@ -123,7 +123,17 @@ class EmbeddingManager {
         for (let d = 0; d < embeddingDim; d++) {
           pooledVector[d] /= numTokens;
         }
-        
+
+        // L2-normalize the pooled vector to ensure cosine similarity is valid
+        let norm = 0;
+        for (let d = 0; d < embeddingDim; d++) {
+          norm += pooledVector[d] * pooledVector[d];
+        }
+        norm = Math.sqrt(norm) || 1;
+        for (let d = 0; d < embeddingDim; d++) {
+          pooledVector[d] = pooledVector[d] / norm;
+        }
+
         vectors.push(pooledVector);
       }
       

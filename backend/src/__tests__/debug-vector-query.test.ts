@@ -10,7 +10,7 @@ import { VectraVectorStore } from '../stores/VectraVectorStore';
 import { getMemoryRetriever } from '../utils/memoryRetriever';
 
 describe('Vector Memory Debug Query', () => {
-  it('should query vector memories', async () => {
+  it('should query vector memories', { timeout: 30000 }, async () => {
     const query = process.env.QUERY || 'raven';
     const worldId = parseInt(process.env.WORLD_ID || '9999999');
     const characterName = process.env.CHARACTER || undefined;
@@ -51,5 +51,5 @@ describe('Vector Memory Debug Query', () => {
     }
 
     expect(true).toBe(true); // Always pass - this is just for output
-  }, { timeout: 30000 } as any);
+  });
 });

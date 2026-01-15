@@ -1,0 +1,17 @@
+{
+  "embeddingProvider": "transformers",
+  "embeddingModel": "Xenova/all-mpnet-base-v2",
+  "apiKeys": {},
+  "chunkStrategy": "perRound",
+  "chunkSize": 512,
+  "slidingWindowOverlap": 0.2,
+  "temporalDecay": {
+    "enabled": false,
+    "mode": "time", 
+    "halfLife": 50,
+    "floor": 0.3
+  },
+  "scoreThreshold": 0.5,
+  "queryDepth": 10,
+  "conditionalRules": []
+}

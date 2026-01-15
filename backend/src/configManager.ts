@@ -53,6 +53,7 @@ export interface Config {
     summarizationInterval?: number;
     maxSummaryTokens?: number;
   };
+  vector?: any;
 }
 
 export class ConfigManager {
@@ -83,6 +84,20 @@ export class ConfigManager {
     return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
   }
 
+  // Load vector config from backend/config/vectorConfig.json if present
+  private loadVectorConfig(): any {
+    try {
+      const vcPath = path.join(__dirname, '..', 'config', 'vectorConfig.json');
+      if (fs.existsSync(vcPath)) {
+        const raw = fs.readFileSync(vcPath, 'utf-8');
+        return JSON.parse(raw);
+      }
+    } catch (e) {
+      console.warn('Failed to load vectorConfig.json', e);
+    }
+    return undefined;
+  }
+
   getProfile(name?: string): LLMProfile {
     const profileName = name || this.config.defaultProfile;
     const profile = this.config.profiles[profileName];
@@ -97,11 +112,19 @@ export class ConfigManager {
   }
 
   getConfig(): Config {
-    return this.config;
+    // attach vector config dynamically
+    const copy = { ...this.config } as Config;
+    const vector = this.loadVectorConfig();
+    if (vector) copy.vector = vector;
+    return copy;
   }
 
   reload(): void {
     this.config = this.loadConfig(path.join(__dirname, '..', 'config.json'));
+  }
+
+  getVectorConfig(): any {
+    return this.loadVectorConfig();
   }
 
   isVisualAgentEnabled(): boolean {
