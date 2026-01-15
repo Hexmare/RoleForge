@@ -26,6 +26,8 @@ import { tryParse, unwrapPrompt } from './utils/unpackPrompt';
 import axios from 'axios';
 import { randomBytes, randomUUID } from 'crypto';
 import { countTokens } from './utils/tokenCounter.js';
+import * as jobStore from './jobs/jobStore.js';
+import * as auditLog from './jobs/auditLog.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -2958,6 +2960,35 @@ app.get('/api/debug/vector-scopes', async (req, res) => {
       error: error instanceof Error ? error.message : 'Unknown error',
       details: error instanceof Error ? error.stack : undefined
     });
+  }
+});
+
+// Internal inspection endpoints for jobs and audits
+app.get('/internal/jobs', (req, res) => {
+  try {
+    const jobs = jobStore.listJobs();
+    res.json({ jobs });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to list jobs', detail: (e as any)?.message || String(e) });
+  }
+});
+
+app.get('/internal/jobs/:id', (req, res) => {
+  try {
+    const job = jobStore.getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json({ job });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to get job', detail: (e as any)?.message || String(e) });
+  }
+});
+
+app.get('/internal/audits', (req, res) => {
+  try {
+    const audits = auditLog.listAudits();
+    res.json({ audits });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to list audits', detail: (e as any)?.message || String(e) });
   }
 });
 

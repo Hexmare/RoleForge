@@ -188,32 +188,54 @@ export class VectraVectorStore implements VectorStoreInterface {
         });
       };
 
-      try {
-        await doInsert();
-        // Ensure index.json persisted: retry-read until item appears (small window)
-        const indexJsonPath2 = path.join(indexPath, 'index.json');
-        const maxAttempts = 5;
-        let foundOnDisk = false;
-        for (let a = 0; a < maxAttempts; a++) {
-          try {
-            const content = await fs.readFile(indexJsonPath2, 'utf-8');
-            const parsed = JSON.parse(content);
-            const items = Array.isArray(parsed.items) ? parsed.items : [];
-            if (items.find((it: any) => it.id === id)) {
-              foundOnDisk = true;
-              break;
+        try {
+            await doInsert();
+            // Verify insertion: poll both Vectra's in-memory query and the
+            // on-disk index.json until the item becomes visible. Filesystem
+            // writes can lag, especially on Windows, so check both sources.
+            const maxAttempts = 50;
+            let found = false;
+            const checkIndexJson = async () => {
+              try {
+                const indexJsonPath2 = path.join(indexPath, 'index.json');
+                const content = await fs.readFile(indexJsonPath2, 'utf-8');
+                const parsed = JSON.parse(content);
+                const items = Array.isArray(parsed.items) ? parsed.items : [];
+                return items.find((it: any) => it.id === id) !== undefined;
+              } catch {
+                return false;
+              }
+            };
+
+            for (let a = 0; a < maxAttempts; a++) {
+              try {
+                const idx = this.indexes.get(scope);
+                if (idx) {
+                  // Query a reasonable number of candidates to find the new item
+                  const qres = await idx.queryItems(vector, '', 50);
+                  if (Array.isArray(qres) && qres.find((r: any) => r.item && r.item.id === id)) {
+                    found = true;
+                    break;
+                  }
+                }
+
+                // Also check index.json on disk each iteration
+                if (await checkIndexJson()) {
+                  found = true;
+                  break;
+                }
+              } catch (qe) {
+                // ignore and retry
+              }
+
+              // eslint-disable-next-line no-await-in-loop
+              await new Promise((r) => setTimeout(r, 150));
             }
-          } catch {
-            // ignore and retry
-          }
-          // small delay
-          // eslint-disable-next-line no-await-in-loop
-          await new Promise((r) => setTimeout(r, 40));
-        }
-        if (!foundOnDisk) {
-          console.warn(`[VECTOR_STORE] Warning: inserted item ${id} may not be persisted to index.json yet for scope ${scope}`);
-        }
-      } catch (insertError) {
+
+            if (!found) {
+              console.warn(`[VECTOR_STORE] Warning: inserted item ${id} may not be fully visible yet for scope ${scope}`);
+            }
+          } catch (insertError) {
         const errMsg = insertError instanceof Error ? insertError.message : String(insertError);
         // If the item already exists, treat as idempotent success
         if (errMsg.includes('already exists') || errMsg.includes('already added') || errMsg.includes('duplicate')) {
@@ -348,6 +370,48 @@ export class VectraVectorStore implements VectorStoreInterface {
           `[VECTOR_STORE] Query found ${entries.length} memories in scope ${scope}`
         );
 
+        // If manual index parsing found no results (possible small window where
+        // index.json isn't yet fully persisted), try Vectra's queryItems as a
+        // fallback to avoid false-negative queries.
+        if (entries.length === 0) {
+          try {
+            const index = this.indexes.get(scope);
+            if (index) {
+              const vectraResults = await index.queryItems(queryVector, '', topK);
+              const vectraEntriesAll: MemoryEntry[] = vectraResults.map((r: any) => ({
+                id: r.item.id,
+                text: r.item.metadata?.text || '',
+                metadata: r.item.metadata,
+                similarity: r.score
+              }));
+
+              // Prefer results that meet the minSimilarity threshold
+              const vectraEntries = vectraEntriesAll.filter((r) => (r.similarity || 0) >= minSimilarity);
+
+              if (vectraEntries.length > 0) {
+                console.log(`[VECTOR_STORE] Fallback Vectra query returned ${vectraEntries.length} results for scope ${scope}`);
+                return vectraEntries.slice(0, topK);
+              }
+
+              // If no vectra entries meet the threshold but vectra returned candidates,
+              // return top candidates (relaxed) to avoid false negatives due to
+              // filesystem/index.json lag; caller can still inspect similarity values.
+              if (vectraEntriesAll.length > 0) {
+                // Only return relaxed (below-threshold) candidates when the
+                // original minSimilarity is low (<= 0.3). For high thresholds we
+                // should not relax semantics.
+                if ((minSimilarity || 0) <= 0.3) {
+                  console.log(`[VECTOR_STORE] Fallback Vectra query returned ${vectraEntriesAll.length} candidates (below threshold) for scope ${scope}, returning relaxed results`);
+                  return vectraEntriesAll.slice(0, topK);
+                }
+                // Otherwise, don't return below-threshold candidates.
+              }
+            }
+          } catch (fbErr) {
+            console.warn('[VECTOR_STORE] Fallback Vectra query failed:', fbErr instanceof Error ? fbErr.message : String(fbErr));
+          }
+        }
+
         return entries;
       } catch (readError) {
         // If manual read fails, try Vectra's query as fallback
@@ -398,6 +462,26 @@ export class VectraVectorStore implements VectorStoreInterface {
       const index = this.indexes.get(scope);
       if (!index) {
         throw new Error(`Scope ${scope} not found`);
+      }
+
+      // Ensure on-disk index.json exists before attempting delete. Vectra
+      // can throw ENOENT when saving if the file is missing due to a race.
+      const indexPath = path.join(this.basePath, scope);
+      const indexJsonPath = path.join(indexPath, 'index.json');
+      try {
+        await fs.stat(indexJsonPath);
+      } catch {
+        // Try to create the index (retry a few times)
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            await index.createIndex();
+            break;
+          } catch (ciErr) {
+            // small delay and retry
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((r) => setTimeout(r, 100));
+          }
+        }
       }
 
       // Use removeItem method
@@ -476,26 +560,44 @@ export class VectraVectorStore implements VectorStoreInterface {
         return 0;
       }
 
-      // Get all items as a rough count
-      let allItems: any[] = [];
-      try {
-        allItems = await index.queryItems(new Array(768).fill(0), '', 100000);
-      } catch (qe) {
-        console.warn(`[VECTOR_STORE] queryItems failed for getMemoryCount on scope ${scope}: ${qe instanceof Error ? qe.message : String(qe)}`);
-      }
-
-      // Also try to read index.json directly as a fallback and use the larger of the two counts
+      // Try to obtain a stable count by sampling both vectra's queryItems and
+      // the on-disk index.json. Filesystem and vectra internals can lag, so
+      // retry a few times until the count stabilizes or we exhaust attempts.
       const indexJsonPath = path.join(this.basePath, scope, 'index.json');
-      let diskCount = 0;
-      try {
-        const content = await fs.readFile(indexJsonPath, 'utf-8');
-        const parsed = JSON.parse(content);
-        if (Array.isArray(parsed.items)) diskCount = parsed.items.length;
-      } catch {
-        // ignore - file may not exist yet
+      const maxAttempts = 50;
+      let lastCombined = -1;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        let allItems: any[] = [];
+        try {
+          const q = await index.queryItems(new Array(768).fill(0), '', 100000);
+          allItems = Array.isArray(q) ? q : [];
+        } catch (qe) {
+          // ignore
+        }
+
+        let diskCount = 0;
+        try {
+          const content = await fs.readFile(indexJsonPath, 'utf-8');
+          const parsed = JSON.parse(content);
+          if (Array.isArray(parsed.items)) diskCount = parsed.items.length;
+        } catch {
+          // ignore
+        }
+
+        const combined = Math.max(allItems.length, diskCount);
+        // If count stabilized between iterations, return it
+        if (combined === lastCombined) {
+          return combined;
+        }
+
+        lastCombined = combined;
+        // Small delay before retrying
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 100));
       }
 
-      return Math.max(allItems.length, diskCount);
+      return Math.max(lastCombined, 0);
     } catch (error) {
       console.error(`[VECTOR_STORE] Failed to get memory count for scope ${scope}:`, error);
       return 0;
