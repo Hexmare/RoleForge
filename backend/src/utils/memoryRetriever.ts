@@ -51,11 +51,12 @@ export class MemoryRetriever {
     try {
       // Validate vector store availability
       if (!this.vectorStore) {
+        console.log('[MEMORY_RETRIEVER] Vector store not initialized, initializing now...');
         await this.initialize();
       }
 
       if (!this.vectorStore) {
-        console.warn('[MEMORY_RETRIEVER] Vector store unavailable, returning empty memories');
+        console.warn('[MEMORY_RETRIEVER] Vector store unavailable after init, returning empty memories');
         return [];
       }
 
@@ -65,10 +66,14 @@ export class MemoryRetriever {
 
       // If specific worldId and character (ID or name) provided, query just that scope
       const charId = options.characterId || options.characterName;
+      console.log(`[MEMORY_RETRIEVER] queryMemories called with charId: ${charId}, worldId: ${options.worldId}`);
+      
       if (options.worldId && charId) {
         const scope = `world_${options.worldId}_char_${charId}`;
+        console.log(`[MEMORY_RETRIEVER] Querying scope: ${scope}, query length: ${query.length}, topK: ${topK}, minSimilarity: ${minSimilarity}`);
         try {
           const results = await this.vectorStore.query(query, scope, topK, minSimilarity);
+          console.log(`[MEMORY_RETRIEVER] Query returned ${results.length} results`);
           
           for (const entry of results) {
             memories.push({

@@ -158,81 +158,97 @@ export const SceneService = {
     try {
       const vectorStore = VectorStoreFactory.getVectorStore();
       if (vectorStore) {
-        // Parse active characters from the scene
-        let activeCharacters: string[] = [];
+        // Get all characters in the world
         try {
-          const sceneData = this.getById(id);
-          if (sceneData?.activeCharacters) {
-            const parsed = typeof sceneData.activeCharacters === 'string' 
-              ? JSON.parse(sceneData.activeCharacters) 
-              : sceneData.activeCharacters;
-            activeCharacters = Array.isArray(parsed) 
-              ? parsed.map((c: any) => typeof c === 'string' ? c : c.name || c.id)
-              : [];
-          }
-        } catch (e) {
-          console.warn('[SCENE_RESET] Failed to parse active characters:', e);
-        }
-
-        // Query and delete memories that belong to THIS scene only
-        const deletePromises = [];
-        for (const characterName of activeCharacters) {
-          const scope = `world_${worldRow.id}_char_${characterName}`;
+          const { CharacterService } = await import('../services/CharacterService.js');
+          const allCharacters = CharacterService.getAllCharacters();
           
-          // Query all memories in this character's scope
-          try {
-            const allMemories = await vectorStore.query('*', scope, 1000, 0.0);
+          const deletePromises = [];
+
+          // Delete from each character's scope
+          for (const character of allCharacters) {
+            const characterId = character.id;
+            const scope = `world_${worldRow.id}_char_${characterId}`;
             
-            // Filter to only memories from this scene
-            const memoriesToDelete = allMemories.filter((memory: any) => {
-              return memory.metadata?.sceneId === id;
-            });
-
-            // Delete only the memories from this scene
-            for (const memory of memoriesToDelete) {
-              deletePromises.push(
-                vectorStore.deleteMemory(memory.id, scope).catch((err: any) => {
-                  console.warn(`[SCENE_RESET] Failed to delete memory ${memory.id}:`, err);
-                })
+            // Get all vector entries for this character
+            try {
+              const fs = await import('fs');
+              const path = await import('path');
+              const vectorDir = path.join(
+                process.cwd(),
+                'vector_data',
+                scope
               );
+
+              // Check if directory exists
+              if (fs.existsSync(vectorDir)) {
+                const indexPath = path.join(vectorDir, 'index.json');
+                if (fs.existsSync(indexPath)) {
+                  // Read the index file
+                  const indexContent = fs.readFileSync(indexPath, 'utf-8');
+                  const indexData = JSON.parse(indexContent);
+
+                  // Filter out items with matching sceneId
+                  const originalCount = indexData.items?.length || 0;
+                  indexData.items = (indexData.items || []).filter((item: any) => {
+                    return item.metadata?.sceneId !== id;
+                  });
+                  const newCount = indexData.items?.length || 0;
+                  const removedCount = originalCount - newCount;
+
+                  if (removedCount > 0) {
+                    // Write back the filtered index
+                    fs.writeFileSync(indexPath, JSON.stringify(indexData, null, 2));
+                    console.log(`[SCENE_RESET] Removed ${removedCount} vector entries for character ${characterId} in scene ${id}`);
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn(`[SCENE_RESET] Failed to clean vectors for character ${characterId}:`, err);
             }
-
-            console.log(`[SCENE_RESET] Found ${memoriesToDelete.length} memories for ${characterName} in scene ${id}`);
-          } catch (err) {
-            console.warn(`[SCENE_RESET] Failed to query memories for character ${characterName}:`, err);
           }
-        }
 
-        // Also query and delete from multi-character shared scope
-        const multiScope = `world_${worldRow.id}_multi`;
-        try {
-          const allMemories = await vectorStore.query('*', multiScope, 1000, 0.0);
-          const memoriesToDelete = allMemories.filter((memory: any) => {
-            return memory.metadata?.sceneId === id;
-          });
-
-          for (const memory of memoriesToDelete) {
-            deletePromises.push(
-              vectorStore.deleteMemory(memory.id, multiScope).catch((err: any) => {
-                console.warn(`[SCENE_RESET] Failed to delete shared memory ${memory.id}:`, err);
-              })
+          // Also clean multi-character scope if it exists
+          try {
+            const fs = await import('fs');
+            const path = await import('path');
+            const multiScope = `world_${worldRow.id}_multi`;
+            const vectorDir = path.join(
+              process.cwd(),
+              'vector_data',
+              multiScope
             );
+
+            if (fs.existsSync(vectorDir)) {
+              const indexPath = path.join(vectorDir, 'index.json');
+              if (fs.existsSync(indexPath)) {
+                const indexContent = fs.readFileSync(indexPath, 'utf-8');
+                const indexData = JSON.parse(indexContent);
+
+                const originalCount = indexData.items?.length || 0;
+                indexData.items = (indexData.items || []).filter((item: any) => {
+                  return item.metadata?.sceneId !== id;
+                });
+                const newCount = indexData.items?.length || 0;
+                const removedCount = originalCount - newCount;
+
+                if (removedCount > 0) {
+                  fs.writeFileSync(indexPath, JSON.stringify(indexData, null, 2));
+                  console.log(`[SCENE_RESET] Removed ${removedCount} shared vector entries in scene ${id}`);
+                }
+              }
+            }
+          } catch (err) {
+            console.warn(`[SCENE_RESET] Failed to clean shared vectors:`, err);
           }
 
-          console.log(`[SCENE_RESET] Found ${memoriesToDelete.length} shared memories in scene ${id}`);
-        } catch (err) {
-          console.warn(`[SCENE_RESET] Failed to query shared memories:`, err);
+          console.log(`[SCENE_RESET] Completed vector cleanup for scene ${id}`);
+        } catch (error) {
+          console.warn('[SCENE_RESET] Failed to clean up vector files:', error);
         }
-
-        // Wait for all deletions
-        Promise.all(deletePromises).then(() => {
-          console.log(`[SCENE_RESET] Deleted vectors for scene ${id} only (not entire character vectors)`);
-        }).catch((err: any) => {
-          console.warn(`[SCENE_RESET] Error during vector cleanup:`, err);
-        });
       }
     } catch (error) {
-      console.warn('[SCENE_RESET] Failed to clean up vector store:', error);
+      console.warn('[SCENE_RESET] Failed to initialize vector cleanup:', error);
       // Non-blocking - don't fail the reset if vector cleanup fails
     }
 

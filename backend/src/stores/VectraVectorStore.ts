@@ -162,15 +162,20 @@ export class VectraVectorStore implements VectorStoreInterface {
     try {
       // Check if scope exists
       if (!this.indexes.has(scope)) {
+        console.log(`[VECTOR_STORE] Scope ${scope} not in memory, checking if it exists on disk...`);
         const exists = await this.scopeExists(scope);
         if (!exists) {
+          console.log(`[VECTOR_STORE] Scope ${scope} does not exist on disk, returning empty results`);
           return []; // Scope doesn't exist, no memories
         }
+        console.log(`[VECTOR_STORE] Scope ${scope} found on disk, initializing...`);
         await this.init(scope);
       }
 
       // Generate query embedding
+      console.log(`[VECTOR_STORE] Generating embedding for query text (length: ${queryText.length})`);
       const queryVector = await this.embeddingManager.embedText(queryText);
+      console.log(`[VECTOR_STORE] Generated query vector with ${queryVector.length} dimensions`);
 
       // Manual query: Read index.json directly and compute similarity
       const indexPath = path.join(this.basePath, scope, 'index.json');
@@ -214,8 +219,15 @@ export class VectraVectorStore implements VectorStoreInterface {
               item,
               score: similarity
             });
+          } else {
+            // Log items that didn't make the threshold
+            if (Array.isArray(storedVector)) {
+              console.log(`[VECTOR_STORE] Item ${item.id} scored ${similarity.toFixed(4)} (below threshold of ${minSimilarity})`);
+            }
           }
         }
+        
+        console.log(`[VECTOR_STORE] Found ${results.length}/${indexData.items.length} memories above threshold`);
 
         // Sort by similarity descending
         results.sort((a, b) => b.score - a.score);

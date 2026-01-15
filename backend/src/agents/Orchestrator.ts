@@ -1027,23 +1027,32 @@ export class Orchestrator {
       };
 
       // Query memories for character (Phase 3)
-      if (sceneId && this.worldState?.id && characterData?.id) {
+      if (sceneId && characterData?.id) {
         try {
+          const worldId = SceneService.getWorldIdFromSceneId(sceneId);
+          console.log(`[CHARACTER_MEMORY] Querying memories for ${charName} (id: ${characterData.id}) in world ${worldId}, scene ${sceneId}`);
           const retriever = getMemoryRetriever();
           await retriever.initialize();
-          const memories = await retriever.queryMemories(userInput + ' ' + this.history.join(' ').substring(0, 500), {
-            worldId: this.worldState.id,
+          const query = userInput + ' ' + this.history.join(' ').substring(0, 500);
+          console.log(`[CHARACTER_MEMORY] Query text length: ${query.length}`);
+          const memories = await retriever.queryMemories(query, {
+            worldId: worldId,
             characterId: characterData.id,
             topK: 5,
             minSimilarity: 0.3,
           });
+          console.log(`[CHARACTER_MEMORY] Retrieved ${memories.length} memories for ${charName}`);
           if (memories.length > 0) {
             characterContext.vectorMemories = retriever.formatMemoriesForPrompt(memories);
             console.log(`[CHARACTER] ${charName}: Injected ${memories.length} memories into context`);
+          } else {
+            console.log(`[CHARACTER_MEMORY] No memories found for ${charName}`);
           }
         } catch (error) {
           console.warn(`[CHARACTER] ${charName}: Memory retrieval failed (non-blocking):`, error);
         }
+      } else {
+        console.log(`[CHARACTER_MEMORY] Skipping memory query - sceneId: ${sceneId}, worldId: ${this.worldState?.id}, charId: ${characterData?.id}`);
       }
 
       console.log(`[CHARACTER] Calling CharacterAgent for "${charName}"`);
