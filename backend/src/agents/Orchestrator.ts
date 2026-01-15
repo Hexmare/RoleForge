@@ -1007,8 +1007,8 @@ export class Orchestrator {
 
       const characterAgent = new CharacterAgent(charName, this.configManager, this.env);
       
-      // Build history with previous character responses from this turn
-      let historyToPass = this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.slice(0, -1).join('\n')}`] : this.history.slice(0, -1);
+      // Build history with all messages from this round (user message + any previous character responses)
+      let historyToPass = this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history;
       if (turnResponses.length > 0) {
         const previousResponses = '\n\n[Other Characters in this turn:]\n' + turnResponses.map(r => `${r.character}: ${r.response}`).join('\n');
         if (Array.isArray(historyToPass)) {
