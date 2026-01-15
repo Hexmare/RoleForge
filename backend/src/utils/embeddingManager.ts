@@ -4,6 +4,7 @@
  */
 
 import { pipeline, env } from '@xenova/transformers';
+import { ConfigManager } from '../configManager';
 
 // Configure transformers to cache models locally
 env.localModelPath = './vector_models';
@@ -22,6 +23,20 @@ class EmbeddingManager {
 
   private constructor(modelName: string = 'Xenova/all-mpnet-base-v2') {
     this.modelName = modelName;
+  }
+
+  /**
+   * Read default chunk size from vector config if present
+   */
+  static getDefaultChunkSize(): number {
+    try {
+      const cfg = new ConfigManager();
+      const vectorCfg = cfg.getVectorConfig();
+      if (vectorCfg && typeof vectorCfg.chunkSize === 'number') return vectorCfg.chunkSize;
+    } catch (e) {
+      // ignore and fall back to default
+    }
+    return 1000;
   }
 
   static getInstance(modelName?: string): EmbeddingManager {
@@ -164,7 +179,7 @@ class EmbeddingManager {
    * @param chunkSize - Approximate number of characters per chunk (default: 1000)
    * @returns Array of text chunks
    */
-  static chunkText(text: string, chunkSize: number = 1000): string[] {
+  static chunkText(text: string, chunkSize: number = EmbeddingManager.getDefaultChunkSize()): string[] {
     const chunks: string[] = [];
     let currentChunk = '';
 

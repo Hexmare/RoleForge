@@ -120,6 +120,33 @@ export function loadConfig() {
 3. Edit `vectorConfig.json` (change `chunkStrategy` to 'perRound'), restart server, confirm change loads.
 4. Unit test: Add to `__tests__/config.test.ts`: `expect(loadConfig().vector.embeddingProvider).toBe('transformers');`.
 
+### Vector Config Fields (reference)
+
+Location: `backend/config/vectorConfig.json`
+
+Brief: centralizes vectorization settings. The backend loads this file via `ConfigManager.getVectorConfig()`; `getEmbeddingManager()` and `EmbeddingManager` read `embeddingModel` and `chunkSize` respectively.
+
+- `embeddingProvider` (string): Provider to use for embeddings. Examples: `transformers` (default, local Xenova), `openai`, `ollama`.
+- `embeddingModel` (string): Model identifier used by the provider (e.g., `Xenova/all-mpnet-base-v2`). `getEmbeddingManager()` uses this to instantiate the `EmbeddingManager`.
+- `apiKeys` (object): Provider API keys when using remote providers (e.g., `{ "openai": "sk-..." }`). Kept empty for local `transformers`.
+- `chunkStrategy` (string): One of `perMessage` | `perRound` | `perScene`. Controls how text is chunked prior to embedding. Default in examples: `perRound`.
+- `chunkSize` (number): Size used by `EmbeddingManager.chunkText()` (units: characters by default in current impl; treat as configurable chunk unit). `EmbeddingManager.getDefaultChunkSize()` reads this value.
+- `slidingWindowOverlap` (number): Fraction (0-1) for overlap between adjacent chunks when applicable (default 0.2 = 20%).
+- `temporalDecay` (object): Controls decay behavior applied during retrieval.
+  - `enabled` (boolean)
+  - `mode` (string): `time` or `messageCount` (Phase 1 defaults to `time`).
+  - `halfLife` (number): Half-life units (seconds or message count depending on `mode`).
+  - `floor` (number): Minimum decay multiplier (e.g., 0.3).
+- `scoreThreshold` (number): Minimum similarity score to consider a memory relevant for retrieval (0-1).
+- `queryDepth` (number): Default `topK` when querying if not specified in call.
+- `conditionalRules` (array): Rule objects for boosting/filtering retrieval results. Example rule: `{ "field": "metadata.keywords", "match": "silver", "boost": 1.5 }`.
+
+Notes:
+- Path: update `backend/config/vectorConfig.json` and restart the backend to apply changes.
+- `EmbeddingManager`: reads `chunkSize` via `ConfigManager.getVectorConfig()` (used in `getDefaultChunkSize()`); `getEmbeddingManager()` reads `embeddingModel` to choose the model.
+- Backwards compatibility: if `vectorConfig.json` is missing or malformed, `ConfigManager` falls back to sensible defaults and logs a warning.
+
+
 ### Sub-Phase 1.2: Inject Config into Existing Classes
 #### Tasks
 1. Update `EmbeddingManager.ts`, `VectorStoreFactory.ts` (set to Vectra always), and `VectorizationAgent.ts` to accept/use config from global load.
