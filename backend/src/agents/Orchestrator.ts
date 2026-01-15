@@ -967,6 +967,7 @@ export class Orchestrator {
       const newLastMessageNumber = currentMaxMessageNumber?.maxNum || 0;
       SceneService.update(sceneId!, {
         worldState: this.worldState,
+        characterStates: characterStates,
         lastWorldStateMessageNumber: newLastMessageNumber
       });
     }
@@ -977,7 +978,7 @@ export class Orchestrator {
     }
     
     // Emit updated state to frontend
-    this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { state: this.worldState, trackers: this.trackers });
+    this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { state: this.worldState, trackers: this.trackers, characterStates: characterStates });
     
     context.worldState = this.worldState;
 
