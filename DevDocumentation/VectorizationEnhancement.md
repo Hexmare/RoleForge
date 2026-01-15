@@ -27,6 +27,14 @@ The plan is divided into **small phases** for incremental implementation. Each p
 
 Phases are designed to be independent where possible, with small chunks (e.g., 1-3 tasks per sub-phase) for easy testing and rollback. Assume we're working in the `backend/src/agents/vectorization` directory unless specified. Use existing abstractions like `VectorStoreInterface.ts` and `EmbeddingManager.ts`.
 
+## Recent Implementation Notes (Jan 2026)
+
+- Vectra hardening: `VectraVectorStore` now includes robust init/retry logic, post-insert visibility polling (both Vectra `queryItems` and on-disk `index.json`), and fallbacks to avoid transient ENOENT/index.json races on Windows.
+- Deletions: `deleteByMetadata` supports scoped and global deletes with `dryRun`, `confirm` and background job scheduling; deletions are audited to `backend/vector_deletes_audit.jsonl`.
+- Job persistence: `backend/src/jobs/jobStore.ts` now sanitizes malformed `backend/data/jobs.json` at startup (backs up corrupt files with timestamped names and recreates a clean jobs file). Writes are serialized using an in-process write-chain to reduce concurrent-writer corruption.
+- Tests: Added/updated tests exercise job persistence and vectra behaviors; backend test suite passes locally after these changes.
+
+
 ## Clarifications Applied
 
 The following decisions were provided and will be applied to the implementation and examples in this document:

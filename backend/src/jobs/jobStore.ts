@@ -38,12 +38,34 @@ async function ensureJobsFile(): Promise<void> {
 async function loadJobs(): Promise<void> {
   try {
     await ensureJobsFile();
-    const content = await fs.readFile(JOBS_FILE, 'utf-8');
-    const arr = JSON.parse(content || '[]');
-    if (Array.isArray(arr)) {
-      for (const j of arr) {
-        if (j && j.id) jobs.set(j.id, j as Job);
+    let content = await fs.readFile(JOBS_FILE, 'utf-8');
+    // Sanitize: if file appears malformed, back it up and replace with []
+    try {
+      const arr = JSON.parse(content || '[]');
+      if (Array.isArray(arr)) {
+        for (const j of arr) {
+          if (j && j.id) jobs.set(j.id, j as Job);
+        }
+        return;
       }
+      // If parsed value isn't an array, treat as corruption
+      throw new Error('jobs.json content is not an array');
+    } catch (parseErr) {
+      try {
+        const bakPath = JOBS_FILE + '.corrupt.' + Date.now();
+        await fs.writeFile(bakPath, content, 'utf-8');
+        console.warn(`[JOB_STORE] jobs.json was malformed; backed up to ${bakPath} and recreating empty jobs file`);
+      } catch (bakErr) {
+        console.warn('[JOB_STORE] Failed to backup malformed jobs.json:', bakErr instanceof Error ? bakErr.message : String(bakErr));
+      }
+      // Replace with a fresh empty array
+      content = '[]';
+      try {
+        await fs.writeFile(JOBS_FILE, content, 'utf-8');
+      } catch (writeErr) {
+        console.warn('[JOB_STORE] Failed to recreate jobs.json after backup:', writeErr instanceof Error ? writeErr.message : String(writeErr));
+      }
+      return;
     }
   } catch (e) {
     console.warn('[JOB_STORE] Failed to load jobs file:', e instanceof Error ? e.message : String(e));
@@ -51,11 +73,20 @@ async function loadJobs(): Promise<void> {
 }
 
 async function persistJobs(): Promise<void> {
+  // Serialize writes using a promise chain to avoid concurrent writers
   try {
-    const arr = Array.from(jobs.values());
-    const tmp = JOBS_FILE + '.tmp';
-    await fs.writeFile(tmp, JSON.stringify(arr, null, 2), 'utf-8');
-    await fs.rename(tmp, JOBS_FILE);
+    // @ts-ignore - maintained across module scope
+    persistJobs.writeChain = (persistJobs.writeChain || Promise.resolve()).then(async () => {
+      const arr = Array.from(jobs.values());
+      const tmp = JOBS_FILE + '.tmp';
+      await fs.writeFile(tmp, JSON.stringify(arr, null, 2), 'utf-8');
+      await fs.rename(tmp, JOBS_FILE);
+    }).catch((e) => {
+      console.warn('[JOB_STORE] Failed to persist jobs file (async):', e instanceof Error ? e.message : String(e));
+    });
+    // Return the current writeChain so callers can await if desired
+    // @ts-ignore
+    return persistJobs.writeChain as Promise<void>;
   } catch (e) {
     console.warn('[JOB_STORE] Failed to persist jobs file:', e instanceof Error ? e.message : String(e));
   }
