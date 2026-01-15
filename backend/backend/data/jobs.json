@@ -167,5 +167,18 @@
     "result": {
       "ok": true
     }
+  },
+  {
+    "id": "unit-test-job-1768518075134-pdzg7u",
+    "type": "unit-test-job",
+    "createdAt": 1768518075134,
+    "updatedAt": 1768518075134,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true
+    }
   }
 ]
