@@ -1,5 +1,6 @@
 # Feature Improvement: Enhance Vectorization in RoleForge to Match VectHare
-
+*** CRITICAL INSTRUCTION***
+ - NEVER ASK TO COMMIT OR GENERATE PULL REQUESTS EVER UNDER ANY CIRCUMSTANCES
 ## Overview
 
 This document outlines a phased approach to updating the vectorization implementation in RoleForge (https://github.com/Hexmare/RoleForge) to align with the feature set of VectHare (https://github.com/Coneja-Chibi/VectHare). The goal is to add flexibility, advanced RAG capabilities, and integration while maintaining RoleForge's local LLM focus (NodeJS backend, OpenAI-compatible like Kobold).
@@ -33,6 +34,16 @@ Phases are designed to be independent where possible, with small chunks (e.g., 1
 - Deletions: `deleteByMetadata` supports scoped and global deletes with `dryRun`, `confirm` and background job scheduling; deletions are audited to `backend/vector_deletes_audit.jsonl`.
 - Job persistence: `backend/src/jobs/jobStore.ts` now sanitizes malformed `backend/data/jobs.json` at startup (backs up corrupt files with timestamped names and recreates a clean jobs file). Writes are serialized using an in-process write-chain to reduce concurrent-writer corruption.
 - Tests: Added/updated tests exercise job persistence and vectra behaviors; backend test suite passes locally after these changes.
+
+### Completed (Jan 15, 2026)
+
+ - [x] Converted integration mock embedding test to use async server start/stop and set `process.env.OPENAI_API_KEY = 'test'` so the OpenAI SDK initializes in test runs.
+ - [x] Mocked the `openai` SDK in tests to proxy to the local mock server and imported `EmbeddingManager` after the mock server starts to ensure correct baseURL wiring.
+ - [x] Added `EmbeddingManager.resetInstances()` usage in vector-related tests to avoid singleton leakage between tests.
+ - [x] Made `EmbeddingManager` more tolerant of multiple OpenAI response shapes (handles arrays and nested `data` results).
+ - [x] Fixed job persistence logic to back up malformed `backend/data/jobs.json` and added polling/waits in tests to avoid ENOENT races.
+ - [x] Cleaned up leftover corrupt job artifact files under `backend/backend/data`.
+ - [x] Re-ran the backend test suite locally; all backend tests pass (149 tests) as of Jan 15, 2026.
 
 
 ## Clarifications Applied
@@ -223,8 +234,8 @@ async embedText(text: string): Promise<number[]> {
 
 #### Testing Instructions
 1. Set config `embeddingProvider: 'openai'`, add fake `apiKeys: { openai: 'sk-fake' }`, `baseURL: 'http://localhost:5000/v1'` (for Kobold mock).
-2. Mock server (use Postman or separate script) to return dummy embedding [0.1, 0.2].
-3. Call `embedText('test')` in a test script, verify returns array.
+2. [x] Mock server (use Postman or separate script) to return dummy embedding [0.1, 0.2].
+3. [x] Call `embedText('test')` in a test script, verify returns array.
 4. Unit test: `expect(await manager.embedText('hello')).toBeInstanceOf(Array);`.
 
 ### Sub-Phase 2.2: Add Ollama Provider

@@ -2,6 +2,9 @@
 
 **Last Updated:** January 14, 2026
 
+**CRITICAL DIRECTION**: 
+  - DO NOT EVER ASK TO COMMIT OR GENERATE Pull requests FOR ANYHTING IN THIS PROJECT. THE USER WILL HANDLE ALL OF THAT THEMSELVES.
+
 > **For detailed implementation status, architecture, and feature documentation, see** `DevDocumentation/IMPLEMENTATION_STATUS.md`
 
 ---
