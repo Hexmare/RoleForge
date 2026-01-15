@@ -82,7 +82,9 @@ class EmbeddingManager {
         console.log(`[EMBEDDING] Initialized transformers ${this.modelName}`);
       } else if (this.provider === 'openai') {
         const apiKey = cfg?.apiKeys?.openai || process.env.OPENAI_API_KEY;
-        this.openaiClient = new OpenAI({ apiKey });
+        // Allow specifying baseURL in vector config for enterprise or proxy setups
+        const baseURL = cfg?.apiKeys?.openaiBaseUrl || cfg?.openaiBaseUrl || undefined;
+        this.openaiClient = new OpenAI({ apiKey, baseURL });
         console.log('[EMBEDDING] OpenAI client initialized');
       } else if (this.provider === 'ollama') {
         this.ollamaBaseUrl = cfg?.ollamaBaseUrl || 'http://localhost:11434';
@@ -148,7 +150,10 @@ class EmbeddingManager {
       if (this.provider === 'openai') {
         if (!this.openaiClient) throw new Error('OpenAI client not initialized');
         const inputs = Array.isArray(text) ? text : [text];
-        const resp = await this.openaiClient.embeddings.create({ model: this.modelName, input: inputs });
+        // Use retry wrapper for transient network errors / rate limits
+        const resp: any = await this.requestWithRetry(async () => {
+          return await this.openaiClient!.embeddings.create({ model: this.modelName, input: inputs });
+        });
         const data = (resp as any).data || [];
         const vectors: number[][] = data.map((d: any) => d.embedding.map((n: any) => Number(n)));
         // normalize
@@ -165,8 +170,10 @@ class EmbeddingManager {
         const cfg = new ConfigManager().getVectorConfig() || {};
         const base = this.ollamaBaseUrl || cfg?.ollamaBaseUrl || 'http://localhost:11434';
         const inputs = Array.isArray(text) ? text : [text];
-        // Attempt to call Ollama embeddings endpoint
-        const resp = await axios.post(`${base}/embeddings`, { model: this.modelName, input: inputs }, { timeout: 10000 });
+        // Attempt to call Ollama embeddings endpoint with retries
+        const resp = await this.requestWithRetry(async () => {
+          return await axios.post(`${base}/embeddings`, { model: this.modelName, input: inputs }, { timeout: 10000 });
+        });
         const data = resp.data?.data || resp.data?.embedding || [];
         const vectors: number[][] = Array.isArray(data[0]) ? data : [data];
         // normalize
@@ -184,6 +191,27 @@ class EmbeddingManager {
       console.error('[EMBEDDING] Error generating embeddings:', error);
       throw new Error(`Embedding generation failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /** Simple retry wrapper with exponential backoff for transient errors */
+  private async requestWithRetry<T>(fn: () => Promise<T>, maxAttempts = 4, baseDelay = 200): Promise<T> {
+    let attempt = 0;
+    let lastErr: any = null;
+    while (attempt < maxAttempts) {
+      try {
+        return await fn();
+      } catch (e: any) {
+        lastErr = e;
+        const isRetryable = !e || (e.code && ['ECONNRESET', 'ECONNABORTED', 'ETIMEDOUT', 'EAI_AGAIN'].includes(e.code))
+          || (e.response && [429, 500, 502, 503, 504].includes(e.response.status));
+        attempt++;
+        if (!isRetryable || attempt >= maxAttempts) break;
+        const delay = baseDelay * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 100);
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+    throw lastErr || new Error('requestWithRetry failed');
   }
 
   /**
