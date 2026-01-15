@@ -236,7 +236,17 @@ export class MemoryRetriever {
 
     for (const memory of memories) {
       const confidence = Math.round((memory.similarity || 0) * 100);
-      formatted += `- [${confidence}%] ${memory.text}\n`;
+      // Extract just the message content, stripping metadata prefix like "Round N (chars): "
+      let messageContent = memory.text;
+      const colonIndex = messageContent.indexOf(': ');
+      if (colonIndex !== -1) {
+        // Find the last ": " to get past all the prefixes, then extract the actual message
+        const parts = messageContent.split(': ');
+        if (parts.length > 1) {
+          messageContent = parts.slice(1).join(': ');
+        }
+      }
+      formatted += `- [${confidence}%] ${messageContent}\n`;
     }
 
     return formatted;

@@ -36,10 +36,6 @@ Kinks: {{ character.kinks }}
 {% if character.backstory %}Backstory: {{ character.backstory }}{% endif %}
 {% if character.scenario %}Scenario: {{ character.scenario }}{% endif %}
 
-{% if vectorMemories %}
-{{ vectorMemories }}
-{% endif %}
-
 The user is {{ userPersona.name }}, a {{ userPersona.species }} {{ userPersona.race }} {{ userPersona.gender }}.
 {{ userPersona.description }}
 User Personality: {{ userPersona.personality }}
@@ -59,7 +55,10 @@ IMPORTANT RULES FOR ROLEPLAY:
 - **IMPORTANT**: If other characters have already responded in this same turn, read and acknowledge their responses. React naturally to what they said or did, but DO NOT repeat what they said.
 
 {% if formattedLore %}{{ formattedLore }}{% endif %}
-
+{% if vectorMemories %}
+[Relevant memories (higher percentage means more relevant to the current situation): Use these as background knowledge to inform your actions, thoughts, and dialogue naturally, without directly referencing them unless asked about past events. If the user asks about a specific memory or past event, recall and describe it accurately based on these details.
+ : {{ vectorMemories }}]
+{% endif %}
 {% for msg in history %}{{ msg }}{% endfor %}
 
 NOW respond **ONLY** with the single-line JSON object shown in the example format above.

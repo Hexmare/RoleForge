@@ -2546,7 +2546,7 @@ io.on('connection', (socket) => {
       // Log user message if scene provided
       if (sceneId && !input.startsWith('/')) {
         try { 
-          MessageService.logMessage(sceneId, `user:${persona}`, input, activeCharacters || [], {}, 'user', currentRound); 
+          MessageService.logMessage(sceneId, persona, input, activeCharacters || [], {}, 'user', currentRound); 
         } catch (e) { console.warn('Failed to log user message', e); }
       }
 
