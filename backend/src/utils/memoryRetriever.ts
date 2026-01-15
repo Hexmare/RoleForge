@@ -16,6 +16,7 @@ export interface RetrievedMemory {
 export interface MemoryRetrievalOptions {
   worldId: number;
   characterName?: string;
+  characterId?: string;
   topK?: number;
   minSimilarity?: number;
   includeMultiCharacter?: boolean;
@@ -62,9 +63,10 @@ export class MemoryRetriever {
       const minSimilarity = options.minSimilarity ?? 0.3;
       const memories: RetrievedMemory[] = [];
 
-      // If specific worldId and characterName provided, query just that scope
-      if (options.worldId && options.characterName) {
-        const scope = `world_${options.worldId}_char_${options.characterName}`;
+      // If specific worldId and character (ID or name) provided, query just that scope
+      const charId = options.characterId || options.characterName;
+      if (options.worldId && charId) {
+        const scope = `world_${options.worldId}_char_${charId}`;
         try {
           const results = await this.vectorStore.query(query, scope, topK, minSimilarity);
           
@@ -72,12 +74,12 @@ export class MemoryRetriever {
             memories.push({
               text: entry.text,
               similarity: entry.similarity || 0,
-              characterName: options.characterName,
+              characterName: options.characterName || options.characterId || 'unknown',
               scope,
             });
           }
 
-          console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} memories for ${options.characterName} in world ${options.worldId}`);
+          console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} memories for character ${charId} in world ${options.worldId}`);
         } catch (error) {
           console.warn(`[MEMORY_RETRIEVER] Query failed for character ${options.characterName}:`, error);
         }

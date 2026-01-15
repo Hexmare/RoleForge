@@ -1027,16 +1027,15 @@ export class Orchestrator {
       };
 
       // Query memories for character (Phase 3)
-      if (sceneId && this.worldState?.id) {
+      if (sceneId && this.worldState?.id && characterData?.id) {
         try {
           const retriever = getMemoryRetriever();
           await retriever.initialize();
           const memories = await retriever.queryMemories(userInput + ' ' + this.history.join(' ').substring(0, 500), {
             worldId: this.worldState.id,
-            characterName: charName,
+            characterId: characterData.id,
             topK: 5,
             minSimilarity: 0.3,
-            includeMultiCharacter: false,
           });
           if (memories.length > 0) {
             characterContext.vectorMemories = retriever.formatMemoriesForPrompt(memories);
