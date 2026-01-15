@@ -434,8 +434,8 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
       return res.json({ regenerated: [], message: 'No messages to regenerate in current round.' });
     }
     
-    // Find the user message in the current round (if any)
-    const userMessageInRound = currentRoundMessages.find((m: any) => m.sender && String(m.sender).toLowerCase().startsWith('user'));
+    // Find the user message in the current round (if any) - check source column instead of sender format
+    const userMessageInRound = currentRoundMessages.find((m: any) => m.source === 'user');
     
     let triggerMessage: string;
     let persona: string;
@@ -443,7 +443,7 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
     if (userMessageInRound) {
       // Normal round: regenerate based on user message
       triggerMessage = userMessageInRound.message;
-      persona = userMessageInRound.sender.includes(':') ? userMessageInRound.sender.split(':').pop() : 'default';
+      persona = userMessageInRound.sender; // sender now contains just the persona name (e.g., 'hex')
     } else {
       // AI-only round (continue round): regenerate based on previous round's character messages
       const previousRound = roundToRegenerate - 1;
@@ -454,7 +454,7 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
       const previousRoundMessages = MessageService.getRoundMessages(sceneIdNum, previousRound);
       // Get only character messages (not user) from previous round
       const characterMessagesFromLastRound = previousRoundMessages
-        .filter((msg: any) => msg.sender && !String(msg.sender).toLowerCase().startsWith('user'))
+        .filter((msg: any) => msg.source !== 'user')
         .map((msg: any) => `${msg.sender}: ${msg.message}`)
         .join('\n\n');
       
@@ -490,8 +490,8 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
     // Restore previous round state
     (orchestrator as any).currentRoundNumber = previousOrchRound;
     
-    // Delete all AI messages from current round
-    const aiMessagesInRound = currentRoundMessages.filter((m: any) => !m.sender || !String(m.sender).toLowerCase().startsWith('user'));
+    // Delete all AI messages from current round (keep user messages)
+    const aiMessagesInRound = currentRoundMessages.filter((m: any) => m.source !== 'user');
     for (const msg of aiMessagesInRound) {
       MessageService.deleteMessage(msg.id);
     }
@@ -517,7 +517,7 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
         r.content,
         [],
         {},
-        r.sender === 'Narrator' ? 'narrator' : (r.sender && String(r.sender).toLowerCase().startsWith('user') ? 'user' : 'character'),
+        r.sender === 'Narrator' ? 'narrator' : 'character',
         roundToRegenerate // Ensure messages are logged to the round being regenerated
       );
       // Update messageNumber to keep sequence
@@ -888,11 +888,52 @@ app.post('/api/messages/:id/image', async (req, res) => {
   }
 });
 
-// Delete a message and reorder subsequent messages
-app.delete('/api/messages/:id', (req, res) => {
+// Delete a message and reorder subsequent messages, then revectorize the round
+app.delete('/api/messages/:id', async (req, res) => {
   const { id } = req.params;
   try {
+    // Get message info before deleting (need roundNumber for revectorization)
+    const messageRow = db.prepare('SELECT sceneId, roundNumber FROM Messages WHERE id = ?').get(Number(id)) as any;
+    
     const result = MessageService.deleteMessage(Number(id));
+    
+    // Revectorize the round if message belonged to a round
+    if (messageRow && messageRow.sceneId && messageRow.roundNumber) {
+      try {
+        const remainingMessages = MessageService.getRoundMessages(messageRow.sceneId, messageRow.roundNumber);
+        if (remainingMessages.length > 0) {
+          const vectorizationAgent = orchestrator.getAgents().get('vectorization');
+          if (vectorizationAgent) {
+            const sessionContext = await orchestrator.buildSessionContext(messageRow.sceneId);
+            const activeCharacters = sessionContext?.activeCharacters?.map((c: any) => c.id || c.name) || [];
+            
+            const vectorContext: any = {
+              sceneId: messageRow.sceneId,
+              roundNumber: messageRow.roundNumber,
+              messages: remainingMessages,
+              activeCharacters: activeCharacters,
+              userInput: '',
+              history: [],
+              worldState: sessionContext?.world || {},
+              trackers: {},
+              characterStates: sessionContext?.scene?.characterStates || {},
+              lore: [],
+              formattedLore: '',
+              userPersona: {}
+            };
+            
+            await vectorizationAgent.run(vectorContext).catch((err: any) => {
+              console.warn(`[DELETE] VectorizationAgent failed for round ${messageRow.roundNumber}:`, err);
+            });
+            console.log(`[DELETE] Re-vectorized round ${messageRow.roundNumber} after message deletion`);
+          }
+        }
+      } catch (e) {
+        console.warn('[DELETE] Failed to re-vectorize round:', e);
+        // Non-blocking - don't fail the delete if vectorization fails
+      }
+    }
+    
     return res.json(result);
   } catch (e) {
     console.error('Failed to delete message', e);
@@ -2837,7 +2878,7 @@ if (process.env.NODE_ENV !== 'test') {
 // Debug endpoint for vector store queries
 app.post('/api/debug/vector-query', async (req, res) => {
   try {
-    const { query, worldId, characterName, includeMultiCharacter } = req.body;
+    const { query, worldId, characterId, characterName, includeMultiCharacter } = req.body;
 
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
       return res.status(400).json({ error: 'Query is required and must be non-empty' });
@@ -2848,9 +2889,10 @@ app.post('/api/debug/vector-query', async (req, res) => {
     const retriever = getMemoryRetriever();
     await retriever.initialize();
 
-    // Query memories
+    // Query memories - pass both characterId and characterName
     const memories = await retriever.queryMemories(query, {
       worldId: worldId || undefined,
+      characterId: characterId || undefined,
       characterName: characterName || undefined,
       topK: 20,
       minSimilarity: 0.1,
@@ -2886,6 +2928,32 @@ app.post('/api/debug/revectorize-scene', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('[DEBUG] Scene revectorization failed:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      details: error instanceof Error ? error.stack : undefined
+    });
+  }
+});
+
+// List all available scopes in vector store
+app.get('/api/debug/vector-scopes', async (req, res) => {
+  try {
+    const { VectorStoreFactory } = await import('./utils/vectorStoreFactory.js');
+    const vectorStore = VectorStoreFactory.getVectorStore() || VectorStoreFactory.createVectorStore('vectra');
+    
+    if (!vectorStore) {
+      return res.json({ scopes: [], message: 'Vector store not available' });
+    }
+
+    // Use getStats to get all scopes
+    const stats = await (vectorStore as any).getStats();
+    res.json({ 
+      scopes: stats.scopes || [], 
+      totalScopes: stats.totalScopes || 0,
+      scopeNames: (stats.scopes || []).map((s: any) => s.scope)
+    });
+  } catch (error) {
+    console.error('[DEBUG] Failed to get vector scopes:', error);
     res.status(500).json({ 
       error: error instanceof Error ? error.message : 'Unknown error',
       details: error instanceof Error ? error.stack : undefined

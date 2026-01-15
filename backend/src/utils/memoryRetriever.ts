@@ -66,14 +66,20 @@ export class MemoryRetriever {
 
       // If specific worldId and character (ID or name) provided, query just that scope
       const charId = options.characterId || options.characterName;
-      console.log(`[MEMORY_RETRIEVER] queryMemories called with charId: ${charId}, worldId: ${options.worldId}`);
+      console.log(`[MEMORY_RETRIEVER] queryMemories called with:`, { 
+        charId, 
+        worldId: options.worldId, 
+        characterId: options.characterId,
+        characterName: options.characterName,
+        conditionCheck: options.worldId && charId
+      });
       
       if (options.worldId && charId) {
         const scope = `world_${options.worldId}_char_${charId}`;
-        console.log(`[MEMORY_RETRIEVER] Querying scope: ${scope}, query length: ${query.length}, topK: ${topK}, minSimilarity: ${minSimilarity}`);
+        console.log(`[MEMORY_RETRIEVER] Querying specific scope: ${scope}, query length: ${query.length}, topK: ${topK}, minSimilarity: ${minSimilarity}`);
         try {
           const results = await this.vectorStore.query(query, scope, topK, minSimilarity);
-          console.log(`[MEMORY_RETRIEVER] Query returned ${results.length} results`);
+          console.log(`[MEMORY_RETRIEVER] Query returned ${results.length} results for scope ${scope}`);
           
           for (const entry of results) {
             memories.push({
@@ -86,12 +92,9 @@ export class MemoryRetriever {
 
           console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} memories for character ${charId} in world ${options.worldId}`);
         } catch (error) {
-          console.warn(`[MEMORY_RETRIEVER] Query failed for character ${options.characterName}:`, error);
+          console.warn(`[MEMORY_RETRIEVER] Query failed for scope ${scope}:`, error);
         }
-      } else if (options.worldId && !options.characterName) {
-        // Query all character scopes for this world by trying common character names/IDs
-        // Note: This is a fallback since getAllScopes() doesn't exist yet
-        console.log(`[MEMORY_RETRIEVER] Querying all characters in world ${options.worldId}`);
+      } else if (options.worldId && !charId) {
         
         // Get all characters from database
         try {

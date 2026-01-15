@@ -100,14 +100,30 @@ const DebugVectorPanel: React.FC<DebugVectorPanelProps> = () => {
 
     setError('');
     setIsLoading(true);
-    console.log('[DEBUG] Starting query:', { query, selectedWorld, selectedCharacter });
+    console.log('[DEBUG] Starting query:', { query, selectedWorld, selectedCharacter, charactersCount: characters.length });
 
     try {
+      // Look up character info from selected character ID
+      let characterId: string | null = null;
+      let characterName: string | null = null;
+      if (selectedCharacter !== 'all' && selectedCharacter) {
+        console.log('[DEBUG] Looking for character:', { selectedCharacter, availableCharacters: characters.map(c => ({ id: c.id, name: c.name })) });
+        const selectedChar = characters.find(c => String(c.id) === String(selectedCharacter));
+        characterId = selectedChar?.id || null;
+        characterName = selectedChar?.name || null;
+        console.log('[DEBUG] Character lookup result:', { selectedCharacter, foundChar: selectedChar?.name, characterId, characterName });
+        if (!characterId || !characterName) {
+          setError(`Character with ID ${selectedCharacter} not found in list`);
+          setIsLoading(false);
+          return;
+        }
+      }
+
       const payload = {
         query: query.trim(),
         worldId: selectedWorld === 'all' || !selectedWorld ? null : parseInt(selectedWorld),
-        characterId: selectedCharacter === 'all' ? null : selectedCharacter,
-        characterName: null,
+        characterId: characterId,
+        characterName: characterName,
         includeMultiCharacter: false,
       };
       console.log('[DEBUG] Payload:', payload);
