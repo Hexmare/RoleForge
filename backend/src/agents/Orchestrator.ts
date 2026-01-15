@@ -1264,6 +1264,28 @@ export class Orchestrator {
         let visualLastError: any = null;
         while (visualRetries < 3) {
           const visualResponse = await visualAgent.run(visualContext);
+
+          // If VisualAgent returned a markdown image tag like: ![{...}](url)
+          // treat it as a valid response: extract inner JSON if present
+          // and set `visualParsed.content` so the orchestrator can return it.
+          try {
+            const mdMatch = String(visualResponse).match(/!\[([\s\S]*?)\]\((.*?)\)/);
+            if (mdMatch) {
+              const inner = mdMatch[1];
+              try {
+                const parsedInner = JSON.parse(inner);
+                visualParsed = parsedInner;
+                if (!visualParsed.content) visualParsed.content = String(visualResponse);
+              } catch (e) {
+                // Not JSON inside brackets — return the raw markdown as content
+                visualParsed = { content: String(visualResponse) } as any;
+              }
+              break;
+            }
+          } catch (e) {
+            // ignore and continue to existing JSON-parsing logic
+            visualLastError = e;
+          }
           try {
             visualParsed = JSON.parse(visualResponse);
             break;

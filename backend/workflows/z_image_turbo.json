@@ -1,40 +1,4 @@
 {
-  "58": {
-    "inputs": {
-      "value": "%prompt%"
-    },
-    "class_type": "PrimitiveStringMultiline",
-    "_meta": {
-      "title": "Prompt"
-    }
-  },
-  "60": {
-    "inputs": {
-      "filename_prefix": "z-image",
-      "images": [
-        "65",
-        0
-      ]
-    },
-    "class_type": "SaveImage",
-    "_meta": {
-      "title": "Save Image"
-    }
-  },
-  "61": {
-    "inputs": {
-      "string_a": "",
-      "string_b": [
-        "58",
-        0
-      ],
-      "delimiter": ""
-    },
-    "class_type": "StringConcatenate",
-    "_meta": {
-      "title": "Concatenate"
-    }
-  },
   "62": {
     "inputs": {
       "clip_name": "qwen_3_4b.safetensors",
@@ -85,10 +49,7 @@
   },
   "66": {
     "inputs": {
-      "text": [
-        "61",
-        0
-      ],
+      "text": "%prompt%",
       "clip": [
         "62",
         0
@@ -99,27 +60,16 @@
       "title": "CLIP Text Encode (Prompt)"
     }
   },
-  "67": {
-    "inputs": {
-      "width": "%width%",
-      "height": "%height%",
-      "batch_size": 1
-    },
-    "class_type": "EmptySD3LatentImage",
-    "_meta": {
-      "title": "EmptySD3LatentImage"
-    }
-  },
   "68": {
     "inputs": {
       "seed": "%seed%",
-      "steps": 4,
-      "cfg": 1,
-      "sampler_name": "dpmpp_sde_gpu",
-      "scheduler": "simple",
+      "steps": "%steps%",
+      "cfg": "%scale%",
+      "sampler_name": "%sampler%",
+      "scheduler": "%scheduler%",
       "denoise": 1,
       "model": [
-        "71",
+        "72",
         0
       ],
       "positive": [
@@ -131,7 +81,7 @@
         0
       ],
       "latent_image": [
-        "67",
+        "74",
         0
       ]
     },
@@ -150,19 +100,6 @@
       "title": "Load Diffusion Model"
     }
   },
-  "71": {
-    "inputs": {
-      "shift": 3,
-      "model": [
-        "72",
-        0
-      ]
-    },
-    "class_type": "ModelSamplingAuraFlow",
-    "_meta": {
-      "title": "ModelSamplingAuraFlow"
-    }
-  },
   "72": {
     "inputs": {
       "lora_name": "Mystic-XXX-ZIT-V5.safetensors",
@@ -175,6 +112,30 @@
     "class_type": "LoraLoaderModelOnly",
     "_meta": {
       "title": "LoraLoaderModelOnly"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "SillyTavern",
+      "images": [
+        "65",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "74": {
+    "inputs": {
+      "width": "%width%",
+      "height": "%height%",
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
     }
   }
 }

@@ -11,17 +11,17 @@
     "workflow": "z_image_turbo.json",
     "model": "pornCraftByStableYogi_v30FP16.safetensors",
     "vae": "qwen_image_vae.safetensors",
-    "sampler": "euler",
+    "sampler": "dpmpp_sde_gpu",
     "scheduler": "simple",
-    "steps": 20,
+    "steps": 4,
     "height": 720,
     "width": 1280,
     "clip_skip": 1,
     "denoise": 7,
-    "cfg_scale": 7,
+    "cfg_scale": 1,
     "seed": -1,
-    "negative_prompt": "<SmoothNoob_Negative>, <SmoothNegative_Hand>, lowres, bad anatomy, bad hands, text, error, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, x-ray, xray, internal, loli, censored, Blurry, soft focus, overly stylized, unrealistic proportions, clean background",
-    "positive_prompt": "<SmoothNoob_Quality>,best quality, absurdres, masterpiece, precise anatomy details , dynamic tension, visceral textures, hyper-detailed, ultra-realistic,<lora:QwenSnofs13h:1>"
+    "negative_prompt": "",
+    "positive_prompt": "best quality, absurdres, masterpiece, precise anatomy details , dynamic tension, visceral textures, hyper-detailed, ultra-realistic,<lora:QwenSnofs13h:1>"
   },
   "profiles": {
     "openai": {

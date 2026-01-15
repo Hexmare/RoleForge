@@ -34,6 +34,7 @@ export class VisualAgent extends BaseAgent {
       const prompt = promptRaw;
       try {
         const imageUrl = await this.generateImage(prompt);
+        console.log('Generated Image prompt:', imageUrl);
         const meta = { prompt, urls: [imageUrl], current: 0 };
         return `![${JSON.stringify(meta)}](${imageUrl})`;
       } catch (error) {
