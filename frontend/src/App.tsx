@@ -13,6 +13,7 @@ import ConfirmModal from './components/ConfirmModal';
 import Chat from './components/Chat';
 import TopBar from './components/TopBar';
 import Panel from './components/Panel';
+import DebugVectorPanel from './components/DebugVectorPanel';
 import { WorldStatus } from './components/WorldStatus';
 import PersonaComponent from './components/PersonaComponent';
 import ActiveCharacterComponent from './components/ActiveCharacterComponent';
@@ -67,7 +68,7 @@ function App() {
   const [regenErrors, setRegenErrors] = useState<Record<number, string>>({});
   const [imageModalUrl, setImageModalUrl] = useState<string | null>(null);
   const [imageModalPrompt, setImageModalPrompt] = useState<string | null>(null);
-  const [currentTab, setCurrentTab] = useState<'chat'|'characters'|'lore'|'personas'|'comfyui'|'worlds'|'llm'>('chat');
+  const [currentTab, setCurrentTab] = useState<'chat'|'characters'|'lore'|'personas'|'comfyui'|'worlds'|'llm'|'debug'>('chat');
   const [modalType, setModalType] = useState<string | null>(null);
   const [modalInitial, setModalInitial] = useState<any>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
@@ -1122,6 +1123,10 @@ function App() {
             setCurrentTab('worlds');
             setModalType(null);
           }}
+          onDebugClick={() => {
+            setCurrentTab('debug');
+            setModalType(null);
+          }}
           leftOpen={leftPanelOpen}
           rightOpen={rightPanelOpen}
           title={sessionContext?.scene?.title || 'RoleForge'}
@@ -1175,6 +1180,7 @@ function App() {
             {currentTab === 'comfyui' && <ComfyConfigModal visible={true} onClose={() => setCurrentTab('chat')} isModal={false} />}
             {currentTab === 'config' && <ConfigModal onClose={() => setCurrentTab('chat')} />}
             {currentTab === 'worlds' && <WorldManager onRefresh={fetchWorlds} onSelectScene={handleSceneChange} selectedScene={selectedScene} />}
+            {currentTab === 'debug' && <DebugVectorPanel />}
             </div>
           </main>
 

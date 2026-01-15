@@ -10,6 +10,7 @@ interface TopBarProps {
   onLoreClick?: () => void;
   onImageClick?: () => void;
   onWorldClick?: () => void;
+  onDebugClick?: () => void;
   leftOpen: boolean;
   rightOpen: boolean;
   title?: string;
@@ -26,6 +27,7 @@ const TopBar: React.FC<TopBarProps> = ({
   onLoreClick,
   onImageClick,
   onWorldClick,
+  onDebugClick,
   leftOpen, 
   rightOpen, 
   title = 'RoleForge', 
@@ -104,6 +106,16 @@ const TopBar: React.FC<TopBarProps> = ({
             aria-label="Switch to worlds view"
           >
             🌍
+          </button>
+        )}
+        {onDebugClick && (
+          <button 
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-panel-tertiary transition-colors text-text-primary" 
+            onClick={onDebugClick}
+            aria-label="Debug vector store"
+            title="Vector Store Debug"
+          >
+            🔍
           </button>
         )}
       </div>

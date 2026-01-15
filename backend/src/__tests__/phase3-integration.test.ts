@@ -10,9 +10,16 @@ import * as nunjucks from 'nunjucks';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import fs from 'fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+const TEST_VECTOR_BASE_PATH = './vector_data';
+const TEST_WORLD_ID = 9999999;
+const TEST_CAMPAIGN_ID = 9999999;
+const TEST_ARC_ID = 9999999;
+const TEST_SCENE_ID = 9999999;
 
 describe('Phase 3 - Memory Query & Injection Integration', () => {
   let retriever: MemoryRetriever;
@@ -36,6 +43,23 @@ describe('Phase 3 - Memory Query & Injection Integration', () => {
   });
 
   afterEach(async () => {
+    // Clean up test vector data folders
+    try {
+      const basePath = path.join(TEST_VECTOR_BASE_PATH);
+      const files = await fs.readdir(basePath);
+      
+      // Delete all test world folders (world_9999999_*)
+      for (const file of files) {
+        if (file.startsWith(`world_${TEST_WORLD_ID}_`)) {
+          await fs.rm(path.join(basePath, file), { recursive: true, force: true });
+          console.log(`[TEST] Cleaned up vector folder: ${file}`);
+        }
+      }
+    } catch (error) {
+      // Vector data directory may not exist yet, that's fine
+      console.log('[TEST] No vector data to clean up');
+    }
+    
     // Cleanup
     VectorStoreFactory.clearCache();
   });
@@ -45,7 +69,7 @@ describe('Phase 3 - Memory Query & Injection Integration', () => {
       // Add sample memory with unique ID
       const vectorStore = VectorStoreFactory.createVectorStore('vectra');
       const characterName = `TestChar_${testCounter}`;
-      const scope = `world_1_char_${characterName}`;
+      const scope = `world_${TEST_WORLD_ID}_char_${characterName}`;
       const memId = `mem_${testCounter}_${Date.now()}`;
       
       // Test: Memory addition succeeds
@@ -60,7 +84,7 @@ describe('Phase 3 - Memory Query & Injection Integration', () => {
       const memories = await retriever.queryMemories(
         'mysterious encounter forest',
         {
-          worldId: 1,
+          worldId: TEST_WORLD_ID,
           characterName,
           topK: 5,
           minSimilarity: 0.3,
@@ -92,8 +116,8 @@ describe('Phase 3 - Memory Query & Injection Integration', () => {
       const ts = Date.now();
       
       // Add memories for two characters with unique IDs
-      const char1Scope = `world_1_char_Alice_${testCounter}_${ts}`;
-      const char2Scope = `world_1_char_Bob_${testCounter}_${ts}`;
+      const char1Scope = `world_${TEST_WORLD_ID}_char_Alice_${testCounter}_${ts}`;
+      const char2Scope = `world_${TEST_WORLD_ID}_char_Bob_${testCounter}_${ts}`;
       const aliceName = `Alice_${testCounter}_${ts}`;
       const bobName = `Bob_${testCounter}_${ts}`;
       
@@ -104,7 +128,7 @@ describe('Phase 3 - Memory Query & Injection Integration', () => {
       const aliceMemories = await retriever.queryMemories(
         'dragon sky',
         {
-          worldId: 1,
+          worldId: TEST_WORLD_ID,
           characterName: aliceName,
           topK: 3,
         }
@@ -114,7 +138,7 @@ describe('Phase 3 - Memory Query & Injection Integration', () => {
       const bobMemories = await retriever.queryMemories(
         'night sounds',
         {
-          worldId: 1,
+          worldId: TEST_WORLD_ID,
           characterName: bobName,
           topK: 3,
         }
@@ -156,7 +180,7 @@ describe('Phase 3 - Memory Query & Injection Integration', () => {
   describe('Template Injection', () => {
     it('should inject memories into character template', async () => {
       const mockMemories = [
-        { text: 'Previously met the user at the tavern', similarity: 0.92, characterName: 'Bard', scope: 'world_1_char_Bard' },
+        { text: 'Previously met the user at the tavern', similarity: 0.92, characterName: 'Bard', scope: `world_${TEST_WORLD_ID}_char_Bard` },
       ];
 
       const context = {
@@ -217,7 +241,7 @@ describe('Phase 3 - Memory Query & Injection Integration', () => {
 
     it('should inject memories into narrator template', async () => {
       const mockMemories = [
-        { text: 'The tavern was bustling with activity', similarity: 0.88, characterName: 'shared', scope: 'world_1_multi' },
+        { text: 'The tavern was bustling with activity', similarity: 0.88, characterName: 'shared', scope: `world_${TEST_WORLD_ID}_multi` },
       ];
 
       const context = {
@@ -403,7 +427,7 @@ describe('Phase 3 - Memory Query & Injection Integration', () => {
     it('should execute complete flow: query → format → inject → render', async () => {
       const vectorStore = VectorStoreFactory.createVectorStore('vectra');
       const ts = Date.now();
-      const worldId = testCounter;
+      const worldId = TEST_WORLD_ID;
       const characterName = `Hero_${testCounter}_${ts}`;
       const scope = `world_${worldId}_char_${characterName}`;
 

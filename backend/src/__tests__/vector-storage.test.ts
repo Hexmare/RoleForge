@@ -12,30 +12,35 @@ import fs from 'fs/promises';
 import path from 'path';
 
 // Test configuration
-const TEST_BASE_PATH = './test_vector_data';
-const TEST_SCOPE = 'world_1_char_42';
-const TEST_SCOPE_2 = 'world_1_char_43';
+const TEST_VECTOR_BASE_PATH = './vector_data';
+const TEST_WORLD_ID = 9999999;
+const TEST_SCOPE = `world_${TEST_WORLD_ID}_char_test42`;
+const TEST_SCOPE_2 = `world_${TEST_WORLD_ID}_char_test43`;
 
 describe('Vector Storage - Phase 1', () => {
   let vectorStore: VectraVectorStore;
 
   beforeEach(async () => {
-    // Clean up test directory before each test
-    try {
-      await fs.rm(TEST_BASE_PATH, { recursive: true, force: true });
-    } catch {
-      // Directory doesn't exist yet
-    }
-
-    vectorStore = new VectraVectorStore(TEST_BASE_PATH);
+    // Use main vector_data path for tests with test world ID
+    vectorStore = new VectraVectorStore(TEST_VECTOR_BASE_PATH);
   });
 
   afterEach(async () => {
-    // Clean up test directory after each test
+    // Clean up test vector data folders
     try {
-      await fs.rm(TEST_BASE_PATH, { recursive: true, force: true });
-    } catch {
-      // Already cleaned
+      const basePath = path.join(TEST_VECTOR_BASE_PATH);
+      const files = await fs.readdir(basePath);
+      
+      // Delete all test world folders (world_9999999_*)
+      for (const file of files) {
+        if (file.startsWith(`world_${TEST_WORLD_ID}_`)) {
+          await fs.rm(path.join(basePath, file), { recursive: true, force: true });
+          console.log(`[TEST] Cleaned up vector folder: ${file}`);
+        }
+      }
+    } catch (error) {
+      // Vector data directory may not exist yet, that's fine
+      console.log('[TEST] No vector data to clean up');
     }
   });
 

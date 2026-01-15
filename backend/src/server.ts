@@ -2834,6 +2834,65 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
+// Debug endpoint for vector store queries
+app.post('/api/debug/vector-query', async (req, res) => {
+  try {
+    const { query, worldId, characterName, includeMultiCharacter } = req.body;
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({ error: 'Query is required and must be non-empty' });
+    }
+
+    // Initialize memory retriever
+    const { getMemoryRetriever } = await import('./utils/memoryRetriever.js');
+    const retriever = getMemoryRetriever();
+    await retriever.initialize();
+
+    // Query memories
+    const memories = await retriever.queryMemories(query, {
+      worldId: worldId || undefined,
+      characterName: characterName || undefined,
+      topK: 20,
+      minSimilarity: 0.1,
+      includeMultiCharacter: includeMultiCharacter || false,
+    });
+
+    res.json({ memories });
+  } catch (error) {
+    console.error('[DEBUG] Vector query failed:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      details: error instanceof Error ? error.stack : undefined
+    });
+  }
+});
+
+// Revectorize entire scene endpoint
+app.post('/api/debug/revectorize-scene', async (req, res) => {
+  try {
+    const { sceneId, clearExisting } = req.body;
+
+    if (!sceneId || typeof sceneId !== 'number') {
+      return res.status(400).json({ error: 'sceneId is required and must be a number' });
+    }
+
+    // Import and run VectorizationAgent
+    const { default: VectorizationAgent } = await import('./agents/VectorizationAgent.js');
+    const agent = new VectorizationAgent(configManager, env);
+
+    // Revectorize the scene
+    const result = await agent.revectorizeScene(sceneId, clearExisting !== false);
+
+    res.json(result);
+  } catch (error) {
+    console.error('[DEBUG] Scene revectorization failed:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      details: error instanceof Error ? error.stack : undefined
+    });
+  }
+});
+
 export { app };
 
 // Periodic cleanup job: remove orphaned generated images not referenced in Messages

@@ -31,6 +31,24 @@ export const SceneService = {
     return scene;
   },
 
+  // Helper: Get worldId from sceneId by traversing relationships
+  // sceneId -> arcId -> campaignId -> worldId
+  getWorldIdFromSceneId(sceneId: number): number {
+    const result = db.prepare(`
+      SELECT c.worldId 
+      FROM Scenes s 
+      LEFT JOIN Arcs a ON a.id = s.arcId
+      LEFT JOIN Campaigns c ON c.id = a.campaignId
+      WHERE s.id = ?
+    `).get(sceneId) as any;
+    
+    if (!result || !result.worldId) {
+      throw new Error(`Could not find worldId for sceneId ${sceneId}`);
+    }
+    
+    return result.worldId;
+  },
+
   update(id: number, fields: any) {
     const existing = this.getById(id);
     const title = fields.title ?? existing.title;

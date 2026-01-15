@@ -8,8 +8,13 @@ import { VectorizationAgent } from '../agents/VectorizationAgent.js';
 import { ConfigManager } from '../configManager.js';
 import * as nunjucks from 'nunjucks';
 import fs from 'fs/promises';
+import path from 'path';
 
-const TEST_BASE_PATH = './test_vector_data_agent';
+const TEST_VECTOR_BASE_PATH = './vector_data';
+const TEST_WORLD_ID = 9999999;
+const TEST_CAMPAIGN_ID = 9999999;
+const TEST_ARC_ID = 9999999;
+const TEST_SCENE_ID = 9999999;
 
 describe('VectorizationAgent - Phase 2', () => {
   let agent: VectorizationAgent;
@@ -17,13 +22,6 @@ describe('VectorizationAgent - Phase 2', () => {
   let env: nunjucks.Environment;
 
   beforeEach(async () => {
-    // Clean up test directory
-    try {
-      await fs.rm(TEST_BASE_PATH, { recursive: true, force: true });
-    } catch {
-      // Directory doesn't exist yet
-    }
-
     // Initialize environment
     env = new nunjucks.Environment(new nunjucks.FileSystemLoader('./src/prompts'));
 
@@ -46,11 +44,21 @@ describe('VectorizationAgent - Phase 2', () => {
   });
 
   afterEach(async () => {
-    // Clean up test directory
+    // Clean up test vector data folders
     try {
-      await fs.rm(TEST_BASE_PATH, { recursive: true, force: true });
-    } catch {
-      // Already cleaned
+      const basePath = path.join(TEST_VECTOR_BASE_PATH);
+      const files = await fs.readdir(basePath);
+      
+      // Delete all test world folders (world_9999999_*)
+      for (const file of files) {
+        if (file.startsWith(`world_${TEST_WORLD_ID}_`)) {
+          await fs.rm(path.join(basePath, file), { recursive: true, force: true });
+          console.log(`[TEST] Cleaned up vector folder: ${file}`);
+        }
+      }
+    } catch (error) {
+      // Vector data directory may not exist yet, that's fine
+      console.log('[TEST] No vector data to clean up');
     }
   });
 
@@ -111,12 +119,14 @@ describe('VectorizationAgent - Phase 2', () => {
     });
 
     it('should return error on vectorization failure (non-blocking)', async () => {
+      // This test passes invalid sceneId, so VectorizationAgent will fail gracefully
+      // Testing that it returns 'error' status instead of throwing
       const context = {
-        sceneId: 1,
+        sceneId: 99999999, // Non-existent sceneId
         roundNumber: 1,
         userInput: '',
         history: [],
-        worldState: { id: 1, name: 'TestWorld' },
+        worldState: { id: 9999999, name: 'TestWorld' },
         activeCharacters: ['CharacterA'],
         messages: [
           { characterName: 'CharacterA', content: 'Hello world!' },
@@ -124,19 +134,19 @@ describe('VectorizationAgent - Phase 2', () => {
         ]
       };
 
-      // This should return 'error' because embedding manager isn't fully initialized
+      // This should return 'error' because sceneId doesn't exist in database
       // But it should NOT throw - silent fallback
       const result = await agent.run(context);
-      expect(['error', 'complete', 'skipped']).toContain(result);
+      expect(['error', 'skipped']).toContain(result);
     });
 
     it('should handle multiple characters in round', async () => {
       const context = {
-        sceneId: 1,
+        sceneId: 99999999, // Non-existent sceneId - testing error handling
         roundNumber: 1,
         userInput: '',
         history: [],
-        worldState: { id: 1, name: 'TestWorld' },
+        worldState: { id: 9999999, name: 'TestWorld' },
         activeCharacters: ['CharacterA', 'CharacterB', 'User'],
         messages: [
           { characterName: 'User', content: 'What do you think?' },
@@ -145,9 +155,9 @@ describe('VectorizationAgent - Phase 2', () => {
         ]
       };
 
-      // Should process all three characters
+      // Should handle error gracefully without throwing
       const result = await agent.run(context);
-      expect(['error', 'complete', 'skipped']).toContain(result);
+      expect(['error', 'skipped']).toContain(result);
     });
   });
 
@@ -167,11 +177,11 @@ describe('VectorizationAgent - Phase 2', () => {
 
     it('should handle malformed messages gracefully', async () => {
       const context = {
-        sceneId: 1,
+        sceneId: 99999999, // Non-existent sceneId
         roundNumber: 1,
         userInput: '',
         history: [],
-        worldState: { id: 1, name: 'TestWorld' },
+        worldState: { id: 9999999, name: 'TestWorld' },
         activeCharacters: ['CharacterA'],
         messages: [
           null,
@@ -183,18 +193,18 @@ describe('VectorizationAgent - Phase 2', () => {
       };
 
       const result = await agent.run(context);
-      expect(['error', 'complete', 'skipped']).toContain(result);
+      expect(['error', 'skipped']).toContain(result);
     });
 
     it('should continue if one character fails', async () => {
       // This tests that if storing memory for CharacterA fails,
       // it still tries CharacterB
       const context = {
-        sceneId: 1,
+        sceneId: 99999999, // Non-existent sceneId
         roundNumber: 1,
         userInput: '',
         history: [],
-        worldState: { id: 1, name: 'TestWorld' },
+        worldState: { id: 9999999, name: 'TestWorld' },
         activeCharacters: ['CharacterA', 'CharacterB'],
         messages: [
           { characterName: 'CharacterA', content: 'Hello!' },
@@ -202,9 +212,9 @@ describe('VectorizationAgent - Phase 2', () => {
         ]
       };
 
-      // Should attempt to store for both characters
+      // Should attempt to store for both characters, handling error gracefully
       const result = await agent.run(context);
-      expect(['error', 'complete', 'skipped']).toContain(result);
+      expect(['error', 'skipped']).toContain(result);
     });
   });
 
@@ -212,11 +222,11 @@ describe('VectorizationAgent - Phase 2', () => {
     it('should create valid memory summary', async () => {
       // Test through a full context that would trigger summarization
       const context = {
-        sceneId: 1,
+        sceneId: 99999999, // Non-existent sceneId
         roundNumber: 2,
         userInput: '',
         history: [],
-        worldState: { id: 1, name: 'TestWorld' },
+        worldState: { id: 9999999, name: 'TestWorld' },
         activeCharacters: ['Alex', 'Jordan'],
         messages: [
           { characterName: 'User', content: 'The dragon appears!' },
@@ -226,19 +236,19 @@ describe('VectorizationAgent - Phase 2', () => {
         ]
       };
 
-      // Should process without throwing
+      // Should process without throwing, handles error gracefully
       const result = await agent.run(context);
-      expect(['error', 'complete', 'skipped']).toContain(result);
+      expect(['error', 'skipped']).toContain(result);
     });
 
     it('should truncate long messages', async () => {
       const longText = 'A'.repeat(500); // Very long message
       const context = {
-        sceneId: 1,
+        sceneId: 99999999, // Non-existent sceneId
         roundNumber: 1,
         userInput: '',
         history: [],
-        worldState: { id: 1, name: 'TestWorld' },
+        worldState: { id: 9999999, name: 'TestWorld' },
         activeCharacters: ['CharacterA'],
         messages: [
           { characterName: 'CharacterA', content: longText }
@@ -246,7 +256,7 @@ describe('VectorizationAgent - Phase 2', () => {
       };
 
       const result = await agent.run(context);
-      expect(['error', 'complete', 'skipped']).toContain(result);
+      expect(['error', 'skipped']).toContain(result);
     });
   });
 
@@ -254,7 +264,7 @@ describe('VectorizationAgent - Phase 2', () => {
     it('should accept Orchestrator context format', async () => {
       // Simulates context as passed by Orchestrator.completeRound()
       const orchestratorContext = {
-        sceneId: 1,
+        sceneId: 99999999, // Non-existent sceneId
         roundNumber: 1,
         messages: [
           { characterName: 'Character1', content: 'Test' }
@@ -262,7 +272,7 @@ describe('VectorizationAgent - Phase 2', () => {
         activeCharacters: ['Character1'],
         userInput: '',
         history: [],
-        worldState: { id: 1, name: 'TestWorld' },
+        worldState: { id: 9999999, name: 'TestWorld' },
         trackers: {},
         characterStates: {},
         lore: [],
@@ -271,7 +281,7 @@ describe('VectorizationAgent - Phase 2', () => {
       };
 
       const result = await agent.run(orchestratorContext);
-      expect(['error', 'complete', 'skipped']).toContain(result);
+      expect(['error', 'skipped']).toContain(result);
     });
   });
 

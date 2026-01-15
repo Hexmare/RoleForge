@@ -62,8 +62,8 @@ export class MemoryRetriever {
       const minSimilarity = options.minSimilarity ?? 0.3;
       const memories: RetrievedMemory[] = [];
 
-      // Query character-specific memories if characterName provided
-      if (options.characterName) {
+      // If specific worldId and characterName provided, query just that scope
+      if (options.worldId && options.characterName) {
         const scope = `world_${options.worldId}_char_${options.characterName}`;
         try {
           const results = await this.vectorStore.query(query, scope, topK, minSimilarity);
@@ -81,26 +81,127 @@ export class MemoryRetriever {
         } catch (error) {
           console.warn(`[MEMORY_RETRIEVER] Query failed for character ${options.characterName}:`, error);
         }
+      } else if (options.worldId && !options.characterName) {
+        // Query all character scopes for this world by trying common character names/IDs
+        // Note: This is a fallback since getAllScopes() doesn't exist yet
+        console.log(`[MEMORY_RETRIEVER] Querying all characters in world ${options.worldId}`);
+        
+        // Get all characters from database
+        try {
+          const { CharacterService } = await import('../services/CharacterService.js');
+          const allCharacters = CharacterService.getAllCharacters();
+          
+          for (const char of allCharacters) {
+            const scope = `world_${options.worldId}_char_${char.id || char.name}`;
+            try {
+              const results = await this.vectorStore.query(query, scope, topK, minSimilarity);
+              
+              for (const entry of results) {
+                memories.push({
+                  text: entry.text,
+                  similarity: entry.similarity || 0,
+                  characterName: char.name || 'unknown',
+                  scope,
+                });
+              }
+              
+              if (results.length > 0) {
+                console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} memories for ${char.name} in world ${options.worldId}`);
+              }
+            } catch (error) {
+              // Scope might not exist yet, skip it
+              console.debug(`[MEMORY_RETRIEVER] No memories for ${char.name} in world ${options.worldId}`);
+            }
+          }
+        } catch (error) {
+          console.warn(`[MEMORY_RETRIEVER] Failed to query characters in world ${options.worldId}:`, error);
+        }
+      } else if (!options.worldId && !options.characterName) {
+        // Query all worlds and all characters
+        console.log('[MEMORY_RETRIEVER] Querying all worlds and characters');
+        
+        try {
+          const { WorldService } = await import('../services/WorldService.js');
+          const { CharacterService } = await import('../services/CharacterService.js');
+          const allWorlds = WorldService.getAll();
+          const allCharacters = CharacterService.getAllCharacters();
+          
+          for (const world of allWorlds) {
+            for (const char of allCharacters) {
+              const scope = `world_${world.id}_char_${char.id || char.name}`;
+              try {
+                const results = await this.vectorStore.query(query, scope, topK, minSimilarity);
+                
+                for (const entry of results) {
+                  memories.push({
+                    text: entry.text,
+                    similarity: entry.similarity || 0,
+                    characterName: char.name || 'unknown',
+                    scope,
+                  });
+                }
+                
+                if (results.length > 0) {
+                  console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} memories for ${char.name} in world ${world.id}`);
+                }
+              } catch (error) {
+                // Scope might not exist yet, skip it
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('[MEMORY_RETRIEVER] Failed to query all worlds/characters:', error);
+        }
       }
 
       // Optionally query multi-character scope for context
       if (options.includeMultiCharacter) {
-        const multiScope = `world_${options.worldId}_multi`;
-        try {
-          const results = await this.vectorStore.query(query, multiScope, 3, minSimilarity);
-          
-          for (const entry of results) {
-            memories.push({
-              text: entry.text,
-              similarity: entry.similarity || 0,
-              characterName: 'shared',
-              scope: multiScope,
-            });
-          }
+        if (options.worldId) {
+          const multiScope = `world_${options.worldId}_multi`;
+          try {
+            const results = await this.vectorStore.query(query, multiScope, 3, minSimilarity);
+            
+            for (const entry of results) {
+              memories.push({
+                text: entry.text,
+                similarity: entry.similarity || 0,
+                characterName: 'shared',
+                scope: multiScope,
+              });
+            }
 
-          console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} shared memories for world ${options.worldId}`);
-        } catch (error) {
-          console.warn(`[MEMORY_RETRIEVER] Query failed for shared memories:`, error);
+            console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} shared memories for world ${options.worldId}`);
+          } catch (error) {
+            console.warn(`[MEMORY_RETRIEVER] Query failed for shared memories:`, error);
+          }
+        } else {
+          // Query all multi-character scopes
+          try {
+            const { WorldService } = await import('../services/WorldService.js');
+            const allWorlds = WorldService.getAll();
+            
+            for (const world of allWorlds) {
+              const multiScope = `world_${world.id}_multi`;
+              try {
+                const results = await this.vectorStore.query(query, multiScope, 3, minSimilarity);
+                
+                for (const entry of results) {
+                  memories.push({
+                    text: entry.text,
+                    similarity: entry.similarity || 0,
+                    characterName: 'shared',
+                    scope: multiScope,
+                  });
+                }
+              } catch (error) {
+                // Scope might not exist yet, skip it
+              }
+            }
+
+            console.log('[MEMORY_RETRIEVER] Queried shared memories across all worlds');
+          } catch (error) {
+            console.warn('[MEMORY_RETRIEVER] Query failed for all shared memories:', error);
+          }
         }
       }
 

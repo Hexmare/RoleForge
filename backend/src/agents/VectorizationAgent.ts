@@ -76,10 +76,20 @@ export class VectorizationAgent extends BaseAgent {
 
       // Store memory for each active character
       let successCount = 0;
+      
+      // Get the correct worldId from sceneId
+      let worldId = 0;
+      try {
+        const SceneService = (await import('../services/SceneService.js')).default;
+        worldId = SceneService.getWorldIdFromSceneId(sceneId);
+      } catch (error) {
+        console.error(`[VECTORIZATION] Failed to get worldId for sceneId ${sceneId}:`, error);
+        return 'error';
+      }
+
       for (const characterName of activeCharacters) {
         try {
           const world = worldState?.name || 'unknown';
-          const worldId = worldState?.id || 0;
           
           // Create memory scope: world_{worldId}_char_{characterName}
           const scope = `world_${worldId}_char_${characterName}`;
@@ -98,7 +108,8 @@ export class VectorizationAgent extends BaseAgent {
             type: 'round_memory'
           };
 
-          // Store memory in vector database
+          // Store FULL round memory for this character (all speakers, all messages)
+          // Character needs context of what OTHERS said too, not just their own lines
           await this.vectorStore.addMemory(memoryId, memorySnippet, metadata, scope);
           successCount++;
 
@@ -147,8 +158,15 @@ export class VectorizationAgent extends BaseAgent {
       for (const msg of messages) {
         if (!msg) continue;
 
-        // Extract speaker name (could be character name or role like "narrator")
-        const speaker = msg.characterName || msg.speaker || msg.role || 'narrator';
+        // Extract speaker name - try multiple fields to get actual character name/sender
+        // Priority: characterName > sender > speaker > role (fallback to 'narrator' only if truly unknown)
+        let speaker = msg.characterName || msg.sender || msg.speaker || msg.role || '';
+        
+        // If still empty, try other possible field names
+        if (!speaker) {
+          speaker = msg.senderName || msg.character || msg.from || 'narrator';
+        }
+        
         const content = msg.content || msg.message || '';
 
         if (!content || content.trim().length === 0) continue;
@@ -188,6 +206,184 @@ export class VectorizationAgent extends BaseAgent {
     } catch (error) {
       console.error('[VECTORIZATION] Failed to get stats:', error);
       return { error: 'Failed to get stats' };
+    }
+  }
+
+  /**
+   * Revectorize an entire scene - regenerates embeddings for all messages
+   * Algorithm:
+   * 1. Get worldId from sceneId
+   * 2. Clear existing vectors for the scene
+   * 3. Query SceneRounds filtered by sceneId
+   * 4. For each round, get active characters and messages
+   * 5. Summarize and vectorize messages for each character
+   * 
+   * @param sceneId - The scene to revectorize
+   * @param clearExisting - Whether to clear existing vectors first (default: true)
+   * @returns Statistics about the revectorization
+   */
+  async revectorizeScene(sceneId: number, clearExisting: boolean = true): Promise<any> {
+    try {
+      console.log(`[VECTORIZATION] Starting scene revectorization for sceneId ${sceneId}`);
+
+      // Import services
+      const SceneService = (await import('../services/SceneService.js')).default;
+      const MessageService = (await import('../services/MessageService.js')).default;
+      const db = (await import('../database.js')).default;
+      
+      // Get scene details
+      const scene = SceneService.getById(sceneId);
+      if (!scene) {
+        return { error: 'Scene not found', sceneId };
+      }
+
+      // Get worldId
+      const worldId = SceneService.getWorldIdFromSceneId(sceneId);
+
+      // Step 1: Query SceneRounds filtered by sceneId to get all rounds and their active characters
+      const sceneRoundsStmt = db.prepare('SELECT * FROM SceneRounds WHERE sceneId = ? ORDER BY roundNumber ASC');
+      const sceneRounds = sceneRoundsStmt.all(sceneId) as any[];
+
+      if (!sceneRounds || sceneRounds.length === 0) {
+        console.log(`[VECTORIZATION] No scene rounds found for scene ${sceneId}`);
+        return { 
+          sceneId,
+          worldId,
+          messagesProcessed: 0,
+          roundsProcessed: 0,
+          memoriesStored: 0,
+          status: 'no_rounds'
+        };
+      }
+
+      // Collect all characters across all rounds for clearing
+      const allCharactersSet = new Set<string>();
+      for (const round of sceneRounds) {
+        try {
+          const activeChars = JSON.parse(round.activeCharacters);
+          if (Array.isArray(activeChars)) {
+            activeChars.forEach((char: string) => allCharactersSet.add(char));
+          }
+        } catch (e) {
+          console.warn(`[VECTORIZATION] Failed to parse activeCharacters for round ${round.roundNumber}:`, e);
+        }
+      }
+
+      // Step 2: Clear existing vectors if requested
+      if (clearExisting) {
+        console.log(`[VECTORIZATION] Clearing existing vectors for scene ${sceneId}`);
+        for (const character of Array.from(allCharactersSet)) {
+          const scope = `world_${worldId}_char_${character}`;
+          try {
+            // Get count before clearing
+            const countBefore = await (this.vectorStore as any).getMemoryCount(scope);
+            // Clear the scope
+            await this.vectorStore.clear(scope);
+            console.log(`[VECTORIZATION] Cleared ${countBefore} memories from scope ${scope}`);
+          } catch (error) {
+            console.warn(`[VECTORIZATION] Failed to clear scope ${scope}:`, error);
+          }
+        }
+      }
+
+      // Ensure embedding manager is initialized
+      await this.embeddingManager.initialize();
+
+      // Step 3: Iterate through each round, get messages and active characters
+      let totalMessagesProcessed = 0;
+      let totalMemoriesStored = 0;
+
+      for (const sceneRound of sceneRounds) {
+        try {
+          const roundNumber = sceneRound.roundNumber;
+          console.log(`[VECTORIZATION] Processing round ${roundNumber} for scene ${sceneId}`);
+
+          // Parse active characters for this round
+          let activeCharacters: string[] = [];
+          try {
+            const parsed = JSON.parse(sceneRound.activeCharacters);
+            activeCharacters = Array.isArray(parsed) ? parsed : [];
+          } catch (e) {
+            console.warn(`[VECTORIZATION] Failed to parse activeCharacters for round ${roundNumber}`);
+            continue;
+          }
+
+          if (activeCharacters.length === 0) {
+            console.log(`[VECTORIZATION] No active characters for round ${roundNumber}, skipping`);
+            continue;
+          }
+
+          // Step 4: Retrieve messages for this sceneId and roundNumber
+          const roundMessages = MessageService.getRoundMessages(sceneId, roundNumber) || [];
+          
+          if (roundMessages.length === 0) {
+            console.log(`[VECTORIZATION] No messages found for scene ${sceneId} round ${roundNumber}`);
+            continue;
+          }
+
+          totalMessagesProcessed += roundMessages.length;
+
+          // Summarize the round
+          const memorySnippet = this.summarizeRoundMessages(roundMessages, activeCharacters, roundNumber);
+
+          if (!memorySnippet || memorySnippet.trim().length === 0) {
+            console.log(`[VECTORIZATION] Empty memory snippet for round ${roundNumber}, skipping storage`);
+            continue;
+          }
+
+          // Step 5: Store vectorized memory for each active character
+          for (const characterName of activeCharacters) {
+            try {
+              const scope = `world_${worldId}_char_${characterName}`;
+              const memoryId = `revectorize_round_${roundNumber}_${characterName}_${Date.now()}`;
+
+              const metadata = {
+                roundNumber,
+                sceneId,
+                characterName,
+                worldName: scene.name || 'unknown',
+                actors: activeCharacters,
+                timestamp: new Date().toISOString(),
+                type: 'round_memory'
+              };
+
+              await this.vectorStore.addMemory(memoryId, memorySnippet, metadata, scope);
+              totalMemoriesStored++;
+
+              console.log(
+                `[VECTORIZATION] Stored revectorized memory ${memoryId} for character ${characterName} in round ${roundNumber}`
+              );
+            } catch (error) {
+              console.error(
+                `[VECTORIZATION] Failed to store revectorized memory for character ${characterName} in round ${roundNumber}:`,
+                error
+              );
+            }
+          }
+        } catch (error) {
+          console.error(`[VECTORIZATION] Failed to process round ${sceneRound.roundNumber}:`, error);
+        }
+      }
+
+      console.log(
+        `[VECTORIZATION] Scene ${sceneId} revectorization complete: ${sceneRounds.length} rounds, ${totalMessagesProcessed} messages, ${totalMemoriesStored} memories stored`
+      );
+
+      return {
+        sceneId,
+        worldId,
+        roundsProcessed: sceneRounds.length,
+        messagesProcessed: totalMessagesProcessed,
+        memoriesStored: totalMemoriesStored,
+        status: 'complete'
+      };
+    } catch (error) {
+      console.error('[VECTORIZATION] Scene revectorization failed:', error);
+      return {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        sceneId,
+        status: 'error'
+      };
     }
   }
 }

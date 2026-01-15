@@ -38,15 +38,20 @@ export class VectraVectorStore implements VectorStoreInterface {
     try {
       const indexPath = path.join(this.basePath, scope);
 
-      // Ensure base directory exists
+      // Ensure base directory AND scope directory exist
       await fs.mkdir(this.basePath, { recursive: true });
+      await fs.mkdir(indexPath, { recursive: true });
 
-      // Initialize Vectra index
+      // Initialize Vectra index (it will save to the directory we just created)
       const index = new LocalIndex(indexPath);
       
-      // Create the index (if it doesn't already exist)
-      if (!await this.directoryExists(indexPath)) {
+      // Try to load existing index, or create new one
+      try {
+        // Vectra's createIndex will create index.json in the path
         await index.createIndex();
+      } catch (createError) {
+        // If it fails due to existing file, that's OK
+        console.log(`[VECTOR_STORE] Index creation note (may already exist):`, createError instanceof Error ? createError.message : String(createError));
       }
 
       this.indexes.set(scope, index);
@@ -97,16 +102,45 @@ export class VectraVectorStore implements VectorStoreInterface {
       // Generate embedding
       const vector = await this.embeddingManager.embedText(text);
 
-      // Store in Vectra using insertItem
-      await index.insertItem({
-        id,
-        vector,
-        metadata: {
-          text,
-          ...metadata,
-          stored_at: new Date().toISOString()
+      // Before inserting, make sure directory exists (defensive)
+      const indexPath = path.join(this.basePath, scope);
+      await fs.mkdir(indexPath, { recursive: true });
+
+      // Try to insert item
+      try {
+        await index.insertItem({
+          id,
+          vector,
+          metadata: {
+            text,
+            ...metadata,
+            stored_at: new Date().toISOString()
+          }
+        });
+      } catch (insertError) {
+        // If insertItem fails due to "Index does not exist", try creating the index
+        const errMsg = insertError instanceof Error ? insertError.message : String(insertError);
+        if (errMsg.includes('does not exist') || errMsg.includes('Index')) {
+          console.log(`[VECTOR_STORE] Index creation needed, attempting to create for scope: ${scope}`);
+          try {
+            await index.createIndex();
+            // Retry the insertion
+            await index.insertItem({
+              id,
+              vector,
+              metadata: {
+                text,
+                ...metadata,
+                stored_at: new Date().toISOString()
+              }
+            });
+          } catch (retryError) {
+            throw new Error(`Failed after retry: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+          }
+        } else {
+          throw insertError;
         }
-      });
+      }
 
       console.log(`[VECTOR_STORE] Added memory ${id} to scope ${scope}`);
     } catch (error) {
@@ -135,39 +169,106 @@ export class VectraVectorStore implements VectorStoreInterface {
         await this.init(scope);
       }
 
-      const index = this.indexes.get(scope);
-      if (!index) {
-        return [];
-      }
-
       // Generate query embedding
       const queryVector = await this.embeddingManager.embedText(queryText);
 
-      // Query Vectra index with actual parameters: vector, query text, topK
-      const results = await index.queryItems(
-        queryVector,
-        '',  // text query (empty for semantic-only search)
-        topK
-      );
+      // Manual query: Read index.json directly and compute similarity
+      const indexPath = path.join(this.basePath, scope, 'index.json');
+      
+      try {
+        const indexContent = await fs.readFile(indexPath, 'utf-8');
+        const indexData = JSON.parse(indexContent);
+        
+        if (!indexData.items || !Array.isArray(indexData.items)) {
+          console.log(`[VECTOR_STORE] No items in index for scope ${scope}`);
+          return [];
+        }
 
-      // Filter by similarity threshold and transform to MemoryEntry format
-      const entries: MemoryEntry[] = results
-        .filter((result: any) => (result.score || 0) >= minSimilarity)
-        .map((result: any) => ({
-          id: result.item.id,
-          text: result.item.metadata?.text || '',
-          metadata: result.item.metadata,
-          similarity: result.score
-        }));
+        // Compute similarity for each item and filter
+        const results: { item: any; score: number }[] = [];
+        
+        for (const item of indexData.items) {
+          // Check if item has a vector (should be array)
+          const storedVector = item.vector;
+          
+          // Handle case where vector is stored as single number (corruption case)
+          let similarity = 0;
+          if (Array.isArray(storedVector) && storedVector.length === queryVector.length) {
+            // Valid vector array - compute cosine similarity
+            similarity = EmbeddingManager.cosineSimilarity(queryVector, storedVector);
+          } else if (typeof storedVector === 'number') {
+            // Vector is corrupted (single number instead of array)
+            // This is a fallback - try text-based matching
+            const text = item.metadata?.text || '';
+            const queryLower = queryText.toLowerCase();
+            const textLower = text.toLowerCase();
+            similarity = textLower.includes(queryLower) ? 0.5 : 0.1;
+            console.warn(`[VECTOR_STORE] Item ${item.id} has corrupted vector (scalar instead of array), using text-based fallback`);
+          } else {
+            console.warn(`[VECTOR_STORE] Item ${item.id} has invalid vector format:`, typeof storedVector);
+            similarity = 0;
+          }
+          
+          if (similarity >= minSimilarity) {
+            results.push({
+              item,
+              score: similarity
+            });
+          }
+        }
 
-      console.log(
-        `[VECTOR_STORE] Query found ${entries.length} memories in scope ${scope}`
-      );
+        // Sort by similarity descending
+        results.sort((a, b) => b.score - a.score);
 
-      return entries;
+        // Transform to MemoryEntry format
+        const entries: MemoryEntry[] = results
+          .slice(0, topK)
+          .map((result: any) => ({
+            id: result.item.id,
+            text: result.item.metadata?.text || '',
+            metadata: result.item.metadata,
+            similarity: result.score
+          }));
+
+        console.log(
+          `[VECTOR_STORE] Query found ${entries.length} memories in scope ${scope}`
+        );
+
+        return entries;
+      } catch (readError) {
+        // If manual read fails, try Vectra's query as fallback
+        console.warn(`[VECTOR_STORE] Manual query failed for scope ${scope}, trying Vectra queryItems:`, readError);
+        
+        const index = this.indexes.get(scope);
+        if (!index) {
+          return [];
+        }
+
+        try {
+          const results = await index.queryItems(
+            queryVector,
+            '',  // text query (empty for semantic-only search)
+            topK
+          );
+
+          const entries: MemoryEntry[] = results
+            .filter((result: any) => (result.score || 0) >= minSimilarity)
+            .map((result: any) => ({
+              id: result.item.id,
+              text: result.item.metadata?.text || '',
+              metadata: result.item.metadata,
+              similarity: result.score
+            }));
+
+          return entries;
+        } catch (vectraError) {
+          console.error(`[VECTOR_STORE] Vectra queryItems also failed:`, vectraError);
+          return [];
+        }
+      }
     } catch (error) {
       console.error(`[VECTOR_STORE] Query failed for scope ${scope}:`, error);
-      throw new Error(`Vector store query failed: ${error instanceof Error ? error.message : String(error)}`);
+      return []; // Return empty instead of throwing - graceful degradation
     }
   }
 
