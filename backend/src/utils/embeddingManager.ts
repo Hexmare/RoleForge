@@ -66,8 +66,15 @@ class EmbeddingManager {
    * Generate embeddings for text(s)
    * Returns normalized vectors (L2 normalized)
    * 
+   * IMPORTANT: The pipeline returns a Tensor object with:
+   * - result.dims: array dimensions (e.g., [batch_size, num_tokens, embedding_dim])
+   * - result.data: Float32Array containing all values flattened
+   * 
+   * For single text: dims = [1, num_tokens, 768]
+   * We need to extract and pool token embeddings to get one 768-dim vector
+   * 
    * @param text - Single text or array of texts to embed
-   * @returns Array of vectors (768-1024 dimensions depending on model)
+   * @returns Array of vectors (768 dimensions for Xenova/all-mpnet-base-v2)
    */
   async embed(text: string | string[]): Promise<number[][]> {
     if (!this.embeddingPipeline) {
@@ -79,16 +86,48 @@ class EmbeddingManager {
     }
 
     try {
-      const result = await this.embeddingPipeline(text);
-      const vectors: number[][] = result.data;
-
-      // Vectors are already L2 normalized by the model
-      // Return as array of arrays
-      if (Array.isArray(text)) {
-        return vectors;
-      } else {
-        return [vectors[0]];
+      const result = await this.embeddingPipeline(text) as any;
+      
+      // Result is a Tensor object with dims, type, data, size
+      if (!result.dims || !result.data) {
+        throw new Error('Invalid tensor output from embedding pipeline');
       }
+
+      const dims = result.dims as number[];
+      const flatData = result.data as Float32Array;
+      
+      // dims format: [batch_size, num_tokens, embedding_dim]
+      // For single text: [1, num_tokens, 768]
+      // For array of texts: [num_texts, num_tokens, 768]
+      
+      const batchSize = dims[0];
+      const numTokens = dims[1];
+      const embeddingDim = dims[2];
+      
+      const vectors: number[][] = [];
+      
+      // Extract embeddings for each item in batch
+      for (let b = 0; b < batchSize; b++) {
+        // Mean pooling: average all token embeddings for this item
+        const pooledVector: number[] = new Array(embeddingDim).fill(0);
+        
+        for (let t = 0; t < numTokens; t++) {
+          for (let d = 0; d < embeddingDim; d++) {
+            // Flat index: b * (numTokens * embeddingDim) + t * embeddingDim + d
+            const flatIndex = b * (numTokens * embeddingDim) + t * embeddingDim + d;
+            pooledVector[d] += flatData[flatIndex];
+          }
+        }
+        
+        // Average
+        for (let d = 0; d < embeddingDim; d++) {
+          pooledVector[d] /= numTokens;
+        }
+        
+        vectors.push(pooledVector);
+      }
+      
+      return vectors;
     } catch (error) {
       console.error('[EMBEDDING] Error generating embeddings:', error);
       throw new Error(`Embedding generation failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -97,10 +136,13 @@ class EmbeddingManager {
 
   /**
    * Generate a single embedding vector for text
-   * Convenience method for single text
+   * Convenience method for single text - returns a proper 768-dim array
    */
   async embedText(text: string): Promise<number[]> {
     const vectors = await this.embed(text);
+    if (vectors.length === 0) {
+      throw new Error('No vectors generated from embedding');
+    }
     return vectors[0];
   }
 

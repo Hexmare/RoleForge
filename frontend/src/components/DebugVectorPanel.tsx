@@ -19,7 +19,6 @@ const DebugVectorPanel: React.FC<DebugVectorPanelProps> = () => {
   const [selectedWorld, setSelectedWorld] = useState<string>('');
   const [selectedScene, setSelectedScene] = useState<string>('');
   const [selectedCharacter, setSelectedCharacter] = useState<string>('all');
-  const [includeMulti, setIncludeMulti] = useState<boolean>(false);
   const [query, setQuery] = useState<string>('');
   const [results, setResults] = useState<Memory[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -101,14 +100,15 @@ const DebugVectorPanel: React.FC<DebugVectorPanelProps> = () => {
 
     setError('');
     setIsLoading(true);
-    console.log('[DEBUG] Starting query:', { query, selectedWorld, selectedCharacter, includeMulti });
+    console.log('[DEBUG] Starting query:', { query, selectedWorld, selectedCharacter });
 
     try {
       const payload = {
         query: query.trim(),
-        worldId: selectedWorld === 'all' ? null : parseInt(selectedWorld),
-        characterName: selectedCharacter === 'all' ? null : selectedCharacter,
-        includeMultiCharacter: includeMulti,
+        worldId: selectedWorld === 'all' || !selectedWorld ? null : parseInt(selectedWorld),
+        characterId: selectedCharacter === 'all' ? null : selectedCharacter,
+        characterName: null,
+        includeMultiCharacter: false,
       };
       console.log('[DEBUG] Payload:', payload);
 
@@ -223,29 +223,15 @@ const DebugVectorPanel: React.FC<DebugVectorPanelProps> = () => {
                 >
                   <option value="all">All Characters</option>
                   {characters && Array.isArray(characters) && characters.map((c) => (
-                    <option key={c.id} value={c.name}>
+                    <option key={c.id} value={c.id}>
                       {c.name}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Include Multi Checkbox */}
-              <div className="flex items-end gap-2 col-span-1">
-                <input
-                  type="checkbox"
-                  id="includeMulti"
-                  checked={includeMulti}
-                  onChange={(e) => setIncludeMulti(e.target.checked)}
-                  className="rounded w-4 h-4"
-                />
-                <label htmlFor="includeMulti" className="text-sm text-text-secondary cursor-pointer">
-                  Multi-Char
-                </label>
-              </div>
-
               {/* Query Input and Button */}
-              <div className="flex items-end gap-2 col-span-2">
+              <div className="flex items-end gap-2 col-span-3">
                 <input
                   type="text"
                   value={query}
