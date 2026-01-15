@@ -8,7 +8,7 @@
   },
   "comfyui": {
     "endpoint": "http://localhost:8188",
-    "workflow": "Default_Comfy_Workflow.json",
+    "workflow": "z_image_turbo.json",
     "model": "pornCraftByStableYogi_v30FP16.safetensors",
     "vae": "qwen_image_vae.safetensors",
     "sampler": "euler",
