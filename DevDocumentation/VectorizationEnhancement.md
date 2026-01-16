@@ -595,20 +595,37 @@ app.get('/api/diagnostics/vector', async (req, res) => {
 - As a tester, I want comprehensive tests for metadata/deletion.
 - As a user, I want seamless injection with separation.
 
-### Sub-Phase 8.1: Memory Injection in Orchestrator
-#### Tasks
-1. Update processUserInput: Retrieve per char scope, inject.
+### Sub-Phase 8.1: Memory Injection at Character Callsites
+#### Requirement
+When preparing to memory-inject for a character, injection MUST occur immediately before that character's agent is invoked so the agent receives the complete round message history up to that turn. This ensures correct turn-by-turn context in multi-character rounds and must also apply to continue-round flows (where there may be no new user input). Do not rely solely on `processUserInput` for injection.
 
-#### Code Examples
-- `Orchestrator.ts`:
-```typescript
-const memories = await memoryRetriever.retrieve(userInput, charScope);
-prompt += `\nMemories: ${memories.map(m => m.metadata.roundId + ': ' + m.text).join('\n')}`;
+Example flow:
+- Scene participants: `User`, `CharA`, `CharB`.
+- User says: "hello"
+- `CharA` is called first. `CharA` should receive: `user: hello` and then respond (e.g., "Hi!").
+- `CharB` is called next. `CharB` should receive: `user: hello\nCharA: Hi!` (i.e., full round history) before its agent runs.
+
+#### Tasks
+1. Implement per-character pre-call memory injection in the Orchestrator's character-run loop (immediately before each character agent execution). Do NOT place injection only in `processUserInput`.
+2. Ensure continue-round flows (no user input) perform the same per-character pre-call injection.
+3. Retrieve memories using a scoped call such as `memoryRetriever.retrieve({ scope: `world_${worldId}_char_${charId}`, options })` and inject raw memories into the character's prompt/template immediately before agent execution.
+4. Ensure injection uses the latest persisted messages so regenerate/edit/parallel flows reflect current DB state.
+
+#### Code Examples (pseudocode)
+```ts
+for (const char of activeCharactersInOrder) {
+  const scope = `world_${worldId}_char_${char.id}`;
+  const memories = await memoryRetriever.retrieve({ scope, query: roundText, options });
+  const prompt = renderCharacterPrompt(basePrompt, memories);
+  const response = await charAgent.run(prompt);
+  // persist response and continue
+}
 ```
 
 #### Testing Instructions
-1. Run chat, verify char-specific memories.
-2. Test separation: Inactive char no access.
+1. Replay a multi-character round: verify each character sees the full prior messages when their agent runs.
+2. Continue-round test: run a round without new user input and verify per-character injection still occurs before each agent call.
+3. Edge cases: test concurrent character runs and ensure injection is per-call and reflects the latest DB state.
 
 ### Sub-Phase 8.2: Full Test Suite Expansion
 #### Tasks

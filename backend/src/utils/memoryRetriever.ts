@@ -266,6 +266,43 @@ export class MemoryRetriever {
   }
 
   /**
+   * New convenience API: retrieve by a scope string or options object.
+   * Accepts `{ scope: 'world_<id>_char_<id>' }` or the same options as `queryMemories`.
+   * Returns raw RetrievedMemory[] without any further formatting.
+   */
+  async retrieve(opts: { scope?: string; query?: string } & Partial<MemoryRetrievalOptions>): Promise<RetrievedMemory[]> {
+    try {
+      // If caller passed a scope like 'world_1_char_abc', derive worldId and characterId
+      const mergedOpts: MemoryRetrievalOptions = {
+        worldId: (opts as any).worldId || 0,
+        characterName: (opts as any).characterName,
+        characterId: (opts as any).characterId,
+        topK: (opts as any).topK || 5,
+        minSimilarity: (opts as any).minSimilarity ?? 0.3,
+        includeMultiCharacter: (opts as any).includeMultiCharacter,
+        temporalDecay: (opts as any).temporalDecay,
+        conditionalRules: (opts as any).conditionalRules,
+      } as MemoryRetrievalOptions;
+
+      if (opts.scope) {
+        const m = opts.scope.match(/^world_(\d+)_char_(.+)$/);
+        if (m) {
+          mergedOpts.worldId = Number(m[1]);
+          mergedOpts.characterId = m[2];
+        }
+      }
+
+      const queryText = opts.query || '';
+      // Delegate to existing queryMemories implementation
+      const results = await this.queryMemories(queryText, mergedOpts);
+      return results;
+    } catch (e) {
+      console.warn('[MEMORY_RETRIEVER] retrieve() failed:', e);
+      return [];
+    }
+  }
+
+  /**
    * Format retrieved memories into a readable string for prompt injection
    * @param memories - Retrieved memory entries
    * @returns Formatted memory context string for templates

@@ -611,13 +611,16 @@ export class Orchestrator {
         try {
           const retriever = getMemoryRetriever();
           await retriever.initialize();
-          const memories = await retriever.queryMemories(userInput + ' ' + this.sceneSummary, {
-            worldId: this.worldState.id,
+          const memories = await retriever.retrieve({
+            query: userInput + ' ' + this.sceneSummary,
+            scope: `world_${this.worldState.id}_multi`,
             topK: 3,
             minSimilarity: 0.3,
             includeMultiCharacter: true,
-          });
+          } as any);
           if (memories.length > 0) {
+            // Provide raw memories for template rendering and keep formatted string for compatibility
+            context.vectorMemoriesRaw = memories;
             context.vectorMemories = retriever.formatMemoriesForPrompt(memories);
             console.log(`[NARRATOR] Injected ${memories.length} memories into context`);
           }
@@ -1033,14 +1036,12 @@ export class Orchestrator {
           await retriever.initialize();
           const query = userInput + ' ' + this.history.join(' ').substring(0, 500);
           console.log(`[CHARACTER_MEMORY] Query text length: ${query.length}`);
-          const memories = await retriever.queryMemories(query, {
-            worldId: worldId,
-            characterId: characterData.id,
-            topK: 5,
-            minSimilarity: 0.3,
-          });
+          const scope = `world_${worldId}_char_${characterData.id}`;
+          const memories = await retriever.retrieve({ scope, query, topK: 5, minSimilarity: 0.3 } as any);
           console.log(`[CHARACTER_MEMORY] Retrieved ${memories.length} memories for ${charName}`);
           if (memories.length > 0) {
+            // Inject raw memories into character context; leave formatted for backwards compatibility
+            characterContext.vectorMemoriesRaw = memories;
             characterContext.vectorMemories = retriever.formatMemoriesForPrompt(memories);
             console.log(`[CHARACTER] ${charName}: Injected ${memories.length} memories into context`);
           } else {
