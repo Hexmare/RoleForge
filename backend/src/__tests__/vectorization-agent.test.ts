@@ -107,6 +107,15 @@ describe('VectorizationAgent - Phase 2', () => {
   });
 
   describe('Round Memory Capture', () => {
+    beforeEach(() => {
+      // Force SceneService to behave as "not found" for these tests
+      vi.doMock('../services/SceneService.js', () => ({
+        default: {
+          getById: (_: number) => null,
+          getWorldIdFromSceneId: (_: number) => { throw new Error('Scene not found'); }
+        }
+      }));
+    });
     it('should skip vectorization with missing sceneId', async () => {
       const context = {
         userInput: '',
@@ -194,6 +203,15 @@ describe('VectorizationAgent - Phase 2', () => {
   });
 
   describe('Error Handling', () => {
+    beforeEach(() => {
+      // Force SceneService to be missing so agent returns 'error' or 'skipped'
+      vi.doMock('../services/SceneService.js', () => ({
+        default: {
+          getById: (_: number) => null,
+          getWorldIdFromSceneId: (_: number) => { throw new Error('Scene not found'); }
+        }
+      }));
+    });
     it('should not throw on invalid context', async () => {
       const context = {
         userInput: '',
@@ -251,6 +269,15 @@ describe('VectorizationAgent - Phase 2', () => {
   });
 
   describe('Memory Summarization', () => {
+    beforeEach(() => {
+      // Simulate missing scene metadata for summarization path tests
+      vi.doMock('../services/SceneService.js', () => ({
+        default: {
+          getById: (_: number) => null,
+          getWorldIdFromSceneId: (_: number) => { throw new Error('Scene not found'); }
+        }
+      }));
+    });
     it('should create valid memory summary', async () => {
       // Test through a full context that would trigger summarization
       const context = {

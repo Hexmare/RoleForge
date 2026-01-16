@@ -43,7 +43,7 @@ Phases are designed to be independent where possible, with small chunks (e.g., 1
  - [x] Made `EmbeddingManager` more tolerant of multiple OpenAI response shapes (handles arrays and nested `data` results).
  - [x] Fixed job persistence logic to back up malformed `backend/data/jobs.json` and added polling/waits in tests to avoid ENOENT races.
  - [x] Cleaned up leftover corrupt job artifact files under `backend/backend/data`.
- - [x] Re-ran the backend test suite locally; all backend tests pass (149 tests) as of Jan 15, 2026.
+ - [x] Re-ran the backend test suite locally; all backend tests pass (156 tests) as of Jan 15, 2026.
 
 
 ## Clarifications Applied

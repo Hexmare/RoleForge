@@ -22,9 +22,6 @@ describe('jobs.json corruption sanitizer', () => {
       await store.sanitizeJobsFile(TEST_FILE);
     }
 
-    // Give a small delay for any async operations
-    await new Promise((r) => setTimeout(r, 150));
-
     // Verify TEST_FILE is now a valid JSON array
     const content = await fs.readFile(TEST_FILE, 'utf-8');
     expect(content.trim()).toBe('[]');
@@ -33,5 +30,11 @@ describe('jobs.json corruption sanitizer', () => {
     const files = await fs.readdir(JOBS_DIR);
     const corrupt = files.find((f) => f.startsWith('jobs.test.corrupt.json.corrupt.'));
     expect(corrupt).toBeDefined();
+
+    // Cleanup test artifacts
+    await fs.unlink(TEST_FILE).catch(() => {});
+    if (corrupt) {
+      await fs.unlink(path.join(JOBS_DIR, corrupt)).catch(() => {});
+    }
   });
 });

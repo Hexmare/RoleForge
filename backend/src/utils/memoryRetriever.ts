@@ -237,18 +237,64 @@ export class MemoryRetriever {
           // Temporal decay
           try {
             if (decayCfg && decayCfg.enabled && !(mem.metadata && mem.metadata.temporalBlind)) {
-              const ts = mem.metadata && (mem.metadata.timestamp || mem.metadata.stored_at);
-              if (ts) {
-                const created = Date.parse(ts);
-                if (!isNaN(created)) {
-                  const ageMs = Date.now() - created;
-                  // Interpret halfLife as days for time mode
-                  const halfLifeDays = (decayCfg.halfLife && Number(decayCfg.halfLife)) || 7;
-                  const halfLifeMs = halfLifeDays * 24 * 60 * 60 * 1000;
-                  const rawFactor = Math.pow(0.5, ageMs / Math.max(1, halfLifeMs));
-                  const floor = (decayCfg.floor !== undefined) ? Number(decayCfg.floor) : 0.3;
+              const mode = decayCfg.mode || 'time';
+              const floor = (decayCfg.floor !== undefined) ? Number(decayCfg.floor) : 0.3;
+
+              // Message-count based decay mode: use metadata.messageCountSince (or similar) when provided
+              if (mode === 'messageCount') {
+                let msgSince = Number(mem.metadata && (mem.metadata.messageCountSince || mem.metadata.message_count_since || mem.metadata.messages_since));
+                if (isNaN(msgSince)) {
+                  // Try to derive from DB using sceneId and the stored timestamp
+                  try {
+                    const sceneId = mem.metadata && (mem.metadata.sceneId || mem.metadata.scene_id || mem.metadata.scene);
+                    const ts = mem.metadata && (mem.metadata.timestamp || mem.metadata.stored_at);
+                    if (sceneId && ts) {
+                      const { MessageService } = await import('../services/MessageService.js');
+                      try {
+                        msgSince = Number(MessageService.getMessageCountSince(Number(sceneId), ts));
+                      } catch (e) {
+                        msgSince = NaN;
+                      }
+                    }
+                  } catch (e) {
+                    msgSince = NaN;
+                  }
+                }
+
+                if (!isNaN(msgSince)) {
+                  const halfLifeMsgs = (decayCfg.halfLife && Number(decayCfg.halfLife)) || 50;
+                  const rawFactor = Math.pow(0.5, msgSince / Math.max(1, halfLifeMsgs));
                   const decayFactor = Math.max(rawFactor, floor);
                   score = score * decayFactor;
+                } else {
+                  // Fallback to time-based if message-count not available
+                  const ts = mem.metadata && (mem.metadata.timestamp || mem.metadata.stored_at);
+                  if (ts) {
+                    const created = Date.parse(ts);
+                    if (!isNaN(created)) {
+                      const ageMs = Date.now() - created;
+                      const halfLifeDays = (decayCfg.halfLife && Number(decayCfg.halfLife)) || 7;
+                      const halfLifeMs = halfLifeDays * 24 * 60 * 60 * 1000;
+                      const rawFactor = Math.pow(0.5, ageMs / Math.max(1, halfLifeMs));
+                      const decayFactor = Math.max(rawFactor, floor);
+                      score = score * decayFactor;
+                    }
+                  }
+                }
+              } else {
+                // Default: time-based decay
+                const ts = mem.metadata && (mem.metadata.timestamp || mem.metadata.stored_at);
+                if (ts) {
+                  const created = Date.parse(ts);
+                  if (!isNaN(created)) {
+                    const ageMs = Date.now() - created;
+                    // Interpret halfLife as days for time mode
+                    const halfLifeDays = (decayCfg.halfLife && Number(decayCfg.halfLife)) || 7;
+                    const halfLifeMs = halfLifeDays * 24 * 60 * 60 * 1000;
+                    const rawFactor = Math.pow(0.5, ageMs / Math.max(1, halfLifeMs));
+                    const decayFactor = Math.max(rawFactor, floor);
+                    score = score * decayFactor;
+                  }
                 }
               }
             }

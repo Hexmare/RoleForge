@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { createJob, setJobStatus, listJobs } from '../jobs/jobStore.js';
-import { recordAudit } from '../jobs/auditLog.js';
+import { recordAudit, clearAudits } from '../jobs/auditLog.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -8,15 +8,28 @@ const JOBS_FILE = path.join(process.cwd(), 'backend', 'data', 'jobs.json');
 const AUDIT_FILE = path.join(process.cwd(), 'backend', 'vector_deletes_audit.jsonl');
 
 describe('Job & Audit Persistence', () => {
+  afterEach(async () => {
+    // Cleanup audit file and in-memory cache after each test
+    await clearAudits();
+    await fs.unlink(AUDIT_FILE).catch(() => {});
+
+    // Remove any lingering unit-test-job entries from jobs.json
+    try {
+      const raw = await fs.readFile(JOBS_FILE, 'utf-8').catch(() => '[]');
+      const arr = JSON.parse(raw || '[]');
+      const filtered = Array.isArray(arr) ? arr.filter((j: any) => j.type !== 'unit-test-job' || (j.payload && j.payload.foo !== 'bar')) : arr;
+      await fs.writeFile(JOBS_FILE, JSON.stringify(filtered, null, 2), 'utf-8');
+    } catch {
+      // ignore cleanup errors
+    }
+  });
+
   it('persists jobs to disk after updates', async () => {
     const job = createJob('unit-test-job', { foo: 'bar' });
     setJobStatus(job.id, 'running');
     setJobStatus(job.id, 'completed', { ok: true });
 
-    // wait briefly for async persist
-    await new Promise((r) => setTimeout(r, 200));
-
-    // Verify via API of the module (in-memory list) rather than parsing file (robust against file content)
+    // The jobStore keeps an in-memory view; assert against that directly to avoid timing sleeps
     const arr = listJobs();
     const found = arr.find((j: any) => j.id === job.id);
     expect(found).toBeTruthy();
@@ -32,21 +45,8 @@ describe('Job & Audit Persistence', () => {
     };
 
     await recordAudit(entry);
-    // wait for append (poll for file to exist)
-    const maxAttempts = 10;
-    let attempts = 0;
-    while (attempts < maxAttempts) {
-      try {
-        await fs.access(AUDIT_FILE);
-        break;
-      } catch {
-        // wait and retry
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((r) => setTimeout(r, 100));
-        attempts++;
-      }
-    }
 
+    // recordAudit awaits fs.appendFile, so read the file directly
     const content = await fs.readFile(AUDIT_FILE, 'utf-8');
     const lines = content.split('\n').filter(Boolean);
     const last = JSON.parse(lines[lines.length - 1]);

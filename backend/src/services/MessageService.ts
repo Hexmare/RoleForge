@@ -261,7 +261,18 @@ export const MessageService = {
 
   getRoundMessageCount(sceneId: number, roundNumber: number): number {
     return this.getMessageCountInRound(sceneId, roundNumber);
-  }
+  },
+
+  // Count messages in a scene created after a given ISO timestamp
+  getMessageCountSince(sceneId: number, sinceIso: string): number {
+    try {
+      const result = db.prepare('SELECT COUNT(*) as count FROM Messages WHERE sceneId = ? AND timestamp > ?').get(sceneId, sinceIso) as any;
+      return result?.count || 0;
+    } catch (e) {
+      console.warn('MessageService.getMessageCountSince failed:', e);
+      return 0;
+    }
+  },
 };
 
 export default MessageService;

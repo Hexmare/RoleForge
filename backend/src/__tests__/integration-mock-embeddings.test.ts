@@ -40,6 +40,8 @@ describe('Integration mock embedding server', () => {
   let baseUrl = '';
 
   beforeAll(async () => {
+    // Preserve any existing env var and restore later
+    (global as any).__saved_openai_api_key = process.env.OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = 'test';
 
     // Simple HTTP server that emulates OpenAI and Ollama embedding endpoints
@@ -102,6 +104,12 @@ describe('Integration mock embedding server', () => {
         resolve();
       });
     });
+    // Restore env var
+    if ((global as any).__saved_openai_api_key !== undefined) {
+      process.env.OPENAI_API_KEY = (global as any).__saved_openai_api_key;
+    } else {
+      delete process.env.OPENAI_API_KEY;
+    }
   });
 
   beforeEach(() => {
