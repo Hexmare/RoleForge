@@ -180,5 +180,57 @@
     "result": {
       "ok": true
     }
+  },
+  {
+    "id": "unit-test-job-1768526115153-ivsnk4",
+    "type": "unit-test-job",
+    "createdAt": 1768526115153,
+    "updatedAt": 1768526115153,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true
+    }
+  },
+  {
+    "id": "unit-test-job-1768526533920-0szkup",
+    "type": "unit-test-job",
+    "createdAt": 1768526533920,
+    "updatedAt": 1768526533920,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true
+    }
+  },
+  {
+    "id": "unit-test-job-1768526653368-t53cev",
+    "type": "unit-test-job",
+    "createdAt": 1768526653368,
+    "updatedAt": 1768526653368,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true
+    }
+  },
+  {
+    "id": "unit-test-job-1768526790035-h0twgv",
+    "type": "unit-test-job",
+    "createdAt": 1768526790035,
+    "updatedAt": 1768526790035,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true
+    }
   }
 ]

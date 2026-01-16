@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 describe('VectraVectorStore deleteByMetadata (global)', () => {
-  const basePath = path.join(process.cwd(), 'vector_test_tmp_delete_global');
+  const basePath = path.join(process.cwd(), `vector_test_tmp_delete_global_${process.pid}_${Date.now()}`);
   const scopeA = 'scope_A_global_delete';
   const scopeB = 'scope_B_global_delete';
 

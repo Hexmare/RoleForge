@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { listAudits, clearAudits } from '../jobs/auditLog.js';
 
-const BASE = './vector_data';
+const BASE = path.join(process.cwd(), `vector_test_tmp_audit_${process.pid}_${Date.now()}`);
 const SCOPE = 'audit_test_scope';
 
 describe('deleteByMetadata audit', () => {
@@ -23,6 +23,8 @@ describe('deleteByMetadata audit', () => {
   afterEach(async () => {
     try {
       await fs.rm(path.join(BASE, SCOPE), { recursive: true, force: true });
+      // remove base if empty
+      await fs.rm(BASE, { recursive: true, force: true }).catch(() => {});
     } catch {}
     await clearAudits();
   });

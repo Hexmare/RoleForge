@@ -20,7 +20,7 @@ describe('Job & Audit Persistence', () => {
     const arr = listJobs();
     const found = arr.find((j: any) => j.id === job.id);
     expect(found).toBeTruthy();
-    expect(found.status).toBe('completed');
+    expect(found!.status).toBe('completed');
   });
 
   it('appends audit entries to jsonl file', async () => {

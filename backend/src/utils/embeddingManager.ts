@@ -46,8 +46,27 @@ class EmbeddingManager {
   }
 
   static getInstance(provider?: string, modelName?: string): EmbeddingManager {
-    const p = provider || 'transformers';
-    const m = modelName || 'Xenova/all-mpnet-base-v2';
+    // Prefer explicit args; fall back to vector config if present, then to defaults
+    let cfg: any = {};
+    try {
+      const cm = new ConfigManager();
+      if (cm && typeof cm.getVectorConfig === 'function') cfg = cm.getVectorConfig() || {};
+    } catch (e) {
+      try {
+        // Support cases where tests mock ConfigManager as a factory or object
+        if (typeof (ConfigManager as any).getVectorConfig === 'function') {
+          cfg = (ConfigManager as any).getVectorConfig() || {};
+        } else if (typeof (ConfigManager as any) === 'function') {
+          const maybe = (ConfigManager as any)();
+          if (maybe && typeof maybe.getVectorConfig === 'function') cfg = maybe.getVectorConfig() || {};
+        }
+      } catch (_err) {
+        // ignore and fall back to defaults
+      }
+    }
+
+    const p = provider || cfg.embeddingProvider || 'transformers';
+    const m = modelName || cfg.embeddingModel || 'Xenova/all-mpnet-base-v2';
     const key = `${p}:${m}`;
     if (!EmbeddingManager.instances.has(key)) {
       EmbeddingManager.instances.set(key, new EmbeddingManager(p, m));
@@ -290,12 +309,28 @@ class EmbeddingManager {
     }
 
     let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
     for (let i = 0; i < vec1.length; i++) {
-      dotProduct += vec1[i] * vec2[i];
+      const a = vec1[i] || 0;
+      const b = vec2[i] || 0;
+      dotProduct += a * b;
+      normA += a * a;
+      normB += b * b;
     }
 
-    // Vectors from @xenova are already L2 normalized, so magnitudes are 1
-    return dotProduct;
+    normA = Math.sqrt(normA) || 1;
+    normB = Math.sqrt(normB) || 1;
+
+    const sim = dotProduct / (normA * normB);
+    // Diagnostic: warn if raw value is noticeably out of [-1,1]
+    if (sim > 1.000001 || sim < -1.000001) {
+      console.warn('[EMBEDDING] cosine similarity out of bounds', { dotProduct, normA, normB, raw: sim });
+    }
+    // Clamp to valid cosine range to avoid small floating point overshoot
+    if (sim > 1) return 1;
+    if (sim < -1) return -1;
+    return sim;
   }
 
   /**

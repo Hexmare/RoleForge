@@ -96,8 +96,8 @@ Commit after each sub-phase for version control.
 
 ### Sub-Phase 1.1: Add Basic Vector Config File
 #### Tasks
-1. Create a new file `backend/config/vectorConfig.json` with default settings (exclude backend options since fixed to Vectra).
-2. Update `backend/src/config.ts` to load and merge this with existing config.
+ - [x] Create a new file `backend/config/vectorConfig.json` with default settings (exclude backend options since fixed to Vectra).
+ - [x] Update `backend/src/config.ts` to load and merge this with existing config.
 
 #### Code Examples
 - `backend/config/vectorConfig.json`:
@@ -168,8 +168,8 @@ Notes:
 
 ### Sub-Phase 1.2: Inject Config into Existing Classes
 #### Tasks
-1. Update `EmbeddingManager.ts`, `VectorStoreFactory.ts` (set to Vectra always), and `VectorizationAgent.ts` to accept/use config from global load.
-2. Ensure fallback to defaults if config missing.
+ - [x] Update `EmbeddingManager.ts`, `VectorStoreFactory.ts` (set to Vectra always), and `VectorizationAgent.ts` to accept/use config from global load.
+ - [x] Ensure fallback to defaults if config missing.
 
 #### Code Examples
 - `backend/src/agents/vectorization/EmbeddingManager.ts` (modify constructor):
@@ -209,8 +209,8 @@ export function createVectorStore(config: any): VectorStoreInterface {
 
 ### Sub-Phase 2.1: Add OpenAI-Compatible Provider
 #### Tasks
-1. Install `openai` npm package: `npm i openai`.
-2. Extend `EmbeddingManager.ts` to support 'openai' provider with API config.
+1. [x] Install `openai` npm package: `npm i openai`.
+2. [x] Extend `EmbeddingManager.ts` to support 'openai' provider with API config.
 
 #### Code Examples
 - `EmbeddingManager.ts` (add to static getInstance and embedText):
@@ -240,8 +240,8 @@ async embedText(text: string): Promise<number[]> {
 
 ### Sub-Phase 2.2: Add Ollama Provider
 #### Tasks
-1. Install `ollama` npm package: `npm i ollama`.
-2. Extend `EmbeddingManager.ts` for 'ollama'.
+1. [x] Install `ollama` npm package: `npm i ollama`.
+2. [x] Extend `EmbeddingManager.ts` for 'ollama'.
 
 #### Code Examples
 - `EmbeddingManager.ts`:
@@ -269,8 +269,8 @@ async embedText(text: string): Promise<number[]> {
 
 ### Sub-Phase 2.3: Provider Switching Integration
 #### Tasks
-1. Update `VectorizationAgent.ts` to use new EmbeddingManager with config.
-2. Add error handling for unsupported providers.
+1. [x] Update `VectorizationAgent.ts` to use new EmbeddingManager with config.
+2. [x] Add error handling for unsupported providers.
 
 #### Code Examples
 - `VectorizationAgent.ts`:
@@ -295,8 +295,8 @@ const embedding = await embeddingManager.embedText(memoryText);
 
 ### Sub-Phase 3.1: Extend Metadata in Add/Query
 #### Tasks
-1. Update `VectorStoreInterface.ts` to require metadata object in addMemory (include campaignId, arcId, sceneId, roundId).
-2. Update `VectraVectorStore.ts` to store/retrieve metadata (Vectra supports item.metadata).
+- [x] Update `VectorStoreInterface.ts` to require metadata object in addMemory (include campaignId, arcId, sceneId, roundId).
+- [x] Update `VectraVectorStore.ts` to store/retrieve metadata (Vectra supports item.metadata).
 
 #### Code Examples
 - `VectorStoreInterface.ts`:
@@ -322,8 +322,8 @@ async query(embedding: number[], scope: string, options: any): Promise<{ score: 
 
 ### Sub-Phase 3.2: Per-Character Scoping & Active-Only Addition
 #### Tasks
-1. In `VectorizationAgent.ts` run(): Get activeCharacters from context, loop over them, compute scope = `world_${worldId}_char_${charId}`, add to each with shared metadata.
-2. Ensure non-active chars skipped.
+- [x] In `VectorizationAgent.ts` run(): Get activeCharacters from context, loop over them, compute scope = `world_${worldId}_char_${charId}`, add to each with shared metadata.
+- [x] Ensure non-active chars skipped.
 
 #### Code Examples
 - `VectorizationAgent.ts`:
@@ -357,8 +357,8 @@ async run(context: any) {
 
 ### Sub-Phase 4.1: Implement Chunk Strategies
 #### Tasks
-1. Update `VectorizationAgent.ts` run() to handle strategies (e.g., 'perRound' concatenates messages).
-2. Add `extractKeywords` util.
+1. [x] Update `VectorizationAgent.ts` run() to handle strategies (e.g., 'perRound' concatenates messages).
+2. [x] Add `extractKeywords` util.
 
 #### Code Examples
 - `VectorizationAgent.ts` (switch on chunkStrategy):
@@ -397,8 +397,8 @@ export function extractKeywords(text: string): string[] {
 
 ### Sub-Phase 5.1: Add deleteByMetadata to Interface
 #### Tasks
-1. Extend `VectorStoreInterface.ts` with deleteByMetadata (filter: Partial<Metadata>).
-2. Implement in `VectraVectorStore.ts`: Query all, filter by metadata, delete matching IDs.
+ - [x] Extend `VectorStoreInterface.ts` with deleteByMetadata (filter: Partial<Metadata>).
+ - [x] Implement in `VectraVectorStore.ts`: Query all, filter by metadata, delete matching IDs.
 
 #### Code Examples
 - `VectorStoreInterface.ts`:
@@ -424,9 +424,9 @@ async deleteByMetadata(filter: any, scope: string) {
 
 ### Sub-Phase 5.2: Integrate with Resets/Regens/Edits
 #### Tasks
-1. In `SceneService.ts` or `Orchestrator.ts`: On reset (campaign/arc/scene), call deleteByMetadata({campaignId/arcId/sceneId}, all relevant scopes).
-2. On regen message/round: Delete by {roundId}, then re-run VectorizationAgent for that round.
-3. On edit message: Same as regen.
+ - [x] In `SceneService.ts` or `Orchestrator.ts`: On reset (campaign/arc/scene), call deleteByMetadata({campaignId/arcId/sceneId}, all relevant scopes).
+ - [x] On regen message/round: Delete by {roundId}, then re-run VectorizationAgent for that round.
+ - [x] On edit message: Same as regen.
 
 #### Code Examples
 - `Orchestrator.ts` (e.g., in regenerateMessage):

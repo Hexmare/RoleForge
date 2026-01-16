@@ -7,7 +7,7 @@ import { DirectorAgent } from '../agents/DirectorAgent';
 import { WorldAgent } from '../agents/WorldAgent';
 import { ConfigManager } from '../configManager';
 import * as nunjucks from 'nunjucks';
-import { vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 describe('LLM Client', () => {
   const mockProfile: LLMProfile = {

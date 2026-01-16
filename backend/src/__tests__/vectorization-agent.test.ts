@@ -72,6 +72,38 @@ describe('VectorizationAgent - Phase 2', () => {
       expect(agent).toHaveProperty('vectorStore');
       expect(agent).toHaveProperty('embeddingManager');
     });
+
+    it('passes run context into personalizeMemory and stores memories', async () => {
+      // Mock SceneService used by the agent at runtime to avoid DB lookups
+      vi.mock('../services/SceneService.js', () => ({
+        default: {
+          getById: (id: number) => ({ id, name: 'Test Scene', campaignId: 1, arcId: 1 }),
+          getWorldIdFromSceneId: (_: number) => 1
+        }
+      }));
+      // Stub embeddingManager.initialize and vectorStore.addMemory
+      (agent as any).embeddingManager = { initialize: vi.fn().mockResolvedValue(undefined) } as any;
+      const addMemory = vi.fn().mockResolvedValue(undefined);
+      (agent as any).vectorStore = { addMemory } as any;
+
+      const personalize = vi.fn().mockImplementation(async (text: string, characterId: string, ctx?: any) => text);
+      (agent as any).personalizeMemory = personalize;
+
+      const ctx = {
+        sceneId: 12345,
+        roundNumber: 9,
+        messages: [{ content: 'Hello world' }],
+        activeCharacters: ['char-test']
+      } as any;
+
+      await agent.run(ctx);
+
+      expect(personalize).toHaveBeenCalled();
+      const thirdArg = personalize.mock.calls[0][2];
+      expect(thirdArg).toHaveProperty('context');
+      expect(thirdArg.context).toBe(ctx);
+      expect(addMemory).toHaveBeenCalled();
+    });
   });
 
   describe('Round Memory Capture', () => {

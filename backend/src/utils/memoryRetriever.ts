@@ -5,12 +5,14 @@
 
 import { VectorStoreFactory } from './vectorStoreFactory.js';
 import { VectorStoreInterface, MemoryEntry } from '../interfaces/VectorStoreInterface.js';
+import { ConfigManager } from '../configManager.js';
 
 export interface RetrievedMemory {
   text: string;
   similarity: number;
   characterName: string;
   scope: string;
+  metadata?: Record<string, any>;
 }
 
 export interface MemoryRetrievalOptions {
@@ -20,6 +22,9 @@ export interface MemoryRetrievalOptions {
   topK?: number;
   minSimilarity?: number;
   includeMultiCharacter?: boolean;
+  // Optional per-query overrides
+  temporalDecay?: any;
+  conditionalRules?: any[];
 }
 
 export class MemoryRetriever {
@@ -87,6 +92,7 @@ export class MemoryRetriever {
               similarity: entry.similarity || 0,
               characterName: options.characterName || options.characterId || 'unknown',
               scope,
+              metadata: entry.metadata || {}
             });
           }
 
@@ -112,6 +118,7 @@ export class MemoryRetriever {
                   similarity: entry.similarity || 0,
                   characterName: char.name || 'unknown',
                   scope,
+                  metadata: entry.metadata || {}
                 });
               }
               
@@ -148,6 +155,7 @@ export class MemoryRetriever {
                     similarity: entry.similarity || 0,
                     characterName: char.name || 'unknown',
                     scope,
+                    metadata: entry.metadata || {}
                   });
                 }
                 
@@ -177,6 +185,7 @@ export class MemoryRetriever {
                 similarity: entry.similarity || 0,
                 characterName: 'shared',
                 scope: multiScope,
+                metadata: entry.metadata || {}
               });
             }
 
@@ -215,7 +224,81 @@ export class MemoryRetriever {
         }
       }
 
-      // Sort by similarity descending
+      // Apply temporal decay and conditional rule boosts before final sorting
+      try {
+        const cfgMgr = new ConfigManager();
+        const vectorCfg = cfgMgr.getVectorConfig() || {};
+        const decayCfg = options.temporalDecay ?? vectorCfg.temporalDecay ?? { enabled: false };
+        const rules = options.conditionalRules ?? vectorCfg.conditionalRules ?? [];
+
+        for (const mem of memories) {
+          let score = mem.similarity || 0;
+
+          // Temporal decay
+          try {
+            if (decayCfg && decayCfg.enabled && !(mem.metadata && mem.metadata.temporalBlind)) {
+              const ts = mem.metadata && (mem.metadata.timestamp || mem.metadata.stored_at);
+              if (ts) {
+                const created = Date.parse(ts);
+                if (!isNaN(created)) {
+                  const ageMs = Date.now() - created;
+                  // Interpret halfLife as days for time mode
+                  const halfLifeDays = (decayCfg.halfLife && Number(decayCfg.halfLife)) || 7;
+                  const halfLifeMs = halfLifeDays * 24 * 60 * 60 * 1000;
+                  const rawFactor = Math.pow(0.5, ageMs / Math.max(1, halfLifeMs));
+                  const floor = (decayCfg.floor !== undefined) ? Number(decayCfg.floor) : 0.3;
+                  const decayFactor = Math.max(rawFactor, floor);
+                  score = score * decayFactor;
+                }
+              }
+            }
+          } catch (e) {
+            // ignore decay errors
+          }
+
+          // Conditional rules boosting
+          try {
+            let boostMultiplier = 1;
+            for (const rule of rules) {
+              try {
+                const field = rule.field;
+                const matchVal = rule.match;
+                const boost = Number(rule.boost) || 1;
+                const matchType = rule.matchType || 'substring';
+                // Resolve nested field from metadata (e.g., 'metadata.keywords' or 'keywords')
+                const parts = field.split('.');
+                let target: any = mem.metadata || {};
+                for (const p of parts) {
+                  if (target == null) break;
+                  target = target[p];
+                }
+                if (target == null) continue;
+                const targetStr = String(target).toLowerCase();
+                const mStr = String(matchVal).toLowerCase();
+                let matched = false;
+                if (matchType === 'exact') {
+                  matched = targetStr === mStr;
+                } else {
+                  matched = targetStr.includes(mStr);
+                }
+                if (matched) boostMultiplier *= boost;
+              } catch (_) {
+                // ignore rule errors
+              }
+            }
+            score = score * boostMultiplier;
+          } catch (e) {
+            // ignore boosting errors
+          }
+
+          // Overwrite similarity with adjusted score for downstream consumers
+          mem.similarity = score;
+        }
+      } catch (e) {
+        console.warn('[MEMORY_RETRIEVER] Failed to apply decay/rules:', e);
+      }
+
+      // Sort by adjusted similarity descending
       memories.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
 
       return memories.slice(0, topK);

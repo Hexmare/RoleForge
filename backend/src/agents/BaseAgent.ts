@@ -90,7 +90,7 @@ export abstract class BaseAgent {
     };
 
     // Preserve type from base unless agent explicitly provides it
-    mergedProfile.type = agentConfig?.type ?? baseProfile?.type;
+    mergedProfile.type = (agentConfig as any)?.type ?? baseProfile?.type;
 
     // Determine format: explicit agent override -> agent returnsJson flag -> sampler.forceJson -> base profile
     if (agentConfig?.format) {

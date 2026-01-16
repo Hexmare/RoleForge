@@ -125,7 +125,7 @@ async function persistJobs(): Promise<void> {
       const tmp = JOBS_FILE + '.tmp';
       await fs.writeFile(tmp, JSON.stringify(arr, null, 2), 'utf-8');
       await fs.rename(tmp, JOBS_FILE);
-    }).catch((e) => {
+    }).catch((e: any) => {
       console.warn('[JOB_STORE] Failed to persist jobs file (async):', e instanceof Error ? e.message : String(e));
     });
     // Return the current writeChain so callers can await if desired

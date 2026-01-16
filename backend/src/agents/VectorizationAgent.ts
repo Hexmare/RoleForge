@@ -28,9 +28,21 @@ export class VectorizationAgent extends BaseAgent {
   constructor(configManager: any, env: any) {
     super('vectorization', configManager, env);
     
-    // Initialize vector store (uses default provider 'vectra')
-    this.vectorStore = VectorStoreFactory.createVectorStore('vectra');
-    this.embeddingManager = EmbeddingManager.getInstance();
+    // Load vector config (if available) and wire into store/embedding initialization
+    const vcfg = (this.configManager && typeof this.configManager.getVectorConfig === 'function')
+      ? this.configManager.getVectorConfig() || {}
+      : {};
+
+    const storeProvider: string = vcfg.provider || 'vectra';
+    const storeBasePath: string = vcfg.basePath || './vector_data';
+
+    // Initialize vector store with optional provider-specific config
+    this.vectorStore = VectorStoreFactory.createVectorStore(storeProvider as any, { basePath: storeBasePath });
+
+    // Initialize embedding manager with configured provider/model
+    const embedProvider = vcfg.embeddingProvider || undefined;
+    const embedModel = vcfg.embeddingModel || undefined;
+    this.embeddingManager = EmbeddingManager.getInstance(embedProvider, embedModel);
   }
 
   /**
@@ -85,6 +97,38 @@ export class VectorizationAgent extends BaseAgent {
 
       // Store memory for each active character
       let successCount = 0;
+
+      // Determine chunking strategy from vector config
+      const vcfg = (this.configManager && typeof this.configManager.getVectorConfig === 'function')
+        ? this.configManager.getVectorConfig() || {}
+        : {};
+      const chunkStrategy: string = vcfg.chunkStrategy || 'perRound';
+      const chunkSize: number = typeof vcfg.chunkSize === 'number' ? vcfg.chunkSize : 512;
+      const slidingWindowOverlap: number = typeof vcfg.slidingWindowOverlap === 'number' ? vcfg.slidingWindowOverlap : 0.2;
+
+      // Build base chunks for this round (may be reused per-character)
+      let baseChunks: string[] = [];
+      if (chunkStrategy === 'perMessage') {
+        baseChunks = (messages || []).map((m: any) => (m && (m.content || m.message || ''))).filter((t: string) => t && t.trim().length > 0);
+      } else {
+        // perRound and perScene default to summarization + chunking
+        baseChunks = EmbeddingManager.chunkText(memorySnippet, chunkSize);
+      }
+      // Apply simple sliding overlap if requested
+      if (slidingWindowOverlap > 0 && baseChunks.length > 1) {
+        const overlapChars = Math.max(1, Math.floor(chunkSize * slidingWindowOverlap));
+        const overlapped: string[] = [];
+        for (let i = 0; i < baseChunks.length; i++) {
+          let c = baseChunks[i];
+          if (i > 0) {
+            const prev = baseChunks[i - 1];
+            const add = prev.slice(Math.max(0, prev.length - overlapChars));
+            c = add + ' ' + c;
+          }
+          overlapped.push(c);
+        }
+        baseChunks = overlapped;
+      }
       
       // Get scene/world and higher-level metadata
       let worldId = 0;
@@ -105,13 +149,13 @@ export class VectorizationAgent extends BaseAgent {
         return 'error';
       }
 
-      for (const char of activeCharacters) {
+      for (const char of activeCharacters as any[]) {
+        let characterId: string = '';
+        let characterName: string = 'unknown';
         try {
           const world = worldState?.name || 'unknown';
 
           // Character may be a string (name) or an object { id, name }
-          let characterId: string;
-          let characterName: string;
           if (typeof char === 'string') {
             characterId = String(char);
             characterName = String(char);
@@ -126,11 +170,22 @@ export class VectorizationAgent extends BaseAgent {
           // Create memory scope: world_{worldId}_char_{characterId}
           const scope = `world_${worldId}_char_${characterId}`;
 
-          // Create unique memory ID
-          const memoryId = `round_${roundNumber}_${characterId}_${Date.now()}`;
+          // Collect message-level IDs when available for traceability
+          const messageIds: string[] = [];
+          const speakerIds: string[] = [];
+          try {
+            if (Array.isArray(messages)) {
+              for (const m of messages) {
+                if (m && (m.id || m.messageId)) messageIds.push(String(m.id || m.messageId));
+                const speaker = m && (m.speakerId || m.speaker || m.senderId || m.sender);
+                if (speaker) speakerIds.push(String(speaker));
+              }
+            }
+          } catch (_) {
+            // swallow errors - optional fields only
+          }
 
-          // Metadata for the memory (canonicalized to strings where applicable)
-          const metadata: Record<string, any> = {
+          const metadataBase: Record<string, any> = {
             roundId: String(roundNumber),
             roundNumber,
             sceneId: String(sceneId),
@@ -140,19 +195,35 @@ export class VectorizationAgent extends BaseAgent {
             worldName: world,
             actors: activeCharacters,
             timestamp: new Date().toISOString(),
-            type: 'round_memory'
-          };
-          if (campaignId) metadata.campaignId = campaignId;
-          if (arcId) metadata.arcId = arcId;
+            type: 'round_memory',
+            messageIds: messageIds.length > 0 ? messageIds : undefined,
+            speakerIds: speakerIds.length > 0 ? speakerIds : undefined
+          } as Record<string, any>;
+          if (campaignId) metadataBase.campaignId = campaignId;
+          if (arcId) metadataBase.arcId = arcId;
 
-          // Store FULL round memory for this character (all speakers, all messages)
-          // Character needs context of what OTHERS said too, not just their own lines
-          await this.vectorStore.addMemory(memoryId, memorySnippet, metadata, scope);
-          successCount++;
+          // Store each chunk for this character
+          for (let ci = 0; ci < baseChunks.length; ci++) {
+            try {
+              const chunkText = String(baseChunks[ci] || '').trim();
+              if (!chunkText) continue;
 
-          console.log(
-            `[VECTORIZATION] Stored memory ${memoryId} for character ${characterName} in scope ${scope}`
-          );
+              const memoryIdChunk = `round_${roundNumber}_${characterId}_${ci}_${Date.now()}`;
+              const metadata = { ...metadataBase };
+              metadata.chunkIndex = ci;
+              metadata.chunkCount = baseChunks.length;
+
+              // Personalize per-character if needed
+              const toStore = await this.personalizeMemory(chunkText, characterId, { context });
+
+              await this.vectorStore.addMemory(memoryIdChunk, toStore, metadata, scope);
+              successCount++;
+
+              console.log(`[VECTORIZATION] Stored memory ${memoryIdChunk} (chunk ${ci + 1}/${baseChunks.length}) for ${characterName} in scope ${scope}`);
+            } catch (err) {
+              console.error(`[VECTORIZATION] Failed to store chunk ${ci} for ${characterName}:`, err);
+            }
+          }
         } catch (error) {
           console.error(
             `[VECTORIZATION] Failed to store memory for character ${characterName}:`,
@@ -312,11 +383,10 @@ export class VectorizationAgent extends BaseAgent {
         for (const character of Array.from(allCharactersSet)) {
           const scope = `world_${worldId}_char_${character}`;
           try {
-            // Get count before clearing
-            const countBefore = await (this.vectorStore as any).getMemoryCount(scope);
-            // Clear the scope
-            await this.vectorStore.clear(scope);
-            console.log(`[VECTORIZATION] Cleared ${countBefore} memories from scope ${scope}`);
+            // Prefer scoped deletion by metadata (safer than full clear)
+            const filter = { sceneId: String(sceneId) };
+            await (this.vectorStore as any).deleteByMetadata(filter, scope, { dryRun: false, confirm: true });
+            console.log(`[VECTORIZATION] deleteByMetadata invoked for scope ${scope} (sceneId=${sceneId})`);
           } catch (error) {
             console.warn(`[VECTORIZATION] Failed to clear scope ${scope}:`, error);
           }
@@ -368,28 +438,63 @@ export class VectorizationAgent extends BaseAgent {
             continue;
           }
 
-          // Step 5: Store vectorized memory for each active character
+          // Step 5: Store vectorized memory for each active character (chunk-aware)
+          const vcfg = (this.configManager && typeof this.configManager.getVectorConfig === 'function')
+            ? this.configManager.getVectorConfig() || {}
+            : {};
+          const chunkStrategy: string = vcfg.chunkStrategy || 'perRound';
+          const chunkSize: number = typeof vcfg.chunkSize === 'number' ? vcfg.chunkSize : 512;
+          const slidingWindowOverlap: number = typeof vcfg.slidingWindowOverlap === 'number' ? vcfg.slidingWindowOverlap : 0.2;
+
+          let baseChunks: string[] = [];
+          if (chunkStrategy === 'perMessage') {
+            baseChunks = (roundMessages || []).map((m: any) => (m && (m.content || m.message || ''))).filter((t: string) => t && t.trim().length > 0);
+          } else {
+            baseChunks = EmbeddingManager.chunkText(memorySnippet, chunkSize);
+          }
+          if (slidingWindowOverlap > 0 && baseChunks.length > 1) {
+            const overlapChars = Math.max(1, Math.floor(chunkSize * slidingWindowOverlap));
+            const overlapped: string[] = [];
+            for (let i = 0; i < baseChunks.length; i++) {
+              let c = baseChunks[i];
+              if (i > 0) {
+                const prev = baseChunks[i - 1];
+                const add = prev.slice(Math.max(0, prev.length - overlapChars));
+                c = add + ' ' + c;
+              }
+              overlapped.push(c);
+            }
+            baseChunks = overlapped;
+          }
+
           for (const characterName of activeCharacters) {
             try {
               const scope = `world_${worldId}_char_${characterName}`;
-              const memoryId = `revectorize_round_${roundNumber}_${characterName}_${Date.now()}`;
+              for (let ci = 0; ci < baseChunks.length; ci++) {
+                const chunkText = String(baseChunks[ci] || '').trim();
+                if (!chunkText) continue;
+                const memoryId = `revectorize_round_${roundNumber}_${characterName}_${ci}_${Date.now()}`;
+                const metadata = {
+                  roundNumber: String(roundNumber),
+                  sceneId: String(sceneId),
+                  characterName,
+                  worldName: scene.name || 'unknown',
+                  actors: activeCharacters,
+                  timestamp: new Date().toISOString(),
+                  type: 'round_memory',
+                  chunkIndex: ci,
+                  chunkCount: baseChunks.length
+                } as Record<string, any>;
 
-              const metadata = {
-                roundNumber,
-                sceneId,
-                characterName,
-                worldName: scene.name || 'unknown',
-                actors: activeCharacters,
-                timestamp: new Date().toISOString(),
-                type: 'round_memory'
-              };
-
-              await this.vectorStore.addMemory(memoryId, memorySnippet, metadata, scope);
-              totalMemoriesStored++;
-
-              console.log(
-                `[VECTORIZATION] Stored revectorized memory ${memoryId} for character ${characterName} in round ${roundNumber}`
-              );
+                try {
+                  const toStore = await this.personalizeMemory(chunkText, characterName, { scene, sceneId, roundNumber, worldId });
+                  await this.vectorStore.addMemory(memoryId, toStore, metadata, scope);
+                  totalMemoriesStored++;
+                  console.log(`[VECTORIZATION] Stored revectorized memory ${memoryId} (chunk ${ci + 1}/${baseChunks.length}) for character ${characterName} in round ${roundNumber}`);
+                } catch (err) {
+                  console.error(`[VECTORIZATION] Failed to store revectorized chunk ${ci} for ${characterName}:`, err);
+                }
+              }
             } catch (error) {
               console.error(
                 `[VECTORIZATION] Failed to store revectorized memory for character ${characterName} in round ${roundNumber}:`,

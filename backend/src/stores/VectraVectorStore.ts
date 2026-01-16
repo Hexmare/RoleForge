@@ -355,6 +355,11 @@ export class VectraVectorStore implements VectorStoreInterface {
           if (Array.isArray(storedVector) && storedVector.length === queryVector.length) {
             // Valid vector array - compute cosine similarity
             similarity = EmbeddingManager.cosineSimilarity(queryVector, storedVector);
+            // Clamp and diagnose any unexpected out-of-range similarities
+            if (similarity > 1 || similarity < -1) {
+              console.warn(`[VECTOR_STORE] Raw similarity out of range for item ${item.id}: ${similarity}`);
+              similarity = Math.max(-1, Math.min(1, similarity));
+            }
           } else if (typeof storedVector === 'number') {
             // Vector is corrupted (single number instead of array)
             // This is a fallback - try text-based matching
@@ -392,8 +397,8 @@ export class VectraVectorStore implements VectorStoreInterface {
           .map((result: any) => ({
             id: result.item.id,
             text: result.item.metadata?.text || '',
-            metadata: result.item.metadata,
-            similarity: result.score
+            metadata: (result.item.metadata || result.item.meta || (result.item.item && result.item.item.metadata) || {}),
+            similarity: Math.max(-1, Math.min(1, result.score))
           }));
 
         console.log(
@@ -411,8 +416,8 @@ export class VectraVectorStore implements VectorStoreInterface {
               const vectraEntriesAll: MemoryEntry[] = vectraResults.map((r: any) => ({
                 id: r.item.id,
                 text: r.item.metadata?.text || '',
-                metadata: r.item.metadata,
-                similarity: r.score
+                metadata: (r.item.metadata || r.item.meta || (r.item.item && r.item.item.metadata) || {}),
+                similarity: Math.max(-1, Math.min(1, r.score))
               }));
 
               // Prefer results that meet the minSimilarity threshold
@@ -464,8 +469,8 @@ export class VectraVectorStore implements VectorStoreInterface {
             .map((result: any) => ({
               id: result.item.id,
               text: result.item.metadata?.text || '',
-              metadata: result.item.metadata,
-              similarity: result.score
+              metadata: (result.item.metadata || result.item.meta || (result.item.item && result.item.item.metadata) || {}),
+              similarity: Math.max(-1, Math.min(1, result.score))
             }));
 
           return entries;
@@ -537,16 +542,39 @@ export class VectraVectorStore implements VectorStoreInterface {
         throw new Error(`Scope ${scope} not found`);
       }
 
-      // Get all items and delete them
-      // Use a zero vector and high topK to get all items
-      const allItems = await index.queryItems(
-        new Array(768).fill(0),
-        '',
-        100000
-      );
+      // Collect all item ids from both Vectra queryItems and on-disk index.json
+      const idsToDelete = new Set<string>();
 
-      for (const item of allItems) {
-        await index.deleteItem(item.item.id);
+      try {
+        const q = await index.queryItems(new Array(768).fill(0), '', 100000);
+        for (const it of Array.isArray(q) ? q : []) {
+          const id = ((it as any)?.item?.id) || ((it as any)?.id);
+          if (id) idsToDelete.add(id);
+        }
+      } catch (qe) {
+        // ignore
+      }
+
+      try {
+        const indexJsonPath = path.join(this.basePath, scope, 'index.json');
+        const content = await fs.readFile(indexJsonPath, 'utf-8');
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed.items)) {
+          for (const it of parsed.items) {
+            const id = ((it as any)?.id) || ((it as any)?.item?.id);
+            if (id) idsToDelete.add(id);
+          }
+        }
+      } catch {
+        // ignore read errors
+      }
+
+      for (const id of idsToDelete) {
+        try {
+          await index.deleteItem(id);
+        } catch (e) {
+          // ignore individual delete errors
+        }
       }
 
       console.log(`[VECTOR_STORE] Cleared all memories from scope ${scope}`);
@@ -565,8 +593,24 @@ export class VectraVectorStore implements VectorStoreInterface {
       if (this.indexes.has(scope)) return true;
 
       const indexPath = path.join(this.basePath, scope);
-      const stat = await fs.stat(indexPath);
-      return stat.isDirectory();
+      // Consider a scope existing only if the directory exists AND an index.json
+      // file exists (i.e. Vectra index was created). This avoids treating
+      // leftover/empty directories as valid scopes which can cause test
+      // assumptions about lazy initialization to fail.
+      try {
+        const stat = await fs.stat(indexPath);
+        if (!stat.isDirectory()) return false;
+      } catch {
+        return false;
+      }
+
+      const indexJsonPath = path.join(indexPath, 'index.json');
+      try {
+        const stat2 = await fs.stat(indexJsonPath);
+        return stat2.isFile();
+      } catch {
+        return false;
+      }
     } catch {
       return false;
     }
@@ -701,7 +745,17 @@ export class VectraVectorStore implements VectorStoreInterface {
             const indexPath = path.join(this.basePath, s);
 
             const exists = await this.scopeExists(s);
-            if (!exists) continue;
+            if (!exists) {
+              // If scope directory exists but index.json is missing, try to initialize.
+              // This handles transient filesystem races where the directory was
+              // created but the Vectra index hasn't been fully created yet.
+              try {
+                await this.init(s);
+              } catch (e) {
+                // Could not initialize scope; skip it
+                continue;
+              }
+            }
 
             // Ensure index instance is available
             if (!this.indexes.has(s)) {
@@ -716,23 +770,32 @@ export class VectraVectorStore implements VectorStoreInterface {
             const index = this.indexes.get(s);
             if (!index) continue;
 
-            // Read index.json to find matching items
+            // Read index.json to find matching items; normalize item shapes so
+            // we can consistently access `id` and `metadata` regardless of
+            // Vectra's internal nesting.
             const idxJsonPath = path.join(indexPath, 'index.json');
-            let items: any[] = [];
+            let rawItems: any[] = [];
             try {
               const content = await fs.readFile(idxJsonPath, 'utf-8');
               const parsed = JSON.parse(content);
-              items = Array.isArray(parsed.items) ? parsed.items : [];
+              rawItems = Array.isArray(parsed.items) ? parsed.items : [];
             } catch (readErr) {
               // If reading index.json fails, try using vectra queryItems to list items
               try {
                 const listed = await index.queryItems(new Array(768).fill(0), '', 100000);
-                items = listed.map((r: any) => r.item);
+                rawItems = Array.isArray(listed) ? listed.map((r: any) => r.item || r) : [];
               } catch (qErr) {
                 console.warn(`[VECTOR_STORE] Failed to list items for scope ${s}: ${qErr instanceof Error ? qErr.message : String(qErr)}`);
                 continue;
               }
             }
+
+            // Normalize item shape to { id, metadata }
+            const items: Array<{ id: string; metadata: Record<string, any> }> = rawItems.map((it: any) => {
+              const id = it?.id || it?.item?.id || it?.item?.item?.id || (it?.item && it.item.id) || (it && it.id);
+              const metadata = it?.metadata || it?.meta || it?.item?.metadata || it?.item?.item?.metadata || {};
+              return { id, metadata } as any;
+            }).filter(x => x.id);
 
             // Find matching item ids
             const toDeleteIds: string[] = [];
@@ -779,6 +842,21 @@ export class VectraVectorStore implements VectorStoreInterface {
             } catch (delErr) {
               console.warn(`[VECTOR_STORE] Failed to delete item ${id} from scope ${s}: ${delErr instanceof Error ? delErr.message : String(delErr)}`);
             }
+          }
+          // Additionally, if vectra's on-disk index.json still lists the items,
+          // attempt to remove them by rewriting index.json without the deleted ids
+          try {
+            const indexPath2 = path.join(this.basePath, s);
+            const idxJsonPath2 = path.join(indexPath2, 'index.json');
+            const content2 = await fs.readFile(idxJsonPath2, 'utf-8');
+            const parsed2 = JSON.parse(content2);
+            if (Array.isArray(parsed2.items)) {
+              const remaining = parsed2.items.filter((it: any) => !ids.includes(it.id));
+              parsed2.items = remaining;
+              await fs.writeFile(idxJsonPath2, JSON.stringify(parsed2, null, 2), 'utf-8');
+            }
+          } catch (rwErr) {
+            // ignore rewrite errors; deletion via index.deleteItem should be primary
           }
         }
 

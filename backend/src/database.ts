@@ -7,9 +7,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const dbPath = path.join(__dirname, '..', '..', 'roleforge.db');
+// Ensure parent directories exist to avoid disk I/O errors in packaged/dist tests
+import fs from 'fs';
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
 const db = new Database(dbPath) as any;
 
 const charactersDbPath = path.join(__dirname, '..', '..', 'data', 'characters.db');
+const charactersDbDir = path.dirname(charactersDbPath);
+if (!fs.existsSync(charactersDbDir)) {
+  fs.mkdirSync(charactersDbDir, { recursive: true });
+}
 const charactersDb = new Database(charactersDbPath) as any;
 
 // Enable WAL mode for better concurrency
@@ -26,7 +36,7 @@ charactersDb.exec(`
 
 // Ensure Characters table has required columns
 try {
-  const cols = charactersDb.prepare("PRAGMA table_info('Characters')").all();
+  const cols = safePragmaAll(charactersDb, 'Characters');
   const hasName = cols.some((c: any) => c.name === 'name');
   if (!hasName) {
     charactersDb.exec(`ALTER TABLE Characters ADD COLUMN name TEXT NOT NULL DEFAULT 'Unknown';`);
@@ -37,6 +47,19 @@ try {
   }
 } catch (e) {
   console.warn('Could not ensure Characters table columns:', e);
+}
+
+// Helper: safe wrapper for PRAGMA queries to avoid throwing when DB isn't ready
+function safePragmaAll(database: any, tableName: string) {
+  try {
+    if (!database || typeof database.prepare !== 'function') return [];
+    const stmt = database.prepare(`PRAGMA table_info('${tableName}')`);
+    if (!stmt || typeof stmt.all !== 'function') return [];
+    return stmt.all();
+  } catch (err) {
+    console.warn(`Could not query PRAGMA table_info('${tableName}')`, err);
+    return [];
+  }
 }
 
 // Create tables
@@ -81,7 +104,7 @@ db.exec(`
 
 // Ensure persona avatarUrl column exists for older DBs
 try {
-  const pcols = db.prepare("PRAGMA table_info('personas')").all();
+  const pcols = safePragmaAll(db, 'personas');
   const hasAvatarPersona = pcols.some((c: any) => c.name === 'avatarUrl');
   if (!hasAvatarPersona) {
     db.exec(`ALTER TABLE personas ADD COLUMN avatarUrl TEXT;`);
@@ -92,7 +115,7 @@ try {
 
 // If running against an existing DB without avatarUrl, add the column
 try {
-  const cols = db.prepare("PRAGMA table_info('characters')").all();
+  const cols = safePragmaAll(db, 'characters');
   const hasAvatar = cols.some((c: any) => c.name === 'avatarUrl');
   if (!hasAvatar) {
     db.exec(`ALTER TABLE characters ADD COLUMN avatarUrl TEXT;`);
@@ -103,7 +126,7 @@ try {
 
 // Ensure personas table has race and skinTone columns
 try {
-  const pcols = db.prepare("PRAGMA table_info('personas')").all();
+  const pcols = safePragmaAll(db, 'personas');
   const hasRace = pcols.some((c: any) => c.name === 'race');
   if (!hasRace) {
     db.exec(`ALTER TABLE personas ADD COLUMN race TEXT DEFAULT 'Caucasian';`);
@@ -118,7 +141,7 @@ try {
 
 // Ensure characters table has skinTone column
 try {
-  const ccols = db.prepare("PRAGMA table_info('characters')").all();
+  const ccols = safePragmaAll(db, 'characters');
   const hasSkinTone = ccols.some((c: any) => c.name === 'skinTone');
   if (!hasSkinTone) {
     db.exec(`ALTER TABLE characters ADD COLUMN skinTone TEXT DEFAULT 'white';`);
@@ -238,7 +261,7 @@ db.exec(`
 
 // If migrating an older DB, ensure Messages.tokenCount column exists
 try {
-  const mcols = db.prepare("PRAGMA table_info('Messages')").all();
+  const mcols = safePragmaAll(db, 'Messages');
   const hasToken = mcols.some((c: any) => c.name === 'tokenCount');
   if (!hasToken) {
     db.exec(`ALTER TABLE Messages ADD COLUMN tokenCount INTEGER DEFAULT 0;`);
@@ -249,7 +272,7 @@ try {
 
 // Ensure Scenes.activeCharacters column exists
 try {
-  const scols = db.prepare("PRAGMA table_info('Scenes')").all();
+  const scols = safePragmaAll(db, 'Scenes');
   const hasActive = scols.some((c: any) => c.name === 'activeCharacters');
   if (!hasActive) {
     db.exec(`ALTER TABLE Scenes ADD COLUMN activeCharacters JSON DEFAULT '[]';`);
@@ -260,7 +283,7 @@ try {
 
 // Ensure Messages.metadata column exists (JSON metadata for images, etc.)
 try {
-  const mcols2 = db.prepare("PRAGMA table_info('Messages')").all();
+  const mcols2 = safePragmaAll(db, 'Messages');
   const hasMetadata = mcols2.some((c: any) => c.name === 'metadata');
   if (!hasMetadata) {
     // Add metadata column to store JSON as TEXT; default to '{}'
@@ -272,7 +295,7 @@ try {
 
 // Ensure Messages.source column exists
 try {
-  const mcols3 = db.prepare("PRAGMA table_info('Messages')").all();
+  const mcols3 = safePragmaAll(db, 'Messages');
   const hasSource = mcols3.some((c: any) => c.name === 'source');
   if (!hasSource) {
     db.exec(`ALTER TABLE Messages ADD COLUMN source TEXT DEFAULT '';`);
@@ -283,7 +306,7 @@ try {
 
 // Ensure Scenes.summary column exists for summarization
 try {
-  const scols = db.prepare("PRAGMA table_info('Scenes')").all();
+  const scols = safePragmaAll(db, 'Scenes');
   const hasSummary = scols.some((c: any) => c.name === 'summary');
   if (!hasSummary) {
     db.exec(`ALTER TABLE Scenes ADD COLUMN summary TEXT;`);
@@ -294,7 +317,7 @@ try {
 
 // Ensure Scenes.lastSummarizedMessageId and summaryTokenCount columns exist
 try {
-  const scols2 = db.prepare("PRAGMA table_info('Scenes')").all();
+  const scols2 = safePragmaAll(db, 'Scenes');
   const hasLastSummarized = scols2.some((c: any) => c.name === 'lastSummarizedMessageId');
   const hasSummaryTokens = scols2.some((c: any) => c.name === 'summaryTokenCount');
   if (!hasLastSummarized) {
@@ -309,7 +332,7 @@ try {
 
 // Ensure Scenes world state and character state columns exist
 try {
-  const scols3 = db.prepare("PRAGMA table_info('Scenes')").all();
+  const scols3 = safePragmaAll(db, 'Scenes');
   const hasWorldState = scols3.some((c: any) => c.name === 'worldState');
   const hasLastWorldStateMessageNumber = scols3.some((c: any) => c.name === 'lastWorldStateMessageNumber');
   const hasCharacterStates = scols3.some((c: any) => c.name === 'characterStates');
@@ -329,7 +352,7 @@ try {
 // Phase 6: Round Tracking for Memory System
 // Ensure Messages.roundNumber column exists
 try {
-  const mcols = db.prepare("PRAGMA table_info('Messages')").all();
+  const mcols = safePragmaAll(db, 'Messages');
   const hasRoundNumber = mcols.some((c: any) => c.name === 'roundNumber');
   if (!hasRoundNumber) {
     db.exec(`ALTER TABLE Messages ADD COLUMN roundNumber INTEGER DEFAULT 1 NOT NULL;`);
@@ -365,7 +388,7 @@ try {
 
 // Ensure Scenes.currentRoundNumber column exists
 try {
-  const scols = db.prepare("PRAGMA table_info('Scenes')").all();
+  const scols = safePragmaAll(db, 'Scenes');
   const hasCurrentRoundNumber = scols.some((c: any) => c.name === 'currentRoundNumber');
   if (!hasCurrentRoundNumber) {
     db.exec(`ALTER TABLE Scenes ADD COLUMN currentRoundNumber INTEGER DEFAULT 1;`);

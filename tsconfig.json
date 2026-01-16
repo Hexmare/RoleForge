@@ -10,5 +10,7 @@
     "composite": true,
     "declaration": true
   },
-  "include": ["backend/src/**/*", "frontend/src/**/*", "shared/src/**/*"]
+  "include": ["backend/src/**/*", "shared/src/**/*"],
+  "exclude": ["frontend"]
 }
+

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Top-level controllable behavior objects for mocks
 const openaiBehavior: any = { mode: 'idle', calls: 0 };
