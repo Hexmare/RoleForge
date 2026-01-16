@@ -108,7 +108,7 @@ describe('MemoryRetriever temporal decay', () => {
     });
 
     // b should be decayed, a should remain at original similarity and may come after b depending on values
-    expect(results.some(r => r.text === 'a')).toBeTruthy();
+    expect(results.some((r: any) => r.text === 'a')).toBeTruthy();
   });
 
   it('falls back gracefully for malformed timestamps', async () => {
@@ -125,7 +125,7 @@ describe('MemoryRetriever temporal decay', () => {
     });
 
     // malformed timestamp should not throw; both entries present and similarities valid
-    const texts = results.map(r => r.text);
+    const texts = results.map((r: any) => r.text);
     expect(texts).toEqual(expect.arrayContaining(['good', 'bad']));
     for (const r of results) {
       expect(Number.isFinite(r.similarity)).toBeTruthy();

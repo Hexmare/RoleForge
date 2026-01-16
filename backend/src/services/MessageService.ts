@@ -4,19 +4,66 @@ import * as path from 'path';
 import { countTokens } from '../utils/tokenCounter.js';
 
 export const MessageService = {
-  // Task 2.1: Updated logMessage to accept roundNumber (default 1)
-  logMessage(sceneId: number, sender: string, message: string, charactersPresent: any[] = [], metadata: any = {}, source: string = '', roundNumber: number = 1) {
+  // Updated logMessage to accept optional sourceId (personaId or characterId)
+  // Signature kept backward-compatible: sourceId is optional last parameter
+  logMessage(sceneId: number, sender: string, message: string, charactersPresent: any[] = [], metadata: any = {}, source: string = '', roundNumber: number = 1, sourceId: string | null = null) {
+    // Normalize sender: strip leading "user:" prefix if present
+    let normalizedSender = String(sender || '');
+    if (/^user:/i.test(normalizedSender)) {
+      normalizedSender = normalizedSender.replace(/^user:/i, '').trim();
+    }
+
+    // Canonicalize source values
+    const srcRaw = (String(source || '') || (metadata && metadata.source ? String(metadata.source) : '')).toLowerCase();
+    let canonicalSource = '';
+    if (srcRaw === 'user' || srcRaw === 'user-input' || srcRaw === 'user_input' || srcRaw === 'userinput') {
+      canonicalSource = 'User';
+    } else if (srcRaw === 'character' || srcRaw === 'continue-round' || srcRaw === 'continue_round' || srcRaw === 'ai' || srcRaw === 'ai-response') {
+      canonicalSource = 'CharacterAgent';
+    } else if (srcRaw === 'narrator' || srcRaw === 'narration') {
+      canonicalSource = 'Narrator';
+    } else if (srcRaw === 'system') {
+      canonicalSource = 'System';
+    } else if (srcRaw === 'image') {
+      canonicalSource = 'Image';
+    } else if (srcRaw && srcRaw.length > 0) {
+      // Fallback: capitalize first
+      canonicalSource = srcRaw.charAt(0).toUpperCase() + srcRaw.slice(1);
+    } else {
+      canonicalSource = '';
+    }
+
+    // Allow metadata to provide sourceId if available
+    let resolvedSourceId: string | null = sourceId || null;
+    if (!resolvedSourceId && metadata) {
+      if (metadata.sourceId) resolvedSourceId = String(metadata.sourceId);
+      else if (metadata.personaId) resolvedSourceId = String(metadata.personaId);
+      else if (metadata.characterId) resolvedSourceId = String(metadata.characterId);
+    }
+
     const row = db.prepare('SELECT MAX(messageNumber) as maxNum FROM Messages WHERE sceneId = ?').get(sceneId) as any;
     const next = (row?.maxNum ?? 0) + 1;
     const tokenCount = countTokens(message);
-    const stmt = db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, charactersPresent, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    const result = stmt.run(sceneId, next, message, sender, JSON.stringify(charactersPresent), tokenCount, JSON.stringify(metadata || {}), source, roundNumber);
+    let result: any;
+    try {
+      const stmt = db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, charactersPresent, tokenCount, metadata, source, sourceId, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      result = stmt.run(sceneId, next, message, normalizedSender, JSON.stringify(charactersPresent), tokenCount, JSON.stringify(metadata || {}), canonicalSource, resolvedSourceId, roundNumber);
+    } catch (e: any) {
+      // Fallback for older DB schemas that don't have sourceId column yet
+      const msg = String(e && e.message ? e.message : e);
+      if (msg.includes('no column named sourceId') || msg.includes('has no column named sourceId')) {
+        const stmt2 = db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, charactersPresent, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        result = stmt2.run(sceneId, next, message, normalizedSender, JSON.stringify(charactersPresent), tokenCount, JSON.stringify(metadata || {}), canonicalSource, roundNumber);
+      } else {
+        throw e;
+      }
+    }
     const inserted = db.prepare('SELECT * FROM Messages WHERE id = ?').get(result.lastInsertRowid) as any;
     if (inserted) {
       inserted.charactersPresent = JSON.parse(inserted.charactersPresent || '[]');
       try { inserted.metadata = JSON.parse(inserted.metadata || '{}'); } catch { inserted.metadata = inserted.metadata || {}; }
     }
-    return inserted || { id: result.lastInsertRowid, sceneId, messageNumber: next, message, sender, tokenCount, source, roundNumber };
+    return inserted || { id: result.lastInsertRowid, sceneId, messageNumber: next, message, sender: normalizedSender, tokenCount, source: canonicalSource, sourceId: resolvedSourceId, roundNumber };
   },
 
   getMessages(sceneId: number, limit = 100, offset = 0) {

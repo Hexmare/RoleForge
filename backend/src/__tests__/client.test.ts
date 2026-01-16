@@ -79,7 +79,8 @@ describe('LLM Client', () => {
       
       // Other settings should still be inherited from the base profile
       expect(profile.sampler?.temperature).toBeDefined();
-      expect(profile.type).toBe('openai');
+      // Profile type should match configured default (allows different local configs)
+      expect(profile.type).toBe(configManager.getDefaultProfile().type);
     });
 
     it('should merge agent-specific sampler overrides for character agent', () => {
@@ -95,7 +96,8 @@ describe('LLM Client', () => {
       
       // Other settings should still be inherited from the base profile
       expect(profile.sampler?.temperature).toBeDefined();
-      expect(profile.type).toBe('openai');
+      // Profile type should match configured default (allows different local configs)
+      expect(profile.type).toBe(configManager.getDefaultProfile().type);
     });
 
     it('should merge agent-specific format overrides for director agent', () => {

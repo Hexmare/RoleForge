@@ -631,8 +631,9 @@ app.get('/api/scenes/:sceneId/messages', (req, res) => {
 
 app.post('/api/scenes/:sceneId/messages', (req, res) => {
   const { sceneId } = req.params;
-  const { sender, message, charactersPresent, metadata } = req.body;
-  res.json(MessageService.logMessage(Number(sceneId), sender, message, charactersPresent || [], metadata || {}));
+  const { sender, message, charactersPresent, metadata, source, sourceId, roundNumber } = req.body;
+  // Preserve backward compatibility: pass provided source/sourceId/roundNumber if present
+  res.json(MessageService.logMessage(Number(sceneId), sender, message, charactersPresent || [], metadata || {}, source || '', Number(roundNumber) || 1, sourceId || null));
 });
 
 // Task 5.1: Chat endpoint with round tracking
@@ -661,15 +662,16 @@ app.post('/api/scenes/:sceneId/chat', async (req, res) => {
       console.log(`[CHAT] Created round ${currentRound} record for scene ${sceneIdNum}`);
     }
 
-    // Create user message with roundNumber
+    // Create user message with roundNumber — use persona as sender and sourceId
     const userMsg = MessageService.logMessage(
       sceneIdNum,
-      'User',
+      persona,
       userMessage,
       activeCharacters || [],
       { source: 'user-input' },
       'user',
-      currentRound
+      currentRound,
+      persona || null
     );
 
     // Generate character responses with callback to log them
@@ -680,14 +682,16 @@ app.post('/api/scenes/:sceneId/chat', async (req, res) => {
       sceneIdNum,
       (response: { sender: string; content: string }) => {
         // Log character response with current round number
+        // Log character response; MessageService will canonicalize 'user-input'/'character' values
         MessageService.logMessage(
           sceneIdNum,
           response.sender,
           response.content,
           [],
           {},
-          'user-input',
-          currentRound
+          'character',
+          currentRound,
+          null
         );
       }
     );
@@ -2639,7 +2643,8 @@ io.on('connection', (socket) => {
       // Log user message if scene provided
       if (sceneId && !input.startsWith('/')) {
         try { 
-          MessageService.logMessage(sceneId, persona, input, activeCharacters || [], {}, 'user', currentRound); 
+          // Use persona as sender and as sourceId (if persona encodes an id it will be preserved)
+          MessageService.logMessage(sceneId, persona, input, activeCharacters || [], {}, 'user', currentRound, persona || null);
         } catch (e) { console.warn('Failed to log user message', e); }
       }
 

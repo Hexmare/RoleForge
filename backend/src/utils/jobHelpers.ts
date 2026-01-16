@@ -17,7 +17,7 @@ export async function appendAuditEntry(entry: any) {
   }
 }
 
-export function scheduleBackgroundJob(type: string, payload: Record<string, any> | undefined, runner: () => Promise<any>) {
+export function scheduleBackgroundJob(type: string, payload: Record<string, any> | undefined, runner: () => Promise<any>): any {
   const job = createJob(type, payload || {});
   try {
     setJobStatus(job.id, 'running');

@@ -75,6 +75,23 @@ export class VectorizationAgent extends BaseAgent {
         return 'skipped';
       }
 
+      // Only consider messages from User or CharacterAgent for vectorization.
+      // Backwards-compatible: if messages lack a `source` field, treat them as eligible.
+      const filteredMessages = (messages || []).filter((m: any) => {
+        if (!m) return false;
+        const s = (m && m.source) ? String(m.source) : '';
+        if (!s) return true; // legacy messages without source are eligible
+        return s === 'User' || s === 'CharacterAgent';
+      });
+
+      if (!filteredMessages || filteredMessages.length === 0) {
+        console.log(`[VECTORIZATION] No eligible messages (User/CharacterAgent) in round ${roundNumber}, skipping`);
+        return 'skipped';
+      }
+
+      // Use filteredMessages for summarization/storage
+      const usableMessages = filteredMessages;
+
       if (!activeCharacters || activeCharacters.length === 0) {
         console.log(`[VECTORIZATION] No active characters in round ${roundNumber}, skipping`);
         return 'skipped';
@@ -88,7 +105,7 @@ export class VectorizationAgent extends BaseAgent {
       await this.embeddingManager.initialize();
 
       // Summarize round into a memory snippet
-      const memorySnippet = this.summarizeRoundMessages(messages, activeCharacters, roundNumber);
+      const memorySnippet = this.summarizeRoundMessages(usableMessages, activeCharacters, roundNumber);
 
       if (!memorySnippet || memorySnippet.trim().length === 0) {
         console.log(`[VECTORIZATION] Empty memory snippet for round ${roundNumber}, skipping storage`);
@@ -174,8 +191,8 @@ export class VectorizationAgent extends BaseAgent {
           const messageIds: string[] = [];
           const speakerIds: string[] = [];
           try {
-            if (Array.isArray(messages)) {
-              for (const m of messages) {
+            if (Array.isArray(usableMessages)) {
+              for (const m of usableMessages) {
                 if (m && (m.id || m.messageId)) messageIds.push(String(m.id || m.messageId));
                 const speaker = m && (m.speakerId || m.speaker || m.senderId || m.sender);
                 if (speaker) speakerIds.push(String(speaker));
@@ -381,19 +398,8 @@ export class VectorizationAgent extends BaseAgent {
       if (clearExisting) {
         console.log(`[VECTORIZATION] Clearing existing vectors for scene ${sceneId}`);
         for (const characterEntry of Array.from(allCharactersSet)) {
-          // Normalize character entry to id/name
-          let characterId = '';
-          try {
-            if (typeof characterEntry === 'string') {
-              characterId = String(characterEntry);
-            } else if (characterEntry && typeof characterEntry === 'object') {
-              characterId = characterEntry.id ? String((characterEntry as any).id) : (characterEntry.name ? String((characterEntry as any).name) : String(characterEntry));
-            } else {
-              characterId = String(characterEntry);
-            }
-          } catch (e) {
-            characterId = String(characterEntry);
-          }
+          // Character entries are stored as strings (ids); normalize to string
+          const characterId = String(characterEntry);
 
           const scope = `world_${worldId}_char_${characterId}`;
           try {
