@@ -56,7 +56,49 @@ const io = new Server(server, {
 const regenLocks: Set<number> = new Set();
 
 // Middleware
-app.use(express.json());
+// Capture raw body while parsing JSON so we can attempt a tolerant reparse
+app.use(express.json({ verify: (req: any, _res, buf: Buffer) => { try { req.rawBody = buf.toString(); } catch { req.rawBody = undefined; } } }));
+
+// Error handler for JSON parse errors: try a tolerant reparse for common Windows/curl quoting issues
+app.use((err: any, req: any, res: any, next: any) => {
+  if (!err) return next();
+  const isBodyParserError = err && (err.type === 'entity.parse.failed' || err instanceof SyntaxError || (err.status === 400 && /json/i.test(String(err.message || ''))));
+  if (!isBodyParserError) return next(err);
+
+  const raw = req && req.rawBody ? String(req.rawBody) : '';
+  if (!raw) {
+    // Nothing to recover from
+    return res.status(400).json({ error: 'Invalid JSON body', detail: err.message });
+  }
+
+  // Try a tolerant parse: first try JSON.parse, then apply simple sanitization and retry
+  const tryParse = (s: string) => {
+    try { return JSON.parse(s); } catch (e) { /* fallthrough */ }
+    // Add quotes around unquoted object keys: { key: -> { "key":
+    try {
+      // Remove stray backslashes that often appear from Windows/curl/PowerShell escaping
+      const sNoSlashes = s.replace(/\\(?=[\s\w":,{}\[\]])/g, '');
+      let s2 = sNoSlashes.replace(/([,{\s])(\w+)\s*:/g, '$1"$2":');
+      // Replace single quotes with double quotes for strings
+      s2 = s2.replace(/'([^']*)'/g, '"$1"');
+      return JSON.parse(s2);
+    } catch (e) {
+      throw e;
+    }
+  };
+
+  try {
+    const parsed = tryParse(raw);
+    // Attach parsed body and continue to routes
+    req.body = parsed;
+    return next();
+  } catch (e) {
+    // Debug: include a short preview of the raw body in the response to help diagnose quoting/encoding issues
+    const rawPreview = (raw || '').slice(0, 400);
+    try { console.warn('[DEBUG] Raw request body preview:', rawPreview); } catch (_) {}
+    return res.status(400).json({ error: 'Invalid JSON body', detail: String(err.message || err), recoverError: String((e as any)?.message || e), rawPreview });
+  }
+});
 
 // Serve public files (avatars etc.)
 app.use('/public', express.static(path.join(process.cwd(), 'public')));
@@ -181,6 +223,17 @@ app.get('/api/scenes/:id', (req, res) => {
   const scene = SceneService.getById(Number(id));
   if (!scene) return res.status(404).json({ error: 'Scene not found' });
   res.json(scene);
+});
+
+// Global scenes list for admin UIs (id + title)
+app.get('/api/scenes', (req, res) => {
+  try {
+    const scenes = db.prepare('SELECT id, title, arcId, description FROM Scenes ORDER BY id').all();
+    res.json(scenes.map((s: any) => ({ id: s.id, title: s.title, arcId: s.arcId, description: s.description })));
+  } catch (e) {
+    console.error('Failed to list scenes:', e);
+    res.status(500).json({ error: 'Failed to list scenes' });
+  }
 });
 
 app.delete('/api/scenes/:id', (req, res) => {

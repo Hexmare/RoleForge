@@ -111,7 +111,8 @@ export class MemoryRetriever {
           const allCharacters = CharacterService.getAllCharacters();
           
           for (const char of allCharacters) {
-            const scope = `world_${options.worldId}_char_${char.id || char.name}`;
+            const charIdVal = (typeof char === 'string') ? String(char) : (char && (char.id ? String(char.id) : (char.name ? String(char.name) : String(char))));
+            const scope = `world_${options.worldId}_char_${charIdVal}`;
             try {
               const results = await this.vectorStore.query(query, scope, topK, minSimilarity);
               
@@ -119,14 +120,14 @@ export class MemoryRetriever {
                 memories.push({
                   text: entry.text,
                   similarity: entry.similarity || 0,
-                  characterName: char.name || 'unknown',
+                  characterName: char.name || charIdVal || 'unknown',
                   scope,
                   metadata: entry.metadata || {}
                 });
               }
               
               if (results.length > 0) {
-                console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} memories for ${char.name} in world ${options.worldId}`);
+                console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} memories for ${char.name || charIdVal} in world ${options.worldId}`);
               }
             } catch (error) {
               // Scope might not exist yet, skip it
@@ -148,7 +149,8 @@ export class MemoryRetriever {
           
           for (const world of allWorlds) {
             for (const char of allCharacters) {
-              const scope = `world_${world.id}_char_${char.id || char.name}`;
+              const charIdVal = (typeof char === 'string') ? String(char) : (char && (char.id ? String(char.id) : (char.name ? String(char.name) : String(char))));
+              const scope = `world_${world.id}_char_${charIdVal}`;
               try {
                 const results = await this.vectorStore.query(query, scope, topK, minSimilarity);
                 
@@ -156,14 +158,14 @@ export class MemoryRetriever {
                   memories.push({
                     text: entry.text,
                     similarity: entry.similarity || 0,
-                    characterName: char.name || 'unknown',
+                    characterName: char.name || charIdVal || 'unknown',
                     scope,
                     metadata: entry.metadata || {}
                   });
                 }
                 
                 if (results.length > 0) {
-                  console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} memories for ${char.name} in world ${world.id}`);
+                  console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} memories for ${char.name || charIdVal} in world ${world.id}`);
                 }
               } catch (error) {
                 // Scope might not exist yet, skip it

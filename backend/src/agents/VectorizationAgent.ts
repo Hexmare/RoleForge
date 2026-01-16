@@ -380,8 +380,22 @@ export class VectorizationAgent extends BaseAgent {
       // Step 2: Clear existing vectors if requested
       if (clearExisting) {
         console.log(`[VECTORIZATION] Clearing existing vectors for scene ${sceneId}`);
-        for (const character of Array.from(allCharactersSet)) {
-          const scope = `world_${worldId}_char_${character}`;
+        for (const characterEntry of Array.from(allCharactersSet)) {
+          // Normalize character entry to id/name
+          let characterId = '';
+          try {
+            if (typeof characterEntry === 'string') {
+              characterId = String(characterEntry);
+            } else if (characterEntry && typeof characterEntry === 'object') {
+              characterId = characterEntry.id ? String((characterEntry as any).id) : (characterEntry.name ? String((characterEntry as any).name) : String(characterEntry));
+            } else {
+              characterId = String(characterEntry);
+            }
+          } catch (e) {
+            characterId = String(characterEntry);
+          }
+
+          const scope = `world_${worldId}_char_${characterId}`;
           try {
             // Prefer scoped deletion by metadata (safer than full clear)
             const filter = { sceneId: String(sceneId) };
@@ -467,16 +481,31 @@ export class VectorizationAgent extends BaseAgent {
             baseChunks = overlapped;
           }
 
-          for (const characterName of activeCharacters) {
+          for (const charEntry of activeCharacters) {
             try {
-              const scope = `world_${worldId}_char_${characterName}`;
+              // Normalize character entry to id and name
+              let characterId = '';
+              let characterName = '';
+              if (typeof charEntry === 'string') {
+                characterId = String(charEntry);
+                characterName = String(charEntry);
+              } else if (charEntry && typeof charEntry === 'object') {
+                characterId = (charEntry as any).id ? String((charEntry as any).id) : ((charEntry as any).name ? String((charEntry as any).name) : String(charEntry));
+                characterName = (charEntry as any).name ? String((charEntry as any).name) : characterId;
+              } else {
+                characterId = String(charEntry);
+                characterName = String(charEntry);
+              }
+
+              const scope = `world_${worldId}_char_${characterId}`;
               for (let ci = 0; ci < baseChunks.length; ci++) {
                 const chunkText = String(baseChunks[ci] || '').trim();
                 if (!chunkText) continue;
-                const memoryId = `revectorize_round_${roundNumber}_${characterName}_${ci}_${Date.now()}`;
+                const memoryId = `revectorize_round_${roundNumber}_${characterId}_${ci}_${Date.now()}`;
                 const metadata = {
                   roundNumber: String(roundNumber),
                   sceneId: String(sceneId),
+                  characterId,
                   characterName,
                   worldName: scene.name || 'unknown',
                   actors: activeCharacters,
@@ -487,7 +516,7 @@ export class VectorizationAgent extends BaseAgent {
                 } as Record<string, any>;
 
                 try {
-                  const toStore = await this.personalizeMemory(chunkText, characterName, { scene, sceneId, roundNumber, worldId });
+                  const toStore = await this.personalizeMemory(chunkText, characterId, { scene, sceneId, roundNumber, worldId });
                   await this.vectorStore.addMemory(memoryId, toStore, metadata, scope);
                   totalMemoriesStored++;
                   console.log(`[VECTORIZATION] Stored revectorized memory ${memoryId} (chunk ${ci + 1}/${baseChunks.length}) for character ${characterName} in round ${roundNumber}`);
@@ -497,7 +526,7 @@ export class VectorizationAgent extends BaseAgent {
               }
             } catch (error) {
               console.error(
-                `[VECTORIZATION] Failed to store revectorized memory for character ${characterName} in round ${roundNumber}:`,
+                `[VECTORIZATION] Failed to store revectorized memory for character in round ${roundNumber}:`,
                 error
               );
             }

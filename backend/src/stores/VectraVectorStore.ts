@@ -919,7 +919,18 @@ export class VectraVectorStore implements VectorStoreInterface {
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         const scopeName = entry.name;
-        const count = await this.getMemoryCount(scopeName);
+        // Determine count without initializing or loading the vectra index to avoid
+        // creating or mutating scopes when merely requesting diagnostics.
+        let count = 0;
+        try {
+          const indexJsonPath = path.join(this.basePath, scopeName, 'index.json');
+          const content = await fs.readFile(indexJsonPath, 'utf-8');
+          const parsed = JSON.parse(content);
+          if (Array.isArray(parsed.items)) count = parsed.items.length;
+        } catch (e) {
+          // If index.json doesn't exist or can't be read, fall back to 0 without initializing the scope
+          count = 0;
+        }
 
         // Calculate approximate on-disk size and last updated timestamp for the scope
         let sizeOnDisk = 0;
