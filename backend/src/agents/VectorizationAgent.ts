@@ -501,7 +501,7 @@ export class VectorizationAgent extends BaseAgent {
               for (let ci = 0; ci < baseChunks.length; ci++) {
                 const chunkText = String(baseChunks[ci] || '').trim();
                 if (!chunkText) continue;
-                const memoryId = `revectorize_round_${roundNumber}_${characterId}_${ci}_${Date.now()}`;
+                const memoryId = `revectorize_scene_${sceneId}_round_${roundNumber}_${characterId}_${ci}_${Date.now()}`;
                 const metadata = {
                   roundNumber: String(roundNumber),
                   sceneId: String(sceneId),
