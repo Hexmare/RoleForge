@@ -25,6 +25,8 @@ Analyze the previous character messages and decide:
 - Which characters should naturally respond next? Look at who was mentioned or involved in the previous messages, or who should logically continue the conversation.
 - IMPORTANT: Only include NPC character names. Do NOT include 'user', 'Hex', or the player character in the characters list.
 
+Output only a valid JSON object in this format:
+{"guidance": "your directive here", "characters": ["name1", "name2"] or []}
 {% else %}
 {# This is a normal user input round #}
 Analyze the scene and decide:
@@ -42,12 +44,11 @@ CRITICAL: Identify ALL characters who are directly mentioned, spoken to, or logi
 - Characters who are present and would naturally respond to the situation
 - Characters who are being addressed or referenced in dialogue
 
-
-{% endif %}
 Choose from the active characters list, but prioritize characters who are clearly involved in the current interaction. If the user is addressing multiple characters or the scene involves multiple characters, include all relevant ones.
 
 Output only a valid JSON object in this format:
 {"guidance": "your directive here", "characters": ["name1", "name2"] or []}
+{% endif %}
 
 IMPORTANT: Every double quote (") inside the guidance text MUST be escaped as \".
 IMPORTANT: Use "characters" field (not "selectedCharacters").
