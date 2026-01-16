@@ -10,6 +10,7 @@ import { VectorStoreInterface, MemoryEntry } from '../interfaces/VectorStoreInte
 import EmbeddingManager from '../utils/embeddingManager.js';
 import { createJob, setJobStatus } from '../jobs/jobStore.js';
 import { recordAudit } from '../jobs/auditLog.js';
+import { matchesFilter, normalizeIndexItems } from '../utils/memoryHelpers.js';
 
 interface StoredMemory {
   id: string;
@@ -790,25 +791,21 @@ export class VectraVectorStore implements VectorStoreInterface {
               }
             }
 
-            // Normalize item shape to { id, metadata }
-            const items: Array<{ id: string; metadata: Record<string, any> }> = rawItems.map((it: any) => {
-              const id = it?.id || it?.item?.id || it?.item?.item?.id || (it?.item && it.item.id) || (it && it.id);
-              const metadata = it?.metadata || it?.meta || it?.item?.metadata || it?.item?.item?.metadata || {};
-              return { id, metadata } as any;
-            }).filter(x => x.id);
+            // Normalize items using shared helper
+            const items = normalizeIndexItems(rawItems);
 
-            // Find matching item ids
+            // Find matching item ids (use centralized matchesFilter to support nested fields)
             const toDeleteIds: string[] = [];
             for (const it of items) {
               const meta = it.metadata || {};
-              let match = true;
-              for (const k of Object.keys(filter)) {
-                if (meta[k] !== filter[k]) {
-                  match = false;
-                  break;
+              try {
+                if (matchesFilter(meta, filter)) {
+                  toDeleteIds.push(it.id);
                 }
+              } catch (e) {
+                // Skip items that cause matching errors
+                continue;
               }
-              if (match) toDeleteIds.push(it.id);
             }
 
             if (toDeleteIds.length > 0) {

@@ -28,6 +28,7 @@ import { randomBytes, randomUUID } from 'crypto';
 import { countTokens } from './utils/tokenCounter.js';
 import * as jobStore from './jobs/jobStore.js';
 import * as auditLog from './jobs/auditLog.js';
+import { getNestedField } from './utils/memoryHelpers.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -2538,13 +2539,9 @@ async function downloadAndStoreImageForScene(originalUrl: string, sceneId: numbe
 // Macro preprocessor: resolve dynamic variables with nested expansions
 function preprocessTemplate(template: string, context: Record<string, any>): string {
   return template.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
-    const value = getNestedValue(context, key.trim());
+    const value = getNestedField(context, key.trim());
     return value !== undefined ? String(value) : match;
   });
-}
-
-function getNestedValue(obj: any, path: string): any {
-  return path.split('.').reduce((current, key) => current?.[key], obj);
 }
 
 io.on('connection', (socket) => {

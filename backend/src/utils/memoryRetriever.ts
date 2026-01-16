@@ -6,6 +6,9 @@
 import { VectorStoreFactory } from './vectorStoreFactory.js';
 import { VectorStoreInterface, MemoryEntry } from '../interfaces/VectorStoreInterface.js';
 import { ConfigManager } from '../configManager.js';
+import { computeDecayAdjustedScore, applyConditionalBoost, formatMemoriesForPrompt } from './memoryHelpers.js';
+
+// Helper functions moved to `memoryHelpers.ts` for reusability and testability
 
 export interface RetrievedMemory {
   text: string;
@@ -230,114 +233,20 @@ export class MemoryRetriever {
         const vectorCfg = cfgMgr.getVectorConfig() || {};
         const decayCfg = options.temporalDecay ?? vectorCfg.temporalDecay ?? { enabled: false };
         const rules = options.conditionalRules ?? vectorCfg.conditionalRules ?? [];
-
         for (const mem of memories) {
           let score = mem.similarity || 0;
-
-          // Temporal decay
           try {
-            if (decayCfg && decayCfg.enabled && !(mem.metadata && mem.metadata.temporalBlind)) {
-              const mode = decayCfg.mode || 'time';
-              const floor = (decayCfg.floor !== undefined) ? Number(decayCfg.floor) : 0.3;
-
-              // Message-count based decay mode: use metadata.messageCountSince (or similar) when provided
-              if (mode === 'messageCount') {
-                let msgSince = Number(mem.metadata && (mem.metadata.messageCountSince || mem.metadata.message_count_since || mem.metadata.messages_since));
-                if (isNaN(msgSince)) {
-                  // Try to derive from DB using sceneId and the stored timestamp
-                  try {
-                    const sceneId = mem.metadata && (mem.metadata.sceneId || mem.metadata.scene_id || mem.metadata.scene);
-                    const ts = mem.metadata && (mem.metadata.timestamp || mem.metadata.stored_at);
-                    if (sceneId && ts) {
-                      const { MessageService } = await import('../services/MessageService.js');
-                      try {
-                        msgSince = Number(MessageService.getMessageCountSince(Number(sceneId), ts));
-                      } catch (e) {
-                        msgSince = NaN;
-                      }
-                    }
-                  } catch (e) {
-                    msgSince = NaN;
-                  }
-                }
-
-                if (!isNaN(msgSince)) {
-                  const halfLifeMsgs = (decayCfg.halfLife && Number(decayCfg.halfLife)) || 50;
-                  const rawFactor = Math.pow(0.5, msgSince / Math.max(1, halfLifeMsgs));
-                  const decayFactor = Math.max(rawFactor, floor);
-                  score = score * decayFactor;
-                } else {
-                  // Fallback to time-based if message-count not available
-                  const ts = mem.metadata && (mem.metadata.timestamp || mem.metadata.stored_at);
-                  if (ts) {
-                    const created = Date.parse(ts);
-                    if (!isNaN(created)) {
-                      const ageMs = Date.now() - created;
-                      const halfLifeDays = (decayCfg.halfLife && Number(decayCfg.halfLife)) || 7;
-                      const halfLifeMs = halfLifeDays * 24 * 60 * 60 * 1000;
-                      const rawFactor = Math.pow(0.5, ageMs / Math.max(1, halfLifeMs));
-                      const decayFactor = Math.max(rawFactor, floor);
-                      score = score * decayFactor;
-                    }
-                  }
-                }
-              } else {
-                // Default: time-based decay
-                const ts = mem.metadata && (mem.metadata.timestamp || mem.metadata.stored_at);
-                if (ts) {
-                  const created = Date.parse(ts);
-                  if (!isNaN(created)) {
-                    const ageMs = Date.now() - created;
-                    // Interpret halfLife as days for time mode
-                    const halfLifeDays = (decayCfg.halfLife && Number(decayCfg.halfLife)) || 7;
-                    const halfLifeMs = halfLifeDays * 24 * 60 * 60 * 1000;
-                    const rawFactor = Math.pow(0.5, ageMs / Math.max(1, halfLifeMs));
-                    const decayFactor = Math.max(rawFactor, floor);
-                    score = score * decayFactor;
-                  }
-                }
-              }
-            }
+            score = await computeDecayAdjustedScore(score, mem.metadata || {}, decayCfg);
           } catch (e) {
             // ignore decay errors
           }
 
-          // Conditional rules boosting
           try {
-            let boostMultiplier = 1;
-            for (const rule of rules) {
-              try {
-                const field = rule.field;
-                const matchVal = rule.match;
-                const boost = Number(rule.boost) || 1;
-                const matchType = rule.matchType || 'substring';
-                // Resolve nested field from metadata (e.g., 'metadata.keywords' or 'keywords')
-                const parts = field.split('.');
-                let target: any = mem.metadata || {};
-                for (const p of parts) {
-                  if (target == null) break;
-                  target = target[p];
-                }
-                if (target == null) continue;
-                const targetStr = String(target).toLowerCase();
-                const mStr = String(matchVal).toLowerCase();
-                let matched = false;
-                if (matchType === 'exact') {
-                  matched = targetStr === mStr;
-                } else {
-                  matched = targetStr.includes(mStr);
-                }
-                if (matched) boostMultiplier *= boost;
-              } catch (_) {
-                // ignore rule errors
-              }
-            }
-            score = score * boostMultiplier;
+            score = applyConditionalBoost(score, mem.metadata || {}, rules);
           } catch (e) {
             // ignore boosting errors
           }
 
-          // Overwrite similarity with adjusted score for downstream consumers
           mem.similarity = score;
         }
       } catch (e) {
@@ -360,28 +269,12 @@ export class MemoryRetriever {
    * @returns Formatted memory context string for templates
    */
   formatMemoriesForPrompt(memories: RetrievedMemory[]): string {
-    if (memories.length === 0) {
+    // Delegate formatting to helper for reuse and easier testing
+    try {
+      return formatMemoriesForPrompt(memories.map(m => ({ text: m.text, similarity: m.similarity, metadata: m.metadata })));
+    } catch (e) {
       return '';
     }
-
-    let formatted = '## Relevant Memories\n';
-
-    for (const memory of memories) {
-      const confidence = Math.round((memory.similarity || 0) * 100);
-      // Extract just the message content, stripping metadata prefix like "Round N (chars): "
-      let messageContent = memory.text;
-      const colonIndex = messageContent.indexOf(': ');
-      if (colonIndex !== -1) {
-        // Find the last ": " to get past all the prefixes, then extract the actual message
-        const parts = messageContent.split(': ');
-        if (parts.length > 1) {
-          messageContent = parts.slice(1).join(': ');
-        }
-      }
-      formatted += `- [${confidence}%] ${messageContent}\n`;
-    }
-
-    return formatted;
   }
 
   /**

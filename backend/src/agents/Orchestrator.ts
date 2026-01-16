@@ -21,6 +21,7 @@ import { Server } from 'socket.io';
 import LorebookService from '../services/LorebookService.js';
 import { matchLoreEntries } from '../utils/loreMatcher.js';
 import tryJsonRepair from '../utils/jsonRepair.js';
+import { getNestedField } from '../utils/memoryHelpers.js';
 
 export class Orchestrator {
   private configManager: ConfigManager;
@@ -432,13 +433,9 @@ export class Orchestrator {
 
   private preprocessTemplate(template: string, context: AgentContext): string {
     return template.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
-      const value = this.getNestedValue(context, key.trim());
+      const value = getNestedField(context, key.trim());
       return value !== undefined ? String(value) : match;
     });
-  }
-
-  private getNestedValue(obj: any, path: string): any {
-    return path.split('.').reduce((current, key) => current?.[key], obj);
   }
 
   private getActivatedLore(text: string): string[] {

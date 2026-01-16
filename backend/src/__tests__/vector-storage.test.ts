@@ -11,8 +11,9 @@ import VectorStoreFactory from '../utils/vectorStoreFactory.js';
 import fs from 'fs/promises';
 import path from 'path';
 
-// Test configuration
-const TEST_VECTOR_BASE_PATH = './vector_data';
+// Test configuration - isolate test vector data per worker to avoid cross-test
+// interference when running the full suite in parallel.
+const TEST_VECTOR_BASE_PATH = `./vector_data_test_${process.pid}`;
 const TEST_WORLD_ID = 9999999;
 const TEST_SCOPE = `world_${TEST_WORLD_ID}_char_test42`;
 const TEST_SCOPE_2 = `world_${TEST_WORLD_ID}_char_test43`;
