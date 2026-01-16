@@ -2960,6 +2960,22 @@ app.get('/api/debug/vector-scopes', async (req, res) => {
   }
 });
 
+// Diagnostics: detailed vector store stats
+app.get('/api/diagnostics/vector', async (req, res) => {
+  try {
+    const { VectorStoreFactory } = await import('./utils/vectorStoreFactory.js');
+    const vectorStore = VectorStoreFactory.getVectorStore() || VectorStoreFactory.createVectorStore('vectra');
+    if (!vectorStore) return res.status(500).json({ error: 'Vector store not available' });
+
+    const stats = await (vectorStore as any).getStats();
+    // Return more descriptive structure for front-end consumption
+    res.json({ totalScopes: stats.totalScopes, scopes: stats.scopes });
+  } catch (error) {
+    console.error('[DIAGNOSTICS] Failed to get vector diagnostics:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
 // Internal inspection endpoints for jobs and audits
 app.get('/internal/jobs', (req, res) => {
   try {

@@ -909,18 +909,41 @@ export class VectraVectorStore implements VectorStoreInterface {
    */
   async getStats(): Promise<{
     totalScopes: number;
-    scopes: Array<{ scope: string; count: number }>;
+    scopes: Array<{ scope: string; count: number; sizeOnDisk: number; lastUpdated?: string }>;
   }> {
     try {
-      const scopes: Array<{ scope: string; count: number }> = [];
+      const scopes: Array<{ scope: string; count: number; sizeOnDisk: number; lastUpdated?: string }> = [];
 
       // List all directories in base path
       const entries = await fs.readdir(this.basePath, { withFileTypes: true });
       for (const entry of entries) {
-        if (entry.isDirectory()) {
-          const count = await this.getMemoryCount(entry.name);
-          scopes.push({ scope: entry.name, count });
+        if (!entry.isDirectory()) continue;
+        const scopeName = entry.name;
+        const count = await this.getMemoryCount(scopeName);
+
+        // Calculate approximate on-disk size and last updated timestamp for the scope
+        let sizeOnDisk = 0;
+        let lastUpdated: string | undefined;
+        try {
+          const scopePath = path.join(this.basePath, scopeName);
+          const stack: string[] = [scopePath];
+          while (stack.length) {
+            const p = stack.pop() as string;
+            const stat = await fs.stat(p);
+            if (stat.isDirectory()) {
+              const children = await fs.readdir(p);
+              for (const c of children) stack.push(path.join(p, c));
+            } else if (stat.isFile()) {
+              sizeOnDisk += stat.size || 0;
+              const m = stat.mtime?.toISOString();
+              if (!lastUpdated || (m && m > lastUpdated)) lastUpdated = m;
+            }
+          }
+        } catch (e) {
+          // ignore filesystem errors for stats
         }
+
+        scopes.push({ scope: scopeName, count, sizeOnDisk, lastUpdated });
       }
 
       return {
