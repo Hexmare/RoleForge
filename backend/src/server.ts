@@ -571,7 +571,6 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
         sceneIdNum,
         r.sender,
         r.content,
-        [],
         {},
         r.sender === 'Narrator' ? 'narrator' : 'character',
         roundToRegenerate // Ensure messages are logged to the round being regenerated

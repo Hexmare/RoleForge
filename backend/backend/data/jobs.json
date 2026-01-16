@@ -306,5 +306,32 @@
       "ok": true,
       "value": 42
     }
+  },
+  {
+    "id": "testJob-1768582047033-w1gkyz",
+    "type": "testJob",
+    "createdAt": 1768582047033,
+    "updatedAt": 1768582047034,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true,
+      "value": 42
+    }
+  },
+  {
+    "id": "unit-test-job-1768582047472-hvv9u9",
+    "type": "unit-test-job",
+    "createdAt": 1768582047472,
+    "updatedAt": 1768582047472,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true
+    }
   }
 ]
