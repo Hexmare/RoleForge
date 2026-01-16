@@ -551,14 +551,16 @@ results = results.map(res => {
 
 ## Phase 7: Diagnostics & UI
 
+- [x] Phase 7 complete — diagnostics endpoint and UI components implemented
+
 ### User Stories
 - As an admin, I want diagnostics for vector health (e.g., count by scope/metadata).
 - As a user, I want UI to view/edit chunks.
 
 ### Sub-Phase 7.1: Backend Diagnostics Endpoint
 #### Tasks
-1. Add `/api/diagnostics/vector` in `server.ts` (include scope/metadata filters).
-2. Implement getStats with metadata count.
+- [x] Add `/api/diagnostics/vector` in `server.ts` (include scope/metadata filters).
+- [x] Implement getStats with metadata count.
 
 #### Code Examples
 - `server.ts`:
@@ -575,8 +577,8 @@ app.get('/api/diagnostics/vector', async (req, res) => {
 
 ### Sub-Phase 7.2: Frontend UI Components
 #### Tasks
-1. Add React component for vector browser (list by scope/metadata, delete).
-2. API for edit (trigger regen).
+- [x] Add React component for vector browser (list by scope/metadata, delete).
+- [x] API for edit (trigger regen).
 
 #### Code Examples
 - `frontend/src/components/VectorBrowser.tsx`: Fetch/display, buttons for deleteByMetadata.
