@@ -1,15 +1,29 @@
 [
   {
-    "id": "unit-test-job-1768533890521-0pf3ur",
+    "id": "unit-test-job-1768535142335-ec3xl2",
     "type": "unit-test-job",
-    "createdAt": 1768533890521,
-    "updatedAt": 1768533890521,
+    "createdAt": 1768535142335,
+    "updatedAt": 1768535142335,
     "status": "completed",
     "payload": {
       "foo": "bar"
     },
     "result": {
       "ok": true
+    }
+  },
+  {
+    "id": "testJob-1768534963966-kherlc",
+    "type": "testJob",
+    "createdAt": 1768534963966,
+    "updatedAt": 1768534963967,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true,
+      "value": 42
     }
   },
   {
@@ -171,6 +185,48 @@
     "type": "testJob",
     "createdAt": 1768533890263,
     "updatedAt": 1768533890263,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true,
+      "value": 42
+    }
+  },
+  {
+    "id": "testJob-1768534395019-v8ot1w",
+    "type": "testJob",
+    "createdAt": 1768534395019,
+    "updatedAt": 1768534395020,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true,
+      "value": 42
+    }
+  },
+  {
+    "id": "testJob-1768534609086-nr5bzv",
+    "type": "testJob",
+    "createdAt": 1768534609086,
+    "updatedAt": 1768534609087,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true,
+      "value": 42
+    }
+  },
+  {
+    "id": "testJob-1768535142108-phwysi",
+    "type": "testJob",
+    "createdAt": 1768535142109,
+    "updatedAt": 1768535142109,
     "status": "completed",
     "payload": {
       "foo": "bar"

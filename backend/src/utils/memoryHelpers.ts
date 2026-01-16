@@ -75,9 +75,20 @@ export async function computeDecayAdjustedScore(originalScore: number, metadata:
   return score;
 }
 
-export function applyConditionalBoost(originalScore: number, metadata: Record<string, any>, rules: any[] = []): number {
+export function applyConditionalBoost(originalScore: number, metadata: Record<string, any>, rules: any[] = [], context?: { text?: string }): number {
   let score = originalScore;
   if (!Array.isArray(rules) || rules.length === 0) return score;
+
+  // Simple keyword-based emotion detector fallback
+  function detectEmotionFromText(text?: string): string {
+    if (!text) return 'neutral';
+    const t = String(text).toLowerCase();
+    if (t.includes('happy') || t.includes('joy') || t.includes('glad') || t.includes('love')) return 'happy';
+    if (t.includes('sad') || t.includes('sorrow') || t.includes('unhappy')) return 'sad';
+    if (t.includes('angry') || t.includes('mad') || t.includes('rage')) return 'angry';
+    if (t.includes('fear') || t.includes('scared') || t.includes('afraid')) return 'fear';
+    return 'neutral';
+  }
 
   let boostMultiplier = 1;
   for (const rule of rules) {
@@ -88,12 +99,36 @@ export function applyConditionalBoost(originalScore: number, metadata: Record<st
       const boost = Number(rule.boost) || 1;
       const matchType = rule.matchType || 'substring';
 
-      const parts = field.split('.');
-      let target: any = metadata || {};
-      for (const p of parts) {
-        if (target == null) break;
-        target = target[p];
+      // Support matching against memory text when rule.field is 'text' or starts with 'text.'
+      let target: any = undefined;
+      if (field === 'text' || field.startsWith('text.')) {
+        target = context && context.text ? context.text : undefined;
+        if (field !== 'text' && target != null) {
+          const parts = field.split('.').slice(1);
+          for (const p of parts) {
+            if (target == null) break;
+            target = target[p];
+          }
+        }
+      } else if (field === 'emotion' || field.endsWith('.emotion')) {
+        // Emotion may be present in metadata or inferred from text
+        const parts = field.split('.');
+        let metaTarget: any = metadata || {};
+        for (const p of parts) {
+          if (metaTarget == null) break;
+          metaTarget = metaTarget[p];
+        }
+        target = metaTarget != null ? metaTarget : detectEmotionFromText(context && context.text ? context.text : undefined);
+      } else {
+        const parts = field.split('.');
+        let metaTarget: any = metadata || {};
+        for (const p of parts) {
+          if (metaTarget == null) break;
+          metaTarget = metaTarget[p];
+        }
+        target = metaTarget;
       }
+
       if (target == null) continue;
       const targetStr = String(target).toLowerCase();
       const mStr = String(matchVal).toLowerCase();

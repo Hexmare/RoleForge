@@ -67,6 +67,62 @@ The following decisions were provided and will be applied to the implementation 
 - **Decay application point:** Apply temporal decay in `MemoryRetriever.queryMemories()` after similarity scoring; make decay settings overridable per-query via `options.temporalDecay`.
 - **Conditional rules schema:** Start with `{ field: 'metadata.keywords', match: 'silver', boost: 1.5 }` style objects for `conditionalRules`.
 - **Diagnostics fields:** Backend diagnostic endpoints should return at minimum: `scope name`, `memory count`, `size on disk`, `lastUpdated`.
+
+### Conditional Rules Examples
+Below are practical rule shapes and explanations. Rules are evaluated per-memory and matching rules multiply their `boost` values together (multiplicative stacking).
+
+- Basic metadata substring match
+
+```json
+{ "field": "metadata.keywords", "match": "silver", "boost": 1.5 }
+```
+
+- Exact metadata match (use `matchType: 'exact'` when you need identity checks)
+
+```json
+{ "field": "metadata.npcRole", "match": "Merchant", "boost": 2, "matchType": "exact" }
+```
+
+- Nested metadata field (dot-notation)
+
+```json
+{ "field": "metadata.tags.campaignTag", "match": "holiday_event", "boost": 1.25 }
+```
+
+- Match against the memory text itself
+
+```json
+{ "field": "text", "match": "betrayed", "boost": 2 }
+```
+
+- Match inferred emotion from memory text (falls back to simple keyword detector when `metadata.emotion` missing)
+
+```json
+{ "field": "emotion", "match": "sad", "boost": 1.6 }
+```
+
+- Downrank / penalize using boost < 1
+
+```json
+{ "field": "metadata.isDeprecated", "match": "true", "boost": 0.5, "matchType": "exact" }
+```
+
+- Combined example for config (mix of metadata/text/emotion rules)
+
+```json
+"conditionalRules": [
+  { "field": "metadata.keywords", "match": "silver", "boost": 1.5 },
+  { "field": "text", "match": "betrayed", "boost": 2 },
+  { "field": "emotion", "match": "angry", "boost": 1.4 }
+]
+```
+
+Notes:
+- `field` supports dot-notation for nested metadata and the special top-level keys `text` and `emotion`.
+- `matchType` may be `substring` (default) or `exact`.
+- `boost` is multiplicative across matching rules. To penalize, use a boost between 0 and 1.
+- Rules are applied after temporal decay, so boosts affect already time-adjusted similarity scores.
+- Keep rules focused; large rule sets may affect retrieval latency.
 - **Tests policy:** Mock only necessary parts in unit tests. Tests must clean up any data they create and must not delete real game data during CI or dev runs.
 - **Backwards compatibility:** Do not add runtime support for legacy name-based scopes; prefer revectorization to rebuild outdated vectors.
 - **Memory formatting:** Move presentation/formatting of memories into templating logic; `MemoryRetriever` should return raw memory items and metadata for templates to render.
@@ -458,8 +514,8 @@ async regenerateMessage(sceneId: string, roundId: string, messageId: string) {
 
 ### Sub-Phase 6.1: Implement Decay in Retriever
 #### Tasks
-1. Update `MemoryRetriever.ts` retrieve() with decay calc (use timestamp in metadata for age).
-2. Add getAge func.
+- [x] Update `MemoryRetriever.ts` retrieve() with decay calc (use timestamp in metadata for age).
+- [x] Add getAge func.
 
 #### Code Examples
 - `MemoryRetriever.ts`:
@@ -481,8 +537,8 @@ results = results.map(res => {
 
 ### Sub-Phase 6.2: Add Re-ranking with Rules
 #### Tasks
-1. Implement applyBoost for conditionalRules (check metadata.keywords/emotions).
-2. Add emotion detection if needed.
+- [x] Implement applyBoost for `conditionalRules` (check `metadata.keywords`/emotions).
+- [x] Add emotion detection if needed.
 
 #### Code Examples
 - Similar to previous: Boost if matches rule.

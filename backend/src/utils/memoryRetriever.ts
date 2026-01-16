@@ -242,7 +242,7 @@ export class MemoryRetriever {
           }
 
           try {
-            score = applyConditionalBoost(score, mem.metadata || {}, rules);
+            score = applyConditionalBoost(score, mem.metadata || {}, rules, { text: mem.text });
           } catch (e) {
             // ignore boosting errors
           }
