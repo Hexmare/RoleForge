@@ -54,10 +54,10 @@ describe('MessageService integration tests', () => {
     // Insert a message with an old timestamp, and another newer message
     const oldTs = new Date(Date.now() - 10000).toISOString();
     const newerTs = new Date(Date.now() - 1000).toISOString();
-    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, timestamp, charactersPresent, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(resolved.sceneId, 1, 'old', 'Alice', oldTs, JSON.stringify([]), 1, JSON.stringify({}), '', 1);
-    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, timestamp, charactersPresent, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(resolved.sceneId, 2, 'new', 'Bob', newerTs, JSON.stringify([]), 1, JSON.stringify({}), '', 1);
+    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, timestamp, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(resolved.sceneId, 1, 'old', 'Alice', oldTs, 1, JSON.stringify({}), '', 1);
+    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, timestamp, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(resolved.sceneId, 2, 'new', 'Bob', newerTs, 1, JSON.stringify({}), '', 1);
 
     const count = MessageService.getMessageCountSince(resolved.sceneId, oldTs);
     // should count messages with timestamp > oldTs, which is the newer one (1)

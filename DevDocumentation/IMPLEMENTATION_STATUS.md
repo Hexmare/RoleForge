@@ -301,7 +301,6 @@ CREATE TABLE Messages (
   message TEXT,
   sender TEXT,
   timestamp DATETIME,
-  charactersPresent JSON,
   tokenCount INTEGER,
   metadata JSON,
   source TEXT
@@ -703,13 +702,14 @@ CREATE TABLE Messages (
   message TEXT NOT NULL,
   sender TEXT NOT NULL,
   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-  charactersPresent JSON,
   tokenCount INTEGER DEFAULT 0,
   metadata TEXT DEFAULT '{}',
   source TEXT DEFAULT '',
   UNIQUE(sceneId, messageNumber)
 );
 ```
+
+-- Note: character presence per-round is stored in `SceneRounds.activeCharacters`.
 
 ### Characters & Personas
 ```sql

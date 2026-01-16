@@ -78,11 +78,13 @@ CREATE TABLE Messages (
   message TEXT NOT NULL,
   sender TEXT NOT NULL,
   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-  charactersPresent JSON,
   tokenCount INTEGER DEFAULT 0,
   roundNumber INTEGER DEFAULT 1 NOT NULL,  -- NEW COLUMN
   UNIQUE(sceneId, messageNumber)
 );
+
+-- Note: character presence is tracked in the `SceneRounds.activeCharacters` column
+-- (one authoritative place for which characters were active in a round).
 ```
 
 ### New Table: SceneRounds (Metadata)

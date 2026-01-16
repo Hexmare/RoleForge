@@ -46,12 +46,12 @@ describe('computeDecayAdjustedScore DB-backed message-count path', () => {
     const newer1 = new Date(Date.now() - 30000).toISOString(); // 30s ago
     const newer2 = new Date(Date.now() - 10000).toISOString(); // 10s ago
 
-    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, timestamp, charactersPresent, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(resolved.sceneId, 1, 'old', 'Alice', baseTs, JSON.stringify([]), 1, JSON.stringify({}), '', 1);
-    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, timestamp, charactersPresent, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(resolved.sceneId, 2, 'n1', 'Bob', newer1, JSON.stringify([]), 1, JSON.stringify({}), '', 1);
-    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, timestamp, charactersPresent, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(resolved.sceneId, 3, 'n2', 'Eve', newer2, JSON.stringify([]), 1, JSON.stringify({}), '', 1);
+    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, timestamp, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(resolved.sceneId, 1, 'old', 'Alice', baseTs, 1, JSON.stringify({}), '', 1);
+    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, timestamp, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(resolved.sceneId, 2, 'n1', 'Bob', newer1, 1, JSON.stringify({}), '', 1);
+    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, timestamp, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(resolved.sceneId, 3, 'n2', 'Eve', newer2, 1, JSON.stringify({}), '', 1);
 
     const metadata = { sceneId: resolved.sceneId, timestamp: baseTs };
     const decayCfg = { enabled: true, mode: 'messageCount', halfLife: 2, floor: 0.001 };

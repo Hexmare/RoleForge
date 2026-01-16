@@ -1,5 +1,19 @@
 [
   {
+    "id": "testJob-1768581189233-n2g287",
+    "type": "testJob",
+    "createdAt": 1768581189233,
+    "updatedAt": 1768581189234,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true,
+      "value": 42
+    }
+  },
+  {
     "id": "testJob-1768534963966-kherlc",
     "type": "testJob",
     "createdAt": 1768534963966,
@@ -280,16 +294,17 @@
     }
   },
   {
-    "id": "unit-test-job-1768573730996-3c3f3y",
-    "type": "unit-test-job",
-    "createdAt": 1768573730996,
-    "updatedAt": 1768573730996,
+    "id": "testJob-1768576423162-wc2i5h",
+    "type": "testJob",
+    "createdAt": 1768576423162,
+    "updatedAt": 1768576423162,
     "status": "completed",
     "payload": {
       "foo": "bar"
     },
     "result": {
-      "ok": true
+      "ok": true,
+      "value": 42
     }
   }
 ]

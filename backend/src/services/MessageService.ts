@@ -6,7 +6,7 @@ import { countTokens } from '../utils/tokenCounter.js';
 export const MessageService = {
   // Updated logMessage to accept optional sourceId (personaId or characterId)
   // Signature kept backward-compatible: sourceId is optional last parameter
-  logMessage(sceneId: number, sender: string, message: string, charactersPresent: any[] = [], metadata: any = {}, source: string = '', roundNumber: number = 1, sourceId: string | null = null) {
+  logMessage(sceneId: number, sender: string, message: string, metadata: any = {}, source: string = '', roundNumber: number = 1, sourceId: string | null = null) {
     // Normalize sender: strip leading "user:" prefix if present
     let normalizedSender = String(sender || '');
     if (/^user:/i.test(normalizedSender)) {
@@ -46,30 +46,32 @@ export const MessageService = {
     const tokenCount = countTokens(message);
     let result: any;
     try {
-      const stmt = db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, charactersPresent, tokenCount, metadata, source, sourceId, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      result = stmt.run(sceneId, next, message, normalizedSender, JSON.stringify(charactersPresent), tokenCount, JSON.stringify(metadata || {}), canonicalSource, resolvedSourceId, roundNumber);
+      const stmt = db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, tokenCount, metadata, source, sourceId, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      result = stmt.run(sceneId, next, message, normalizedSender, tokenCount, JSON.stringify(metadata || {}), canonicalSource, resolvedSourceId, roundNumber);
     } catch (e: any) {
       // Fallback for older DB schemas that don't have sourceId column yet
       const msg = String(e && e.message ? e.message : e);
       if (msg.includes('no column named sourceId') || msg.includes('has no column named sourceId')) {
-        const stmt2 = db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, charactersPresent, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        result = stmt2.run(sceneId, next, message, normalizedSender, JSON.stringify(charactersPresent), tokenCount, JSON.stringify(metadata || {}), canonicalSource, roundNumber);
+        const stmt2 = db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        result = stmt2.run(sceneId, next, message, normalizedSender, tokenCount, JSON.stringify(metadata || {}), canonicalSource, roundNumber);
       } else {
         throw e;
       }
     }
-    const inserted = db.prepare('SELECT * FROM Messages WHERE id = ?').get(result.lastInsertRowid) as any;
+    const inserted = db.prepare('SELECT m.*, sr.activeCharacters FROM Messages m LEFT JOIN SceneRounds sr ON m.sceneId = sr.sceneId AND m.roundNumber = sr.roundNumber WHERE m.id = ?').get(result.lastInsertRowid) as any;
     if (inserted) {
-      inserted.charactersPresent = JSON.parse(inserted.charactersPresent || '[]');
+      inserted.charactersPresent = JSON.parse(inserted.activeCharacters || '[]');
       try { inserted.metadata = JSON.parse(inserted.metadata || '{}'); } catch { inserted.metadata = inserted.metadata || {}; }
+      delete inserted.activeCharacters;
     }
     return inserted || { id: result.lastInsertRowid, sceneId, messageNumber: next, message, sender: normalizedSender, tokenCount, source: canonicalSource, sourceId: resolvedSourceId, roundNumber };
   },
 
   getMessages(sceneId: number, limit = 100, offset = 0) {
-    return db.prepare('SELECT * FROM Messages WHERE sceneId = ? ORDER BY messageNumber DESC LIMIT ? OFFSET ?').all(sceneId, limit, offset).map((r: any) => {
-      r.charactersPresent = JSON.parse(r.charactersPresent || '[]');
+    return db.prepare('SELECT m.*, sr.activeCharacters FROM Messages m LEFT JOIN SceneRounds sr ON m.sceneId = sr.sceneId AND m.roundNumber = sr.roundNumber WHERE m.sceneId = ? ORDER BY m.messageNumber DESC LIMIT ? OFFSET ?').all(sceneId, limit, offset).map((r: any) => {
+      r.charactersPresent = JSON.parse(r.activeCharacters || '[]');
       try { r.metadata = JSON.parse(r.metadata || '{}'); } catch { r.metadata = r.metadata || {}; }
+      delete r.activeCharacters;
       return r;
     });
   },
@@ -78,19 +80,21 @@ export const MessageService = {
     if (metadata !== undefined) {
       const stmt = db.prepare('UPDATE Messages SET message = ?, metadata = ? WHERE id = ?');
       const result = stmt.run(newContent, JSON.stringify(metadata || {}), id);
-      const updated = db.prepare('SELECT * FROM Messages WHERE id = ?').get(id) as any;
+      const updated = db.prepare('SELECT m.*, sr.activeCharacters FROM Messages m LEFT JOIN SceneRounds sr ON m.sceneId = sr.sceneId AND m.roundNumber = sr.roundNumber WHERE m.id = ?').get(id) as any;
       if (updated) {
-        updated.charactersPresent = JSON.parse(updated.charactersPresent || '[]');
+        updated.charactersPresent = JSON.parse(updated.activeCharacters || '[]');
         try { updated.metadata = JSON.parse(updated.metadata || '{}'); } catch { updated.metadata = updated.metadata || {}; }
+        delete updated.activeCharacters;
       }
       return { changes: result.changes, row: updated };
     } else {
       const stmt = db.prepare('UPDATE Messages SET message = ? WHERE id = ?');
       const result = stmt.run(newContent, id);
-      const updated = db.prepare('SELECT * FROM Messages WHERE id = ?').get(id) as any;
+      const updated = db.prepare('SELECT m.*, sr.activeCharacters FROM Messages m LEFT JOIN SceneRounds sr ON m.sceneId = sr.sceneId AND m.roundNumber = sr.roundNumber WHERE m.id = ?').get(id) as any;
       if (updated) {
-        updated.charactersPresent = JSON.parse(updated.charactersPresent || '[]');
+        updated.charactersPresent = JSON.parse(updated.activeCharacters || '[]');
         try { updated.metadata = JSON.parse(updated.metadata || '{}'); } catch { updated.metadata = updated.metadata || {}; }
+        delete updated.activeCharacters;
       }
       return { changes: result.changes, row: updated };
     }
@@ -272,9 +276,10 @@ export const MessageService = {
 
   // Task 2.2: Get all messages for a specific round
   getRoundMessages(sceneId: number, roundNumber: number) {
-    return db.prepare('SELECT * FROM Messages WHERE sceneId = ? AND roundNumber = ? ORDER BY messageNumber ASC').all(sceneId, roundNumber).map((r: any) => {
-      r.charactersPresent = JSON.parse(r.charactersPresent || '[]');
+    return db.prepare('SELECT m.*, sr.activeCharacters FROM Messages m LEFT JOIN SceneRounds sr ON m.sceneId = sr.sceneId AND m.roundNumber = sr.roundNumber WHERE m.sceneId = ? AND m.roundNumber = ? ORDER BY m.messageNumber ASC').all(sceneId, roundNumber).map((r: any) => {
+      r.charactersPresent = JSON.parse(r.activeCharacters || '[]');
       try { r.metadata = JSON.parse(r.metadata || '{}'); } catch { r.metadata = r.metadata || {}; }
+      delete r.activeCharacters;
       return r;
     });
   },
@@ -294,11 +299,11 @@ export const MessageService = {
 
   // Task 2.5: Utility methods for round operations
   getLastMessage(sceneId: number) {
-    return db.prepare('SELECT * FROM Messages WHERE sceneId = ? ORDER BY messageNumber DESC LIMIT 1').get(sceneId) as any;
+    return db.prepare('SELECT m.*, sr.activeCharacters FROM Messages m LEFT JOIN SceneRounds sr ON m.sceneId = sr.sceneId AND m.roundNumber = sr.roundNumber WHERE m.sceneId = ? ORDER BY m.messageNumber DESC LIMIT 1').get(sceneId) as any;
   },
 
   getLastMessageInRound(sceneId: number, roundNumber: number) {
-    return db.prepare('SELECT * FROM Messages WHERE sceneId = ? AND roundNumber = ? ORDER BY messageNumber DESC LIMIT 1').get(sceneId, roundNumber) as any;
+    return db.prepare('SELECT m.*, sr.activeCharacters FROM Messages m LEFT JOIN SceneRounds sr ON m.sceneId = sr.sceneId AND m.roundNumber = sr.roundNumber WHERE m.sceneId = ? AND m.roundNumber = ? ORDER BY m.messageNumber DESC LIMIT 1').get(sceneId, roundNumber) as any;
   },
 
   getMessageCountInRound(sceneId: number, roundNumber: number): number {

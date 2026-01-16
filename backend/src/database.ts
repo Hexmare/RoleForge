@@ -243,7 +243,6 @@ db.exec(`
     message TEXT NOT NULL,
     sender TEXT NOT NULL,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    charactersPresent JSON,
     tokenCount INTEGER DEFAULT 0,
     UNIQUE(sceneId, messageNumber)
   );

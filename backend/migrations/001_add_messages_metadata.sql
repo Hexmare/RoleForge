@@ -10,14 +10,13 @@ CREATE TABLE Messages (
   message TEXT NOT NULL,
   sender TEXT NOT NULL,
   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-  charactersPresent JSON,
   tokenCount INTEGER DEFAULT 0,
   metadata TEXT DEFAULT '{}',
   UNIQUE(sceneId, messageNumber)
 );
 
-INSERT INTO Messages (id, sceneId, messageNumber, message, sender, timestamp, charactersPresent, tokenCount)
-SELECT id, sceneId, messageNumber, message, sender, timestamp, charactersPresent, tokenCount FROM Messages_old;
+INSERT INTO Messages (id, sceneId, messageNumber, message, sender, timestamp, tokenCount)
+SELECT id, sceneId, messageNumber, message, sender, timestamp, tokenCount FROM Messages_old;
 
 DROP TABLE Messages_old;
 COMMIT;

@@ -631,9 +631,10 @@ app.get('/api/scenes/:sceneId/messages', (req, res) => {
 
 app.post('/api/scenes/:sceneId/messages', (req, res) => {
   const { sceneId } = req.params;
-  const { sender, message, charactersPresent, metadata, source, sourceId, roundNumber } = req.body;
+  const { sender, message, metadata, source, sourceId, roundNumber } = req.body;
   // Preserve backward compatibility: pass provided source/sourceId/roundNumber if present
-  res.json(MessageService.logMessage(Number(sceneId), sender, message, charactersPresent || [], metadata || {}, source || '', Number(roundNumber) || 1, sourceId || null));
+  // Note: charactersPresent is no longer persisted on Messages; active characters are sourced from SceneRounds
+  res.json(MessageService.logMessage(Number(sceneId), sender, message, metadata || {}, source || '', Number(roundNumber) || 1, sourceId || null));
 });
 
 // Task 5.1: Chat endpoint with round tracking
@@ -667,7 +668,6 @@ app.post('/api/scenes/:sceneId/chat', async (req, res) => {
       sceneIdNum,
       persona,
       userMessage,
-      activeCharacters || [],
       { source: 'user-input' },
       'user',
       currentRound,
@@ -687,7 +687,6 @@ app.post('/api/scenes/:sceneId/chat', async (req, res) => {
           sceneIdNum,
           response.sender,
           response.content,
-          [],
           {},
           'character',
           currentRound,
@@ -2642,9 +2641,9 @@ io.on('connection', (socket) => {
 
       // Log user message if scene provided
       if (sceneId && !input.startsWith('/')) {
-        try { 
+          try { 
           // Use persona as sender and as sourceId (if persona encodes an id it will be preserved)
-          MessageService.logMessage(sceneId, persona, input, activeCharacters || [], {}, 'user', currentRound, persona || null);
+          MessageService.logMessage(sceneId, persona, input, {}, 'user', currentRound, persona || null);
         } catch (e) { console.warn('Failed to log user message', e); }
       }
 
@@ -2693,7 +2692,7 @@ io.on('connection', (socket) => {
                 // Save message content and metadata separately
                 let metaObj: any = null;
                 try { metaObj = altData && typeof altData === 'object' ? altData : null; } catch { metaObj = null; }
-                const saved = MessageService.logMessage(sceneId, r.sender, `![](${stored.localUrl})`, [], metaObj || { prompt: imgMatch[1], urls: [stored.localUrl], current: 0 }, 'image', currentRound);
+                  const saved = MessageService.logMessage(sceneId, r.sender, `![](${stored.localUrl})`, metaObj || { prompt: imgMatch[1], urls: [stored.localUrl], current: 0 }, 'image', currentRound);
                 try { io.to(`scene-${sceneId}`).emit('imageStored', { message: saved, originalUrl: origUrl, localUrl: stored.localUrl, size: stored.size, width: stored.width, height: stored.height }); } catch (e) { console.warn('Failed to emit imageStored', e); }
                 continue;
               }
@@ -2706,7 +2705,7 @@ io.on('connection', (socket) => {
             } else if (r.sender === 'Narrator') {
               source = 'narrator';
             }
-            MessageService.logMessage(sceneId, r.sender, content, [], {}, source, currentRound);
+            MessageService.logMessage(sceneId, r.sender, content, {}, source, currentRound);
           } catch (e) { console.warn('Failed to log AI response', e); }
         }
       }

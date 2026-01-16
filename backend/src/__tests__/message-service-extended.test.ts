@@ -112,10 +112,10 @@ describe('MessageService extended tests', () => {
   it('getLatestRound and getCurrentRoundMessages behavior', () => {
     const resolved = ids;
     // insert messages across rounds
-    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, charactersPresent, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(resolved.sceneId, 1, 'r1m1', 'A', JSON.stringify([]), 1, JSON.stringify({}), '', 1);
-    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, charactersPresent, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(resolved.sceneId, 2, 'r2m1', 'B', JSON.stringify([]), 1, JSON.stringify({}), '', 2);
+    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(resolved.sceneId, 1, 'r1m1', 'A', 1, JSON.stringify({}), '', 1);
+    db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(resolved.sceneId, 2, 'r2m1', 'B', 1, JSON.stringify({}), '', 2);
     db.prepare('INSERT INTO SceneRounds (sceneId, roundNumber, activeCharacters, status) VALUES (?, ?, ?, ?)')
       .run(resolved.sceneId, 1, JSON.stringify([]), 'completed');
     db.prepare('INSERT INTO SceneRounds (sceneId, roundNumber, activeCharacters, status) VALUES (?, ?, ?, ?)')

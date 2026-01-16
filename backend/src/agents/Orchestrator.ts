@@ -199,7 +199,7 @@ export class Orchestrator {
         (response: { sender: string; content: string }) => {
           console.log(`[CONTINUE_ROUND] Callback received response from ${response.sender}`);
           // Log character response with current round number
-          MessageService.logMessage(sceneId, response.sender, response.content, [], {}, 'continue-round', this.currentRoundNumber);
+          MessageService.logMessage(sceneId, response.sender, response.content, {}, 'continue-round', this.currentRoundNumber);
           this.addActiveCharacter(response.sender);
           
           // Emit to frontend immediately
