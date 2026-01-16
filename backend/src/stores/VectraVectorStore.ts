@@ -492,7 +492,12 @@ export class VectraVectorStore implements VectorStoreInterface {
   async deleteMemory(id: string, scope: string): Promise<void> {
     try {
       if (!this.indexes.has(scope)) {
-        throw new Error(`Scope ${scope} not found`);
+        // If not initialized in-memory, check if scope exists on disk and try to init.
+        const exists = await this.scopeExists(scope);
+        if (!exists) {
+          throw new Error(`Scope ${scope} not found`);
+        }
+        await this.init(scope);
       }
 
       const index = this.indexes.get(scope);
@@ -902,6 +907,78 @@ export class VectraVectorStore implements VectorStoreInterface {
     }
 
     return performDelete();
+  }
+
+  /**
+   * List items matching metadata filter. Returns items grouped by scope with pagination support.
+   */
+  async listByMetadata(
+    filter: Record<string, any>,
+    scope?: string,
+    options?: { limit?: number; offset?: number }
+  ): Promise<{ totalMatches: number; items: Array<{ scope: string; id: string; metadata: Record<string, any>; text?: string }> }> {
+    const limit = (options && Number(options.limit)) || 50;
+    const offset = (options && Number(options.offset)) || 0;
+
+    const scopesToCheck: string[] = [];
+    if (scope) scopesToCheck.push(scope);
+    else {
+      try {
+        const entries = await fs.readdir(this.basePath, { withFileTypes: true });
+        for (const entry of entries) if (entry.isDirectory()) scopesToCheck.push(entry.name);
+      } catch (e) {
+        return { totalMatches: 0, items: [] };
+      }
+    }
+
+    const matched: Array<{ scope: string; id: string; metadata: Record<string, any>; text?: string }> = [];
+
+    for (const s of scopesToCheck) {
+      try {
+        const idxPath = path.join(this.basePath, s);
+        // ensure scope exists
+        const exists = await this.scopeExists(s);
+        if (!exists) continue;
+
+        // read index.json
+        let rawItems: any[] = [];
+        try {
+          const content = await fs.readFile(path.join(idxPath, 'index.json'), 'utf-8');
+          const parsed = JSON.parse(content);
+          rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+        } catch (readErr) {
+          // fallback to vectra listing
+          try {
+            if (!this.indexes.has(s)) await this.init(s);
+            const idx = this.indexes.get(s);
+            if (idx) {
+              const listed = await idx.queryItems(new Array(768).fill(0), '', 100000);
+              rawItems = Array.isArray(listed) ? listed.map((r: any) => r.item || r) : [];
+            }
+          } catch (qe) {
+            continue;
+          }
+        }
+
+        const items = normalizeIndexItems(rawItems);
+        for (const it of items) {
+          try {
+            if (matchesFilter(it.metadata || {}, filter || {})) {
+              matched.push({ scope: s, id: it.id, metadata: it.metadata || {}, text: (it.metadata && it.metadata.text) || '' });
+            }
+          } catch (_) {
+            // ignore matching errors
+          }
+        }
+      } catch (e) {
+        // ignore per-scope errors
+        continue;
+      }
+    }
+
+    const totalMatches = matched.length;
+    const paged = matched.slice(offset, offset + limit);
+    return { totalMatches, items: paged };
   }
 
   /**

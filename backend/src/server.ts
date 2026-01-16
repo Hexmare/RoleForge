@@ -2783,6 +2783,28 @@ io.on('connection', (socket) => {
       if (sid) {
         socket.join(`scene-${sid}`);
         console.log('Socket joined scene', sid);
+
+        // Persist the selected scene for the campaign so reconnects/emit-only flows
+        // also update the authoritative campaign state. Resolve scene -> arc -> campaign.
+        try {
+          const scene = SceneService.getById(Number(sid));
+          if (scene && scene.arcId) {
+            const arc = ArcService.getById(Number(scene.arcId));
+            const campaignId = arc && arc.campaignId ? Number(arc.campaignId) : null;
+            if (campaignId) {
+              try {
+                CampaignService.updateState(campaignId, { currentSceneId: Number(sid) });
+                console.log(`Persisted currentSceneId=${sid} on campaign ${campaignId} via joinScene`);
+                // Emit stateUpdated so connected clients refresh their campaign state
+                try { io.emit('stateUpdated', { campaignId, state: CampaignService.getState(campaignId).dynamicFacts || {}, trackers: CampaignService.getState(campaignId).trackers || {} }); } catch (e) {}
+              } catch (e) {
+                console.warn('Failed to persist campaign state on joinScene', e);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to resolve campaign for joinScene persistence', e);
+        }
       }
     } catch (e) {
       console.warn('joinScene failed', e);
@@ -3025,6 +3047,125 @@ app.get('/api/diagnostics/vector', async (req, res) => {
     res.json({ totalScopes: stats.totalScopes, scopes: stats.scopes });
   } catch (error) {
     console.error('[DIAGNOSTICS] Failed to get vector diagnostics:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+// List vector items matching metadata (with pagination)
+app.post('/api/debug/vector-list', async (req, res) => {
+  try {
+    const { filter, scope, limit, offset } = req.body || {};
+    const { VectorStoreFactory } = await import('./utils/vectorStoreFactory.js');
+    const vectorStore = VectorStoreFactory.getVectorStore() || VectorStoreFactory.createVectorStore('vectra');
+    if (!vectorStore) return res.status(500).json({ error: 'Vector store not available' });
+
+    if (typeof (vectorStore as any).listByMetadata !== 'function') {
+      return res.status(500).json({ error: 'listByMetadata not implemented on vector store' });
+    }
+
+    const result = await (vectorStore as any).listByMetadata(filter || {}, scope, { limit: Number(limit || 50), offset: Number(offset || 0) });
+    res.json(result);
+  } catch (error) {
+    console.error('[DEBUG] Failed to list vector items:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+// Safe delete by metadata: supports dryRun and confirm flags
+app.post('/api/debug/vector-delete', async (req, res) => {
+  try {
+    const { filter, scope, dryRun, confirm, background, confirmThreshold } = req.body || {};
+    const { VectorStoreFactory } = await import('./utils/vectorStoreFactory.js');
+    const vectorStore = VectorStoreFactory.getVectorStore() || VectorStoreFactory.createVectorStore('vectra');
+    if (!vectorStore) return res.status(500).json({ error: 'Vector store not available' });
+
+    // Get matching items first
+    let list = { totalMatches: 0, items: [] as any[] };
+    if (typeof (vectorStore as any).listByMetadata === 'function') {
+      list = await (vectorStore as any).listByMetadata(filter || {}, scope, { limit: 1000000, offset: 0 });
+    } else {
+      // If no listing support, proceed with deleteByMetadata dryRun to determine count
+      if (dryRun) {
+        // call deleteByMetadata with dryRun to allow the store to compute matches (it logs but may not return them)
+        await (vectorStore as any).deleteByMetadata(filter || {}, scope, { dryRun: true, confirm: !!confirm });
+        return res.json({ message: 'Dry-run executed; check server logs for details' });
+      }
+    }
+
+    if (dryRun) {
+      return res.json({ dryRun: true, totalMatches: list.totalMatches, items: list.items });
+    }
+
+    // Safety threshold
+    const threshold = Number(confirmThreshold || 50);
+    if (list.totalMatches >= threshold && !confirm) {
+      return res.status(400).json({ error: `Operation would delete ${list.totalMatches} items; set confirm=true to proceed or lower confirmThreshold.` });
+    }
+
+    // Proceed with deletion (may run in background if requested)
+    await (vectorStore as any).deleteByMetadata(filter || {}, scope, { dryRun: false, confirm: !!confirm, background: !!background, confirmThreshold: threshold, actor: req.ip || 'api' });
+
+    return res.json({ success: true, deletedApprox: list.totalMatches, scopes: Array.from(new Set(list.items.map((i: any) => i.scope))) });
+  } catch (error) {
+    console.error('[DEBUG] Failed to delete vector items by metadata:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+// Delete a single vector item by id within a scope
+app.post('/api/debug/vector-item-delete', async (req, res) => {
+  try {
+    const { scope, id } = req.body || {};
+    if (!scope || !id) return res.status(400).json({ error: 'scope and id are required' });
+    const { VectorStoreFactory } = await import('./utils/vectorStoreFactory.js');
+    const vectorStore = VectorStoreFactory.getVectorStore() || VectorStoreFactory.createVectorStore('vectra');
+    if (!vectorStore) return res.status(500).json({ error: 'Vector store not available' });
+
+    if (typeof (vectorStore as any).deleteMemory !== 'function') {
+      return res.status(500).json({ error: 'deleteMemory not implemented on vector store' });
+    }
+
+    await (vectorStore as any).deleteMemory(String(id), String(scope));
+    res.json({ success: true, id, scope });
+  } catch (error) {
+    console.error('[DEBUG] Failed to delete vector item:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+// Update a single vector item by id within a scope (delete then re-add with new text/metadata)
+app.post('/api/debug/vector-item-update', async (req, res) => {
+  try {
+    const { scope, id, text, metadata } = req.body || {};
+    if (!scope || !id) return res.status(400).json({ error: 'scope and id are required' });
+    const { VectorStoreFactory } = await import('./utils/vectorStoreFactory.js');
+    const vectorStore = VectorStoreFactory.getVectorStore() || VectorStoreFactory.createVectorStore('vectra');
+    if (!vectorStore) return res.status(500).json({ error: 'Vector store not available' });
+
+    // Ensure listing is available to find existing item
+    if (typeof (vectorStore as any).listByMetadata !== 'function') {
+      return res.status(500).json({ error: 'listByMetadata not implemented on vector store' });
+    }
+
+    // Try to locate existing item
+    const list = await (vectorStore as any).listByMetadata({}, scope, { limit: 1000000, offset: 0 });
+    const existing = Array.isArray(list.items) ? list.items.find((it: any) => String(it.id) === String(id)) : null;
+    if (!existing) return res.status(404).json({ error: 'Item not found' });
+
+    const newText = typeof text === 'string' ? text : existing.text;
+    const newMetadata = Object.assign({}, existing.metadata || {}, (metadata && typeof metadata === 'object') ? metadata : {});
+
+    // Perform delete then add to update embedding and metadata
+    if (typeof (vectorStore as any).deleteMemory !== 'function' || typeof (vectorStore as any).addMemory !== 'function') {
+      return res.status(500).json({ error: 'update operations not implemented on vector store' });
+    }
+
+    await (vectorStore as any).deleteMemory(String(id), String(scope));
+    await (vectorStore as any).addMemory(String(id), String(newText), newMetadata, String(scope));
+
+    return res.json({ success: true, item: { scope, id, metadata: newMetadata, text: newText } });
+  } catch (error) {
+    console.error('[DEBUG] Failed to update vector item:', error);
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
