@@ -718,10 +718,38 @@ export class Orchestrator {
 
     // Step 2: Director guidance and character selection
     const directorAgent = this.agents.get('director')!;
+    // Resolve active character names. Prefer explicit `activeCharacters` parameter when provided
+    const safeActiveNames = (sessionContext.activeCharacters || [])
+      .map((c: any) => (c && (c.name || c.displayName || c.id)) || null)
+      .filter((n: any) => !!n);
+
+    const paramResolvedNames = (activeCharacters || [])
+      .map((a: any) => {
+        // Try to match against resolved session characters first
+        const match = (sessionContext.activeCharacters || []).find((c: any) => c && (c.id === a || c.name === a || c.slug === a));
+        if (match) return match.name || match.displayName || match.id;
+
+        // Try to resolve via CharacterService (if 'a' is an id)
+        try {
+          const merged = CharacterService.getMergedCharacter({ characterId: a, worldId: sessionContext.world.id, campaignId: sessionContext.campaign.id });
+          if (merged) return merged.name || merged.displayName || merged.id;
+        } catch (e) {
+          // ignore resolution errors
+        }
+
+        // Try lookup by name as a last resort
+        const byName = this.getCharacterByName(String(a));
+        if (byName) return byName.name || byName.id;
+
+        return null;
+      })
+      .filter((n: any) => !!n);
+
+    const activeCharacterNamesStr = paramResolvedNames.length ? paramResolvedNames.join(', ') : (safeActiveNames.length ? safeActiveNames.join(', ') : 'None');
     const directorContext = { 
       ...context, 
       activeCharacters: activeCharacters || [],
-      activeCharacterNames: sessionContext.activeCharacters.map(c => c.name).join(', '),
+      activeCharacterNames: activeCharacterNamesStr,
       history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history
     };
     console.log('Calling DirectorAgent');

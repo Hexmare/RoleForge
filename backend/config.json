@@ -6,6 +6,9 @@
     "summarizationInterval": 1000,
     "maxSummaryTokens": 1000
   },
+  "debug": {
+    "LoreDebug": false
+  },
   "comfyui": {
     "endpoint": "http://localhost:8188",
     "workflow": "z_image_turbo.json",
@@ -43,7 +46,7 @@
     },
     "kobold": {
       "type": "custom",
-      "baseURL": "http://192.168.88.88:5001",
+      "baseURL": "http://192.168.88.135:5001",
       "model": "koboldcpp/mistralai_Ministral-3-14B-Reasoning-2512-Q5_K_M",
       "template": "mistralv7tekken",
       "sampler": {
