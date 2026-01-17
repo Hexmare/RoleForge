@@ -2,7 +2,7 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import { ConfigManager } from './configManager';
+import { ConfigManager, Config } from './configManager';
 import { chatCompletion, ChatMessage } from './llm/client';
 import * as nunjucks from 'nunjucks';
 import * as fs from 'fs';
@@ -24,6 +24,7 @@ import LorebookService from './services/LorebookService';
 import { VisualAgent } from './agents/VisualAgent';
 import { tryParse, unwrapPrompt } from './utils/unpackPrompt';
 import axios from 'axios';
+import debug from 'debug';
 import { randomBytes, randomUUID } from 'crypto';
 import { countTokens } from './utils/tokenCounter.js';
 import * as jobStore from './jobs/jobStore.js';
@@ -51,6 +52,62 @@ const server = createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' }
 });
+
+const configManager = new ConfigManager();
+
+const DEFAULT_DEBUG_WHITELIST = ['roleforge:*'];
+
+const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const buildWhitelistPatterns = (whitelist?: string[]) => {
+  const list = Array.isArray(whitelist) && whitelist.length ? whitelist : DEFAULT_DEBUG_WHITELIST;
+  return list.map(entry => new RegExp(`^${entry.split('*').map(escapePattern).join('.*')}$`));
+};
+
+const sanitizeNamespaceList = (raw: string, patterns: RegExp[]) => {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean)
+    .filter(entry => {
+      const normalized = entry.startsWith('-') ? entry.slice(1).trim() : entry.trim();
+      if (!normalized) return false;
+      return patterns.some(pattern => pattern.test(normalized));
+    });
+};
+
+const getSourceNamespaces = (cfg: Config) => {
+  const envValue = process.env.DEBUG?.trim();
+  if (envValue) return envValue;
+  return cfg.debug?.enabledNamespaces?.trim() || '';
+};
+
+const getSanitizedDebugConfig = (cfg: Config) => {
+  const whitelistPatterns = buildWhitelistPatterns(cfg.debug?.whitelist);
+  const namespaces = sanitizeNamespaceList(getSourceNamespaces(cfg), whitelistPatterns);
+  return {
+    enabledNamespaces: namespaces.join(','),
+    colors: cfg.debug?.colors ?? true
+  };
+};
+
+const applyDebugConfig = () => {
+  const cfg = configManager.getConfig();
+  const sanitized = getSanitizedDebugConfig(cfg);
+  if (sanitized.enabledNamespaces) {
+    debug.enable(sanitized.enabledNamespaces);
+    console.log(`Debug enabled (namespaces: ${sanitized.enabledNamespaces})`);
+  }
+  if (cfg.debug?.colors === false) {
+    process.env.DEBUG_COLORS = '0';
+  } else {
+    delete process.env.DEBUG_COLORS;
+  }
+  return sanitized;
+};
+
+applyDebugConfig();
 
 // In-memory per-message regen lock to prevent concurrent regen requests
 const regenLocks: Set<number> = new Set();
@@ -1164,12 +1221,14 @@ app.get('/api/workflows/:name', (req, res) => {
 app.get('/api/debug-config', (req, res) => {
   try {
     const cfg = configManager.getConfig();
+    const sanitizedDebug = getSanitizedDebugConfig(cfg);
     // Clone minimal subset and mask secrets
     const out: any = {
       features: cfg.features || {},
       comfyui: cfg.comfyui ? { endpoint: cfg.comfyui.endpoint, workflow: cfg.comfyui.workflow } : {},
       agents: cfg.agents || {}
     };
+    out.debug = sanitizedDebug;
     // Mask any apiKey values in profiles
     if (cfg.profiles) {
       out.profiles = {};
@@ -1347,6 +1406,7 @@ app.put('/api/settings/comfyui', (req, res) => {
     fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2));
     try { 
       configManager.reload(); 
+      applyDebugConfig();
     } catch (e) { 
       console.warn('Failed to reload configManager after saving comfyui', e);
     }
@@ -1433,6 +1493,7 @@ app.post('/api/llm/config', express.json(), (req, res) => {
     
     // Reload config manager
     configManager.reload();
+    applyDebugConfig();
     
     res.json({ success: true, config: currentConfig });
   } catch (error: any) {
@@ -1468,6 +1529,9 @@ app.post('/api/llm/profiles', express.json(), (req, res) => {
     
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     configManager.reload();
+    applyDebugConfig();
+    applyDebugConfig();
+    applyDebugConfig();
     
     res.json({ success: true, profile: { name, ...profile } });
   } catch (error: any) {
@@ -1491,7 +1555,8 @@ app.put('/api/llm/profiles/:name', express.json(), (req, res) => {
     
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     configManager.reload();
-    
+    applyDebugConfig();
+
     res.json({ success: true, profile: { name, ...config.profiles[name] } });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1513,6 +1578,7 @@ app.delete('/api/llm/profiles/:name', (req, res) => {
     
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     configManager.reload();
+    applyDebugConfig();
     
     res.json({ success: true });
   } catch (error: any) {
@@ -2520,9 +2586,6 @@ app.post('/api/personas/:id/field', async (req, res) => {
     res.status(500).json({ error: 'Failed to update field' });
   }
 });
-
-// Load config
-const configManager = new ConfigManager();
 
 // Initialize Orchestrator (after io is defined)
 let orchestrator: Orchestrator;

@@ -7,7 +7,18 @@
     "maxSummaryTokens": 1000
   },
   "debug": {
-    "LoreDebug": false
+    "enabledNamespaces": "roleforge:llm:*,roleforge:image:gen,roleforge:story:*",
+    "colors": true,
+    "whitelist": [
+      "roleforge:llm:*",
+      "roleforge:image:*",
+      "roleforge:ui:render",
+      "roleforge:story:guide",
+      "roleforge:frontend:*",
+      "roleforge:backend:*",
+      "roleforge:llm:prompt",
+      "roleforge:llm:response"
+    ]
   },
   "comfyui": {
     "endpoint": "http://localhost:8188",

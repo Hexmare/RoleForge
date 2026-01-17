@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
+import debug from 'debug';
 import './App.css';
 import CharacterManager from './CharacterManager';
 import LoreManager from './LoreManager';
@@ -96,6 +97,16 @@ function App() {
           const json = await r.json();
           setDebugConfig(json);
           debugRef.current = json || {};
+          const namespaces = json?.debug?.enabledNamespaces;
+          if (namespaces) {
+            debug.enable(namespaces);
+            console.log('Frontend debug enabled via backend:', namespaces);
+          }
+          if (json?.debug?.colors === false) {
+            document.body.classList.add('debug-no-colors');
+          } else {
+            document.body.classList.remove('debug-no-colors');
+          }
         }
       } catch (e) { /* ignore */ }
     })();

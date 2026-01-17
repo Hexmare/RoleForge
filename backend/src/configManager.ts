@@ -20,6 +20,12 @@ export interface SamplerSettings {
   n?: number;
 }
 
+export interface DebugSettings {
+  enabledNamespaces?: string;
+  colors?: boolean;
+  whitelist?: string[];
+}
+
 export interface LLMProfile {
   type: 'openai' | 'custom'; // 'openai' uses OpenAI SDK, 'custom' uses axios with templates
   apiKey?: string;
@@ -54,6 +60,7 @@ export interface Config {
     maxSummaryTokens?: number;
   };
   vector?: any;
+  debug?: DebugSettings;
 }
 
 export class ConfigManager {
@@ -76,7 +83,12 @@ export class ConfigManager {
             model: 'gpt-3.5-turbo'
           }
         },
-        comfyui: undefined
+        comfyui: undefined,
+        debug: {
+          enabledNamespaces: 'roleforge:llm:*,roleforge:image:gen',
+          colors: true,
+          whitelist: ['roleforge:*']
+        }
       };
       fs.writeFileSync(configPath, JSON.stringify(dummyConfig, null, 2));
       return dummyConfig;

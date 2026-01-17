@@ -56,58 +56,75 @@ Examples:
 - `roleforge:backend:*`         → everything backend-only
 - `roleforge:frontend:*`        → everything frontend-only
 
-## Configuring Flags via `config.json` (Recommended)
+## Configuring Flags via backend/config.json
 
-The `debug` package reads from the `DEBUG` environment variable by default, but we load namespaces from **`config.json`** for easier local development.
+The `debug` package still respects the `DEBUG` environment variable, but we prefer loading namespaces from the existing tracked backend configuration (`backend/config.json`) so everyone shares the same defaults.
 
-### 1. Create / Update `config.json`
+### 1. Update backend/config.json
 
-Place this file in the project root (next to `package.json`).  
-Example:
+Add or extend the `debug` section inside `backend/config.json` (the file already under version control) with the desired namespaces, terminal-color preference, and a whitelist of allowed namespace patterns:
 
 ```json
-{
-  "debug": {
-    "enabledNamespaces": "roleforge:llm:*,roleforge:image:gen,roleforge:story:*,-roleforge:llm:verbose",
-    "colors": true
-  }
+"debug": {
+  "enabledNamespaces": "roleforge:llm:*,roleforge:image:gen,roleforge:story:*",
+  "colors": true,
+  "whitelist": [
+    "roleforge:llm:*",
+    "roleforge:image:*",
+    "roleforge:ui:render",
+    "roleforge:story:guide",
+    "roleforge:frontend:*",
+    "roleforge:backend:*",
+    "roleforge:llm:prompt",
+    "roleforge:llm:response"
+  ]
 }
 ```
 
-- `enabledNamespaces`: Comma-separated list. Supports:
-  - Wildcards: `*`
-  - Negation: `-namespace`
-  - Examples: `roleforge:*` (everything), `roleforge:llm,-roleforge:llm:verbose` (LLM but not verbose parts)
-- `colors`: `true`/`false` (optional – disables terminal colors if needed)
+- `enabledNamespaces`: Comma-separated list (supports `*` and negation like `-roleforge:llm:verbose`).
+- `colors`: `true`/`false` (optional – set `false` to disable ANSI colors in the terminal).
+- `whitelist`: Permitted namespace patterns; the backend must validate any runtime value against this list before calling `debug.enable()`.
 
-Commit a `config.example.json` and add `config.json` to `.gitignore`.
+### 2. Backend – Load and validate
 
-### 2. Backend – Load from `config.json`
-
-In your main entry file (e.g. `server.js`, `index.js`, or a dedicated `lib/debug-init.js`):
+In the backend entry point (for example, `backend/src/server.ts`), load `backend/config.json`, fall back to `process.env.DEBUG`, and validate namespaces against the configured whitelist before enabling them:
 
 ```javascript
 const fs = require('fs');
 const path = require('path');
 const debug = require('debug');
 
-const configPath = path.join(__dirname, 'config.json');
-let namespaces = process.env.DEBUG || ''; // fallback to env var
+const configPath = path.resolve(__dirname, '..', 'config.json');
+let namespaces = process.env.DEBUG || '';
+let config;
 
 if (fs.existsSync(configPath)) {
   try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     if (config.debug?.enabledNamespaces) {
       namespaces = config.debug.enabledNamespaces;
     }
   } catch (err) {
-    console.error('Failed to load debug config from config.json:', err.message);
+    console.error('Failed to load debug config:', err.message);
   }
 }
 
+const isAllowedNamespace = (value) => {
+  const whitelist = (config?.debug?.whitelist || []).map((entry) => new RegExp(`^${entry.replace('*', '.*')}$`));
+  return whitelist.some((pattern) => pattern.test(value));
+};
+
 if (namespaces) {
-  debug.enable(namespaces);
-  console.log(`Debug enabled (from config.json / DEBUG env): ${namespaces}`);
+  const allowed = namespaces
+    .split(',')
+    .map((ns) => ns.trim())
+    .filter((ns) => !ns.startsWith('-'))
+    .filter((ns) => isAllowedNamespace(ns));
+
+  if (allowed.length) {
+    debug.enable(allowed.join(','));
+    console.log(`Debug enabled (from config.json / DEBUG env): ${allowed.join(',')}`);
+  }
 }
 
 // Optional: respect colors setting
@@ -118,37 +135,40 @@ if (config?.debug?.colors === false) {
 
 Now run your server normally — it uses `config.json` automatically.
 
-### 3. Frontend – Load from `config.json` (or localStorage)
+### 3. Frontend – Fetch debug config from the backend
 
-**Option A: Fetch `config.json` at startup** (if serving it statically)
+Rather than reading a static file, the frontend should hit a backend endpoint (e.g. `GET /api/debug-config`) that returns the current `debug` namespace settings. Example response payload:
+
+```json
+{
+  "enabledNamespaces": "roleforge:llm:*,roleforge:image:gen",
+  "colors": true
+}
+```
+
+The backend endpoint must load `backend/config.json`, run the whitelist validation described above, and return only sanitized values; no browser-side persistence (like `localStorage`) is allowed.
 
 ```javascript
-// In main.js, app entry, or a debug init module
 import debug from 'debug';
 
 async function initDebug() {
-  try {
-    const res = await fetch('/config.json');
-    if (!res.ok) throw new Error('Not found');
-    const config = await res.json();
-    const namespaces = config.debug?.enabledNamespaces || '';
-    if (namespaces) {
-      debug.enable(namespaces);
-      console.log('Frontend debug enabled from config.json:', namespaces);
-    }
-  } catch {
-    // fallback: use localStorage if exists
-    const stored = localStorage.getItem('debug');
-    if (stored) debug.enable(stored);
+  const res = await fetch('/api/debug-config');
+  if (!res.ok) return;
+
+  const { enabledNamespaces, colors } = await res.json();
+  if (colors === false) {
+    document.body.classList.add('debug-no-colors');
+  }
+  if (enabledNamespaces) {
+    debug.enable(enabledNamespaces);
+    console.log('Frontend debug enabled from backend config:', enabledNamespaces);
   }
 }
 
 initDebug();
 ```
 
-IMPORTANT: We will NOT use browser `localStorage` for debug configuration. All debug configuration must be persisted in the backend and served to the frontend via a secure endpoint.
-
-Do NOT set `localStorage.debug` in the browser. Instead, the frontend should request the current debug namespaces from the backend at startup (or subscribe to a secure admin-updated channel) and call `debug.enable()` with the received namespaces. The backend is the single source of truth for debug flags and must validate and sanitize any changes (see "Security note" below).
+The backend is the single source of truth, so any flag updates should happen there and propagate through this endpoint.
 
 ## Quick CLI Overrides (for one-off debugging)
 
