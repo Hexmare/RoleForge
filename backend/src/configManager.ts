@@ -65,8 +65,10 @@ export interface Config {
 
 export class ConfigManager {
   private config: Config;
+  private readonly configPath: string;
 
   constructor(configPath: string = path.join(__dirname, '..', 'config.json')) {
+    this.configPath = configPath;
     this.config = this.loadConfig(configPath);
   }
 
@@ -132,7 +134,7 @@ export class ConfigManager {
   }
 
   reload(): void {
-    this.config = this.loadConfig(path.join(__dirname, '..', 'config.json'));
+    this.config = this.loadConfig(this.configPath);
   }
 
   getVectorConfig(): any {
@@ -141,5 +143,18 @@ export class ConfigManager {
 
   isVisualAgentEnabled(): boolean {
     return this.config.features?.visualAgentEnabled ?? false;
+  }
+
+  updateDebugSettings(updates: Partial<DebugSettings>): Config {
+    const nextDebug: DebugSettings = {
+      ...this.config.debug,
+      ...updates
+    };
+    this.config = {
+      ...this.config,
+      debug: nextDebug
+    };
+    fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+    return this.getConfig();
   }
 }

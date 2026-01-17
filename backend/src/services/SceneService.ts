@@ -4,6 +4,9 @@ import CampaignService from './CampaignService';
 import { VectorStoreFactory } from '../utils/vectorStoreFactory.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createLogger, NAMESPACES } from '../logging';
+
+const sceneLog = createLogger(NAMESPACES.services.scene);
 
 export const SceneService = {
   create(arcId: number, title: string, description?: string, location?: string, timeOfDay?: string, orderIndex?: number) {
@@ -84,29 +87,29 @@ export const SceneService = {
       // Remove scene directory if it exists
       if (fs.existsSync(scenePath)) {
         fs.rmSync(scenePath, { recursive: true, force: true });
-        console.log(`Removed generated images directory: ${scenePath}`);
+        sceneLog('Removed generated images directory: %s', scenePath);
       }
       
       // Check and remove empty parent directories
       const arcPath = path.dirname(scenePath);
-      if (fs.existsSync(arcPath) && fs.readdirSync(arcPath).length === 0) {
-        fs.rmdirSync(arcPath);
-        console.log(`Removed empty arc directory: ${arcPath}`);
+        if (fs.existsSync(arcPath) && fs.readdirSync(arcPath).length === 0) {
+          fs.rmdirSync(arcPath);
+          sceneLog('Removed empty arc directory: %s', arcPath);
         
         const campaignPath = path.dirname(arcPath);
-        if (fs.existsSync(campaignPath) && fs.readdirSync(campaignPath).length === 0) {
-          fs.rmdirSync(campaignPath);
-          console.log(`Removed empty campaign directory: ${campaignPath}`);
+          if (fs.existsSync(campaignPath) && fs.readdirSync(campaignPath).length === 0) {
+            fs.rmdirSync(campaignPath);
+            sceneLog('Removed empty campaign directory: %s', campaignPath);
           
           const worldPath = path.dirname(campaignPath);
-          if (fs.existsSync(worldPath) && fs.readdirSync(worldPath).length === 0) {
-            fs.rmdirSync(worldPath);
-            console.log(`Removed empty world directory: ${worldPath}`);
+            if (fs.existsSync(worldPath) && fs.readdirSync(worldPath).length === 0) {
+              fs.rmdirSync(worldPath);
+              sceneLog('Removed empty world directory: %s', worldPath);
           }
         }
       }
     } catch (error) {
-      console.error('Error cleaning up generated images:', error);
+      sceneLog('Error cleaning up generated images: %o', error);
     }
   },
 
@@ -196,15 +199,15 @@ export const SceneService = {
                   const newCount = indexData.items?.length || 0;
                   const removedCount = originalCount - newCount;
 
-                  if (removedCount > 0) {
-                    // Write back the filtered index
-                    fs.writeFileSync(indexPath, JSON.stringify(indexData, null, 2));
-                    console.log(`[SCENE_RESET] Removed ${removedCount} vector entries for character ${characterId} in scene ${id}`);
+                    if (removedCount > 0) {
+                      // Write back the filtered index
+                      fs.writeFileSync(indexPath, JSON.stringify(indexData, null, 2));
+                      sceneLog('[SCENE_RESET] Removed %d vector entries for character %d in scene %d', removedCount, characterId, id);
                   }
                 }
               }
             } catch (err) {
-              console.warn(`[SCENE_RESET] Failed to clean vectors for character ${characterId}:`, err);
+                sceneLog('[SCENE_RESET] Failed to clean vectors for character %d: %o', characterId, err);
             }
           }
 
@@ -232,23 +235,23 @@ export const SceneService = {
                 const newCount = indexData.items?.length || 0;
                 const removedCount = originalCount - newCount;
 
-                if (removedCount > 0) {
-                  fs.writeFileSync(indexPath, JSON.stringify(indexData, null, 2));
-                  console.log(`[SCENE_RESET] Removed ${removedCount} shared vector entries in scene ${id}`);
+                  if (removedCount > 0) {
+                    fs.writeFileSync(indexPath, JSON.stringify(indexData, null, 2));
+                    sceneLog('[SCENE_RESET] Removed %d shared vector entries in scene %d', removedCount, id);
                 }
               }
             }
           } catch (err) {
-            console.warn(`[SCENE_RESET] Failed to clean shared vectors:`, err);
+              sceneLog('[SCENE_RESET] Failed to clean shared vectors: %o', err);
           }
 
-          console.log(`[SCENE_RESET] Completed vector cleanup for scene ${id}`);
+            sceneLog('[SCENE_RESET] Completed vector cleanup for scene %d', id);
         } catch (error) {
-          console.warn('[SCENE_RESET] Failed to clean up vector files:', error);
+            sceneLog('[SCENE_RESET] Failed to clean up vector files: %o', error);
         }
       }
     } catch (error) {
-      console.warn('[SCENE_RESET] Failed to initialize vector cleanup:', error);
+        sceneLog('[SCENE_RESET] Failed to initialize vector cleanup: %o', error);
       // Non-blocking - don't fail the reset if vector cleanup fails
     }
 
@@ -320,7 +323,7 @@ export const SceneService = {
           sceneId, roundNumber, status, activeCharacters
         ) VALUES (?, ?, 'in-progress', ?)
       `).run(sceneId, roundNumber, JSON.stringify(activeCharacters));
-      console.log(`[SCENE_SERVICE] Started round ${roundNumber} for scene ${sceneId}`);
+      sceneLog('[SCENE_SERVICE] Started round %d for scene %d', roundNumber, sceneId);
     }
 
     return roundNumber;
@@ -336,7 +339,7 @@ export const SceneService = {
     const completedRoundNumber = scene.currentRoundNumber;
     const nextRoundNumber = completedRoundNumber + 1;
     
-    console.log(`[SCENE_SERVICE] Completing round ${completedRoundNumber} and starting round ${nextRoundNumber} for scene ${sceneId}`);
+    sceneLog('[SCENE_SERVICE] Completing round %d and starting round %d for scene %d', completedRoundNumber, nextRoundNumber, sceneId);
 
     // 1. Mark the PREVIOUS round as completed in SceneRounds
     const existing = db.prepare(
@@ -349,20 +352,20 @@ export const SceneService = {
         SET status = 'completed', activeCharacters = ?, roundCompletedAt = CURRENT_TIMESTAMP
         WHERE sceneId = ? AND roundNumber = ?
       `).run(JSON.stringify(activeCharacters), sceneId, completedRoundNumber);
-      console.log(`[SCENE_SERVICE] ✓ Marked round ${completedRoundNumber} as completed (changes=${result.changes})`);
+      sceneLog('[SCENE_SERVICE] ✓ Marked round %d as completed (changes=%d)', completedRoundNumber, result.changes);
     } else {
       const result = db.prepare(`
         INSERT INTO SceneRounds (
           sceneId, roundNumber, status, activeCharacters, roundCompletedAt
         ) VALUES (?, ?, 'completed', ?, CURRENT_TIMESTAMP)
       `).run(sceneId, completedRoundNumber, JSON.stringify(activeCharacters));
-      console.log(`[SCENE_SERVICE] ✓ Created completed round record for round ${completedRoundNumber}`);
+      sceneLog('[SCENE_SERVICE] ✓ Created completed round record for round %d', completedRoundNumber);
     }
     
     // 2. Increment currentRoundNumber in Scenes table (THIS IS THE AUTHORITY)
     const updateResult = db.prepare('UPDATE Scenes SET currentRoundNumber = ? WHERE id = ?')
       .run(nextRoundNumber, sceneId);
-    console.log(`[SCENE_SERVICE] ✓ Incremented Scenes.currentRoundNumber to ${nextRoundNumber} (changes=${updateResult.changes})`);
+    sceneLog('[SCENE_SERVICE] ✓ Incremented Scenes.currentRoundNumber to %d (changes=%d)', nextRoundNumber, updateResult.changes);
 
     // 3. Create a NEW round record for the next round (in-progress status)
     const newRoundResult = db.prepare(`
@@ -370,12 +373,12 @@ export const SceneService = {
         sceneId, roundNumber, status, activeCharacters
       ) VALUES (?, ?, 'in-progress', '[]')
     `).run(sceneId, nextRoundNumber);
-    console.log(`[SCENE_SERVICE] ✓ Created new round record for round ${nextRoundNumber}`);
+    sceneLog('[SCENE_SERVICE] ✓ Created new round record for round %d', nextRoundNumber);
 
     // Verify the state
     const verified = db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?')
       .get(sceneId) as any;
-    console.log(`[SCENE_SERVICE] ✓ VERIFICATION: Scene ${sceneId} currentRoundNumber=${verified?.currentRoundNumber} (expected ${nextRoundNumber})`);
+    sceneLog('[SCENE_SERVICE] ✓ VERIFICATION: Scene %d currentRoundNumber=%d (expected %d)', sceneId, verified?.currentRoundNumber, nextRoundNumber);
 
     return nextRoundNumber;
   },

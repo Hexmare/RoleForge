@@ -7,6 +7,7 @@ import { chatCompletion, ChatMessage } from '../llm/client';
 import { customLLMRequest } from '../llm/customClient';
 import { ConfigManager, LLMProfile } from '../configManager';
 import { estimateWordsFromTokens } from '../utils/tokenCounter.js';
+import { createLogger, NAMESPACES } from '../logging';
 
 export interface AgentContext {
   userInput: string;
@@ -50,6 +51,7 @@ export abstract class BaseAgent {
   protected configManager: ConfigManager;
   protected env: nunjucks.Environment;
   protected agentName: string;
+  private readonly baseAgentLog = createLogger(NAMESPACES.agents.base);
 
   constructor(agentName: string, configManager: ConfigManager, env: nunjucks.Environment) {
     this.agentName = agentName;
@@ -128,7 +130,7 @@ export abstract class BaseAgent {
       // chatCompletion with stream: false returns a string, not an AsyncIterable
       return result as string;
     } catch (error: any) {
-      console.error(`LLM call failed for agent ${this.agentName}:`, error);
+      this.baseAgentLog('[LLM] Call failed for agent %s: %o', this.agentName, error);
       
       // Provide a fallback response based on agent type
       switch (this.agentName) {
@@ -195,7 +197,8 @@ export abstract class BaseAgent {
     safeContext.estimateWordsFromTokens = estimateWordsFromTokens;
 
     const result = this.env.renderString(template, safeContext);
-    console.log('Rendered template for', templateName, ':', result.substring(0, 500) + (result.length > 500 ? '...' : ''));
+    const preview = result.substring(0, 500) + (result.length > 500 ? '...' : '');
+    this.baseAgentLog('Rendered template for %s: %s', templateName, preview);
     return result;
   }
 
@@ -207,7 +210,7 @@ export abstract class BaseAgent {
     
     // Check if template file exists; fallback to chatml if not
     if (!fs.existsSync(templatePath)) {
-      console.warn(`Template file not found: ${templatePath}. Falling back to chatml.njk`);
+      this.baseAgentLog('WARN: Template file not found: %s. Falling back to chatml.njk', templatePath);
       templateName = 'chatml';
       templatePath = path.join(templatesDir, `${templateName}.njk`);
       
@@ -286,11 +289,11 @@ export abstract class BaseAgent {
       const profile = this.getProfile();
       const renderedPrompt = this.renderRawLLMTemplate(systemPrompt, userMessage, assistantMessage);
       
-      console.log(`[Agent ${this.agentName}] Calling custom LLM with profile ${profile.template} template`);
+      this.baseAgentLog('[Agent %s] Calling custom LLM with profile %s template', this.agentName, profile.template);
       
       return await customLLMRequest(profile, renderedPrompt);
     } catch (error: any) {
-      console.error(`Custom LLM call failed for agent ${this.agentName}:`, error);
+      this.baseAgentLog('[Custom LLM] Call failed for agent %s: %o', this.agentName, error);
       
       // Provide a fallback response based on agent type
       switch (this.agentName) {

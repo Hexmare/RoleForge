@@ -11,6 +11,9 @@ import EmbeddingManager from '../utils/embeddingManager.js';
 import { createJob, setJobStatus } from '../jobs/jobStore.js';
 import { recordAudit } from '../jobs/auditLog.js';
 import { matchesFilter, normalizeIndexItems } from '../utils/memoryHelpers.js';
+import { createLogger, NAMESPACES } from '../logging';
+
+const vectraStoreLog = createLogger(NAMESPACES.vectorStore.vectra);
 
 interface StoredMemory {
   id: string;
@@ -67,7 +70,7 @@ export class VectraVectorStore implements VectorStoreInterface {
             break;
           } catch (createError: any) {
             const msg = createError instanceof Error ? createError.message : String(createError);
-            console.log(`[VECTOR_STORE] Index creation attempt ${attempt + 1} failed:`, msg);
+            vectraStoreLog(`[VECTOR_STORE] Index creation attempt ${attempt + 1} failed:`, msg);
             // Ensure directory exists and retry after short delay
             try {
               await fs.mkdir(indexPath, { recursive: true });
@@ -92,9 +95,9 @@ export class VectraVectorStore implements VectorStoreInterface {
         }
 
         this.indexes.set(scope, index);
-        console.log(`[VECTOR_STORE] Initialized scope: ${scope}`);
+        vectraStoreLog(`[VECTOR_STORE] Initialized scope: ${scope}`);
       } catch (error) {
-        console.error(`[VECTOR_STORE] Failed to initialize scope ${scope}:`, error);
+        vectraStoreLog(`[VECTOR_STORE] Failed to initialize scope ${scope}:`, error);
         throw new Error(`Failed to initialize vector store scope ${scope}: ${error instanceof Error ? error.message : String(error)}`);
       }
     })();
@@ -154,12 +157,12 @@ export class VectraVectorStore implements VectorStoreInterface {
       } catch (mkdirErr: any) {
         // On some Windows setups or race conditions, mkdir can fail with ENOENT
         // Attempt to ensure basePath exists, then retry
-        console.warn(`[VECTOR_STORE] mkdir failed for ${indexPath}, retrying after ensuring base path. Error:`, mkdirErr?.message || mkdirErr);
+        vectraStoreLog(`[VECTOR_STORE] mkdir failed for ${indexPath}, retrying after ensuring base path. Error:`, mkdirErr?.message || mkdirErr);
         try {
           await fs.mkdir(this.basePath, { recursive: true });
           await fs.mkdir(indexPath, { recursive: true });
         } catch (retryErr) {
-          console.error(`[VECTOR_STORE] Failed to create directory ${indexPath} after retry:`, retryErr);
+          vectraStoreLog(`[VECTOR_STORE] Failed to create directory ${indexPath} after retry:`, retryErr);
           throw retryErr;
         }
       }
@@ -169,10 +172,10 @@ export class VectraVectorStore implements VectorStoreInterface {
         await fs.stat(indexJsonPath);
       } catch {
         try {
-          console.log(`[VECTOR_STORE] index.json missing for scope ${scope}, attempting createIndex()`);
+          vectraStoreLog(`[VECTOR_STORE] index.json missing for scope ${scope}, attempting createIndex()`);
           await index.createIndex();
         } catch (ciErr) {
-          console.warn(`[VECTOR_STORE] createIndex failed for scope ${scope}: ${ciErr instanceof Error ? ciErr.message : String(ciErr)}`);
+          vectraStoreLog(`[VECTOR_STORE] createIndex failed for scope ${scope}: ${ciErr instanceof Error ? ciErr.message : String(ciErr)}`);
         }
       }
 
@@ -247,18 +250,18 @@ export class VectraVectorStore implements VectorStoreInterface {
             }
 
             if (!found) {
-              console.warn(`[VECTOR_STORE] Warning: inserted item ${id} may not be fully visible yet for scope ${scope}`);
+              vectraStoreLog(`[VECTOR_STORE] Warning: inserted item ${id} may not be fully visible yet for scope ${scope}`);
             }
           } catch (insertError) {
         const errMsg = insertError instanceof Error ? insertError.message : String(insertError);
         // If the item already exists, treat as idempotent success
         if (errMsg.includes('already exists') || errMsg.includes('already added') || errMsg.includes('duplicate')) {
-          console.warn(`[VECTOR_STORE] Insert attempted for existing item ${id} in scope ${scope}; treating as success.`);
+          vectraStoreLog(`[VECTOR_STORE] Insert attempted for existing item ${id} in scope ${scope}; treating as success.`);
         } else {
           const isEnoent = (insertError as any)?.code === 'ENOENT' || errMsg.includes('no such file') || errMsg.includes('ENOENT');
           const needsCreate = errMsg.includes('does not exist') || errMsg.includes('Index');
           if (isEnoent || needsCreate) {
-            console.log(`[VECTOR_STORE] Insert failed for scope ${scope} (${errMsg}), attempting createIndex and retry`);
+            vectraStoreLog(`[VECTOR_STORE] Insert failed for scope ${scope} (${errMsg}), attempting createIndex and retry`);
             // Retry multiple times for transient filesystem races (especially on Windows)
             const maxRetries = 5;
             let succeeded = false;
@@ -267,7 +270,7 @@ export class VectraVectorStore implements VectorStoreInterface {
                 try {
                   await index.createIndex();
                 } catch (ciErr) {
-                  console.warn(`[VECTOR_STORE] createIndex retry failed for scope ${scope}: ${ciErr instanceof Error ? ciErr.message : String(ciErr)}`);
+                  vectraStoreLog(`[VECTOR_STORE] createIndex retry failed for scope ${scope}: ${ciErr instanceof Error ? ciErr.message : String(ciErr)}`);
                 }
                 // small delay to allow filesystem to settle
                 // eslint-disable-next-line no-await-in-loop
@@ -278,7 +281,7 @@ export class VectraVectorStore implements VectorStoreInterface {
               } catch (retryError) {
                 const retryMsg = retryError instanceof Error ? retryError.message : String(retryError);
                 if (retryMsg.includes('already exists') || retryMsg.includes('duplicate')) {
-                  console.warn(`[VECTOR_STORE] Retry insert found existing item ${id} in scope ${scope}; treating as success.`);
+                  vectraStoreLog(`[VECTOR_STORE] Retry insert found existing item ${id} in scope ${scope}; treating as success.`);
                   succeeded = true;
                   break;
                 }
@@ -297,9 +300,9 @@ export class VectraVectorStore implements VectorStoreInterface {
         }
       }
 
-      console.log(`[VECTOR_STORE] Added memory ${id} to scope ${scope}`);
+      vectraStoreLog(`[VECTOR_STORE] Added memory ${id} to scope ${scope}`);
     } catch (error) {
-      console.error(`[VECTOR_STORE] Failed to add memory ${id}:`, error);
+      vectraStoreLog(`[VECTOR_STORE] Failed to add memory ${id}:`, error);
       throw new Error(`Failed to add memory: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -317,20 +320,20 @@ export class VectraVectorStore implements VectorStoreInterface {
     try {
       // Check if scope exists
       if (!this.indexes.has(scope)) {
-        console.log(`[VECTOR_STORE] Scope ${scope} not in memory, checking if it exists on disk...`);
+        vectraStoreLog(`[VECTOR_STORE] Scope ${scope} not in memory, checking if it exists on disk...`);
         const exists = await this.scopeExists(scope);
         if (!exists) {
-          console.log(`[VECTOR_STORE] Scope ${scope} does not exist on disk, returning empty results`);
+          vectraStoreLog(`[VECTOR_STORE] Scope ${scope} does not exist on disk, returning empty results`);
           return []; // Scope doesn't exist, no memories
         }
-        console.log(`[VECTOR_STORE] Scope ${scope} found on disk, initializing...`);
+        vectraStoreLog(`[VECTOR_STORE] Scope ${scope} found on disk, initializing...`);
         await this.init(scope);
       }
 
       // Generate query embedding
-      console.log(`[VECTOR_STORE] Generating embedding for query text (length: ${queryText.length})`);
+      vectraStoreLog(`[VECTOR_STORE] Generating embedding for query text (length: ${queryText.length})`);
       const queryVector = await this.embeddingManager.embedText(queryText);
-      console.log(`[VECTOR_STORE] Generated query vector with ${queryVector.length} dimensions`);
+      vectraStoreLog(`[VECTOR_STORE] Generated query vector with ${queryVector.length} dimensions`);
 
       // Manual query: Read index.json directly and compute similarity
       const indexPath = path.join(this.basePath, scope, 'index.json');
@@ -340,7 +343,7 @@ export class VectraVectorStore implements VectorStoreInterface {
         const indexData = JSON.parse(indexContent);
         
         if (!indexData.items || !Array.isArray(indexData.items)) {
-          console.log(`[VECTOR_STORE] No items in index for scope ${scope}`);
+          vectraStoreLog(`[VECTOR_STORE] No items in index for scope ${scope}`);
           return [];
         }
 
@@ -358,7 +361,7 @@ export class VectraVectorStore implements VectorStoreInterface {
             similarity = EmbeddingManager.cosineSimilarity(queryVector, storedVector);
             // Clamp and diagnose any unexpected out-of-range similarities
             if (similarity > 1 || similarity < -1) {
-              console.warn(`[VECTOR_STORE] Raw similarity out of range for item ${item.id}: ${similarity}`);
+              vectraStoreLog(`[VECTOR_STORE] Raw similarity out of range for item ${item.id}: ${similarity}`);
               similarity = Math.max(-1, Math.min(1, similarity));
             }
           } else if (typeof storedVector === 'number') {
@@ -368,9 +371,9 @@ export class VectraVectorStore implements VectorStoreInterface {
             const queryLower = queryText.toLowerCase();
             const textLower = text.toLowerCase();
             similarity = textLower.includes(queryLower) ? 0.5 : 0.1;
-            console.warn(`[VECTOR_STORE] Item ${item.id} has corrupted vector (scalar instead of array), using text-based fallback`);
+            vectraStoreLog(`[VECTOR_STORE] Item ${item.id} has corrupted vector (scalar instead of array), using text-based fallback`);
           } else {
-            console.warn(`[VECTOR_STORE] Item ${item.id} has invalid vector format:`, typeof storedVector);
+            vectraStoreLog(`[VECTOR_STORE] Item ${item.id} has invalid vector format:`, typeof storedVector);
             similarity = 0;
           }
           
@@ -382,12 +385,12 @@ export class VectraVectorStore implements VectorStoreInterface {
           } else {
             // Log items that didn't make the threshold
             if (Array.isArray(storedVector)) {
-              console.log(`[VECTOR_STORE] Item ${item.id} scored ${similarity.toFixed(4)} (below threshold of ${minSimilarity})`);
+              vectraStoreLog(`[VECTOR_STORE] Item ${item.id} scored ${similarity.toFixed(4)} (below threshold of ${minSimilarity})`);
             }
           }
         }
         
-        console.log(`[VECTOR_STORE] Found ${results.length}/${indexData.items.length} memories above threshold`);
+        vectraStoreLog(`[VECTOR_STORE] Found ${results.length}/${indexData.items.length} memories above threshold`);
 
         // Sort by similarity descending
         results.sort((a, b) => b.score - a.score);
@@ -402,7 +405,7 @@ export class VectraVectorStore implements VectorStoreInterface {
             similarity: Math.max(-1, Math.min(1, result.score))
           }));
 
-        console.log(
+        vectraStoreLog(
           `[VECTOR_STORE] Query found ${entries.length} memories in scope ${scope}`
         );
 
@@ -425,7 +428,7 @@ export class VectraVectorStore implements VectorStoreInterface {
               const vectraEntries = vectraEntriesAll.filter((r) => (r.similarity || 0) >= minSimilarity);
 
               if (vectraEntries.length > 0) {
-                console.log(`[VECTOR_STORE] Fallback Vectra query returned ${vectraEntries.length} results for scope ${scope}`);
+                vectraStoreLog(`[VECTOR_STORE] Fallback Vectra query returned ${vectraEntries.length} results for scope ${scope}`);
                 return vectraEntries.slice(0, topK);
               }
 
@@ -437,21 +440,21 @@ export class VectraVectorStore implements VectorStoreInterface {
                 // original minSimilarity is low (<= 0.3). For high thresholds we
                 // should not relax semantics.
                 if ((minSimilarity || 0) <= 0.3) {
-                  console.log(`[VECTOR_STORE] Fallback Vectra query returned ${vectraEntriesAll.length} candidates (below threshold) for scope ${scope}, returning relaxed results`);
+                  vectraStoreLog(`[VECTOR_STORE] Fallback Vectra query returned ${vectraEntriesAll.length} candidates (below threshold) for scope ${scope}, returning relaxed results`);
                   return vectraEntriesAll.slice(0, topK);
                 }
                 // Otherwise, don't return below-threshold candidates.
               }
             }
           } catch (fbErr) {
-            console.warn('[VECTOR_STORE] Fallback Vectra query failed:', fbErr instanceof Error ? fbErr.message : String(fbErr));
+            vectraStoreLog('[VECTOR_STORE] Fallback Vectra query failed:', fbErr instanceof Error ? fbErr.message : String(fbErr));
           }
         }
 
         return entries;
       } catch (readError) {
         // If manual read fails, try Vectra's query as fallback
-        console.warn(`[VECTOR_STORE] Manual query failed for scope ${scope}, trying Vectra queryItems:`, readError);
+        vectraStoreLog(`[VECTOR_STORE] Manual query failed for scope ${scope}, trying Vectra queryItems:`, readError);
         
         const index = this.indexes.get(scope);
         if (!index) {
@@ -476,12 +479,12 @@ export class VectraVectorStore implements VectorStoreInterface {
 
           return entries;
         } catch (vectraError) {
-          console.error(`[VECTOR_STORE] Vectra queryItems also failed:`, vectraError);
+          vectraStoreLog(`[VECTOR_STORE] Vectra queryItems also failed:`, vectraError);
           return [];
         }
       }
     } catch (error) {
-      console.error(`[VECTOR_STORE] Query failed for scope ${scope}:`, error);
+      vectraStoreLog(`[VECTOR_STORE] Query failed for scope ${scope}:`, error);
       return []; // Return empty instead of throwing - graceful degradation
     }
   }
@@ -527,9 +530,9 @@ export class VectraVectorStore implements VectorStoreInterface {
 
       // Use removeItem method
       await index.deleteItem(id);
-      console.log(`[VECTOR_STORE] Deleted memory ${id} from scope ${scope}`);
+      vectraStoreLog(`[VECTOR_STORE] Deleted memory ${id} from scope ${scope}`);
     } catch (error) {
-      console.error(`[VECTOR_STORE] Failed to delete memory ${id}:`, error);
+      vectraStoreLog(`[VECTOR_STORE] Failed to delete memory ${id}:`, error);
       throw new Error(`Failed to delete memory: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -583,9 +586,9 @@ export class VectraVectorStore implements VectorStoreInterface {
         }
       }
 
-      console.log(`[VECTOR_STORE] Cleared all memories from scope ${scope}`);
+      vectraStoreLog(`[VECTOR_STORE] Cleared all memories from scope ${scope}`);
     } catch (error) {
-      console.error(`[VECTOR_STORE] Failed to clear scope ${scope}:`, error);
+      vectraStoreLog(`[VECTOR_STORE] Failed to clear scope ${scope}:`, error);
       throw new Error(`Failed to clear scope: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -679,7 +682,7 @@ export class VectraVectorStore implements VectorStoreInterface {
 
       return Math.max(lastCombined, 0);
     } catch (error) {
-      console.error(`[VECTOR_STORE] Failed to get memory count for scope ${scope}:`, error);
+      vectraStoreLog(`[VECTOR_STORE] Failed to get memory count for scope ${scope}:`, error);
       return 0;
     }
   }
@@ -696,9 +699,9 @@ export class VectraVectorStore implements VectorStoreInterface {
 
       // Delete directory
       await fs.rm(indexPath, { recursive: true, force: true });
-      console.log(`[VECTOR_STORE] Deleted scope: ${scope}`);
+      vectraStoreLog(`[VECTOR_STORE] Deleted scope: ${scope}`);
     } catch (error) {
-      console.error(`[VECTOR_STORE] Failed to delete scope ${scope}:`, error);
+      vectraStoreLog(`[VECTOR_STORE] Failed to delete scope ${scope}:`, error);
       throw new Error(`Failed to delete scope: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -737,7 +740,7 @@ export class VectraVectorStore implements VectorStoreInterface {
               if (entry.isDirectory()) scopesToCheck.push(entry.name);
             }
           } catch (e) {
-            console.warn(`[VECTOR_STORE] Failed to list scopes for deleteByMetadata: ${e instanceof Error ? e.message : String(e)}`);
+            vectraStoreLog(`[VECTOR_STORE] Failed to list scopes for deleteByMetadata: ${e instanceof Error ? e.message : String(e)}`);
             return;
           }
         }
@@ -768,7 +771,7 @@ export class VectraVectorStore implements VectorStoreInterface {
               try {
                 await this.init(s);
               } catch (e) {
-                console.warn(`[VECTOR_STORE] Could not init scope ${s} for deleteByMetadata: ${e instanceof Error ? e.message : String(e)}`);
+                vectraStoreLog(`[VECTOR_STORE] Could not init scope ${s} for deleteByMetadata: ${e instanceof Error ? e.message : String(e)}`);
                 continue;
               }
             }
@@ -791,7 +794,7 @@ export class VectraVectorStore implements VectorStoreInterface {
                 const listed = await index.queryItems(new Array(768).fill(0), '', 100000);
                 rawItems = Array.isArray(listed) ? listed.map((r: any) => r.item || r) : [];
               } catch (qErr) {
-                console.warn(`[VECTOR_STORE] Failed to list items for scope ${s}: ${qErr instanceof Error ? qErr.message : String(qErr)}`);
+                vectraStoreLog(`[VECTOR_STORE] Failed to list items for scope ${s}: ${qErr instanceof Error ? qErr.message : String(qErr)}`);
                 continue;
               }
             }
@@ -818,7 +821,7 @@ export class VectraVectorStore implements VectorStoreInterface {
               totalMatches += toDeleteIds.length;
             }
           } catch (scopeErr) {
-            console.warn(`[VECTOR_STORE] Error processing scope ${s} in deleteByMetadata: ${scopeErr instanceof Error ? scopeErr.message : String(scopeErr)}`);
+            vectraStoreLog(`[VECTOR_STORE] Error processing scope ${s} in deleteByMetadata: ${scopeErr instanceof Error ? scopeErr.message : String(scopeErr)}`);
           }
         }
 
@@ -829,7 +832,7 @@ export class VectraVectorStore implements VectorStoreInterface {
 
         // If dryRun, just log and return
         if (opts.dryRun) {
-          console.log(`[VECTOR_STORE] deleteByMetadata dryRun: would delete ${totalMatches} items`, perScopeMatches);
+          vectraStoreLog(`[VECTOR_STORE] deleteByMetadata dryRun: would delete ${totalMatches} items`, perScopeMatches);
           return;
         }
 
@@ -840,9 +843,9 @@ export class VectraVectorStore implements VectorStoreInterface {
           for (const id of ids) {
             try {
               await index.deleteItem(id);
-              console.log(`[VECTOR_STORE] Deleted item ${id} from scope ${s} by metadata`);
+              vectraStoreLog(`[VECTOR_STORE] Deleted item ${id} from scope ${s} by metadata`);
             } catch (delErr) {
-              console.warn(`[VECTOR_STORE] Failed to delete item ${id} from scope ${s}: ${delErr instanceof Error ? delErr.message : String(delErr)}`);
+              vectraStoreLog(`[VECTOR_STORE] Failed to delete item ${id} from scope ${s}: ${delErr instanceof Error ? delErr.message : String(delErr)}`);
             }
           }
           // Additionally, if vectra's on-disk index.json still lists the items,
@@ -874,7 +877,7 @@ export class VectraVectorStore implements VectorStoreInterface {
             actor: (opts as any).actor || 'system'
           });
         } catch (ae) {
-          console.warn('[VECTOR_STORE] Failed to record audit for deleteByMetadata:', ae instanceof Error ? ae.message : String(ae));
+          vectraStoreLog('[VECTOR_STORE] Failed to record audit for deleteByMetadata:', ae instanceof Error ? ae.message : String(ae));
         }
 
         // If running as background job, mark completion
@@ -882,11 +885,11 @@ export class VectraVectorStore implements VectorStoreInterface {
           try {
             setJobStatus(backgroundJobId, 'completed', { deleted: totalMatches });
           } catch (e) {
-            console.warn('[VECTOR_STORE] Failed to set background job completion status', e);
+            vectraStoreLog('[VECTOR_STORE] Failed to set background job completion status', e);
           }
         }
       } catch (error) {
-        console.error(`[VECTOR_STORE] deleteByMetadata failed:`, error);
+        vectraStoreLog(`[VECTOR_STORE] deleteByMetadata failed:`, error);
         if (backgroundJobId) {
           setJobStatus(backgroundJobId, 'failed', undefined, error instanceof Error ? error.message : String(error));
           return;
@@ -901,8 +904,8 @@ export class VectraVectorStore implements VectorStoreInterface {
       backgroundJobId = job.id;
       setJobStatus(job.id, 'running');
       performDelete()
-        .catch(err => console.error('[VECTOR_STORE] background deleteByMetadata error:', err));
-      console.log(`[VECTOR_STORE] deleteByMetadata scheduled in background (jobId=${job.id})`);
+        .catch(err => vectraStoreLog('[VECTOR_STORE] background deleteByMetadata error:', err));
+      vectraStoreLog(`[VECTOR_STORE] deleteByMetadata scheduled in background (jobId=${job.id})`);
       return;
     }
 
@@ -1039,7 +1042,7 @@ export class VectraVectorStore implements VectorStoreInterface {
         scopes
       };
     } catch (error) {
-      console.error('[VECTOR_STORE] Failed to get stats:', error);
+      vectraStoreLog('[VECTOR_STORE] Failed to get stats:', error);
       return { totalScopes: 0, scopes: [] };
     }
   }

@@ -11,6 +11,7 @@ interface TopBarProps {
   onImageClick?: () => void;
   onWorldClick?: () => void;
   onDebugClick?: () => void;
+  onDebugConfigClick?: () => void;
   leftOpen: boolean;
   rightOpen: boolean;
   title?: string;
@@ -28,6 +29,7 @@ const TopBar: React.FC<TopBarProps> = ({
   onImageClick,
   onWorldClick,
   onDebugClick,
+  onDebugConfigClick,
   leftOpen, 
   rightOpen, 
   title = 'RoleForge', 
@@ -116,6 +118,16 @@ const TopBar: React.FC<TopBarProps> = ({
             title="Vector Store Debug"
           >
             🔍
+          </button>
+        )}
+        {onDebugConfigClick && (
+          <button 
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-panel-tertiary transition-colors text-text-primary" 
+            onClick={onDebugConfigClick}
+            aria-label="Open debug configuration"
+            title="Debug Configuration"
+          >
+            🛠️
           </button>
         )}
       </div>

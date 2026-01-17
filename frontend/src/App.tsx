@@ -15,6 +15,7 @@ import Chat from './components/Chat';
 import TopBar from './components/TopBar';
 import Panel from './components/Panel';
 import DebugVectorPanel from './components/DebugVectorPanel';
+import DebugConfigPanel from './components/DebugConfigPanel';
 import { WorldStatus } from './components/WorldStatus';
 import PersonaComponent from './components/PersonaComponent';
 import ActiveCharacterComponent from './components/ActiveCharacterComponent';
@@ -32,6 +33,12 @@ interface Message {
   timestamp?: string;
   messageNumber?: number;
   tokenCount?: number;
+}
+
+interface DebugConfigUpdatePayload {
+  enabledNamespaces?: string;
+  colors?: boolean;
+  whitelist?: string[];
 }
 // Ensure a single socket instance across HMR reloads
 declare global { interface Window { __socket?: any } }
@@ -69,7 +76,7 @@ function App() {
   const [regenErrors, setRegenErrors] = useState<Record<number, string>>({});
   const [imageModalUrl, setImageModalUrl] = useState<string | null>(null);
   const [imageModalPrompt, setImageModalPrompt] = useState<string | null>(null);
-  const [currentTab, setCurrentTab] = useState<'chat'|'characters'|'lore'|'personas'|'comfyui'|'worlds'|'llm'|'debug'>('chat');
+  const [currentTab, setCurrentTab] = useState<'chat'|'characters'|'lore'|'personas'|'comfyui'|'worlds'|'llm'|'debug'|'debug-config'|'config'>('chat');
   const [modalType, setModalType] = useState<string | null>(null);
   const [modalInitial, setModalInitial] = useState<any>(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
@@ -85,6 +92,19 @@ function App() {
   const [debugConfig, setDebugConfig] = useState<any>({});
   const debugRef = useRef<any>({});
 
+  const syncFrontendDebugSettings = (payload: any) => {
+    const namespaces = payload?.debug?.enabledNamespaces;
+    if (namespaces) {
+      debug.enable(namespaces);
+      console.log('Frontend debug enabled via backend:', namespaces);
+    }
+    if (payload?.debug?.colors === false) {
+      document.body.classList.add('debug-no-colors');
+    } else {
+      document.body.classList.remove('debug-no-colors');
+    }
+  };
+
   useEffect(() => {
     fetchPersonas();
     fetchCharacters();
@@ -97,16 +117,7 @@ function App() {
           const json = await r.json();
           setDebugConfig(json);
           debugRef.current = json || {};
-          const namespaces = json?.debug?.enabledNamespaces;
-          if (namespaces) {
-            debug.enable(namespaces);
-            console.log('Frontend debug enabled via backend:', namespaces);
-          }
-          if (json?.debug?.colors === false) {
-            document.body.classList.add('debug-no-colors');
-          } else {
-            document.body.classList.remove('debug-no-colors');
-          }
+          syncFrontendDebugSettings(json);
         }
       } catch (e) { /* ignore */ }
     })();
@@ -645,6 +656,23 @@ function App() {
     }
   };
 
+  const handleDebugConfigSave = async (payload: DebugConfigUpdatePayload) => {
+    const response = await fetch('/api/debug-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(text || `Failed to update debug settings (${response.status})`);
+    }
+    const json = await response.json();
+    setDebugConfig(prev => ({ ...prev, ...json }));
+    debugRef.current = { ...debugRef.current, ...json };
+    syncFrontendDebugSettings(json);
+    return json;
+  };
+
   const CustomImage = ({ src, alt, messageId, onUpdateMessage, selectedScene }: { src: string; alt: string; messageId?: number; onUpdateMessage: (id: number, content: string) => void; selectedScene: number | null }) => {
     let data: any;
     // If this message isn't persisted yet (no messageId), prefer the provided `src`
@@ -1138,6 +1166,10 @@ function App() {
             setCurrentTab('debug');
             setModalType(null);
           }}
+          onDebugConfigClick={() => {
+            setCurrentTab('debug-config');
+            setModalType(null);
+          }}
           leftOpen={leftPanelOpen}
           rightOpen={rightPanelOpen}
           title={sessionContext?.scene?.title || 'RoleForge'}
@@ -1191,7 +1223,18 @@ function App() {
             {currentTab === 'comfyui' && <ComfyConfigModal visible={true} onClose={() => setCurrentTab('chat')} isModal={false} />}
             {currentTab === 'config' && <ConfigModal onClose={() => setCurrentTab('chat')} />}
             {currentTab === 'worlds' && <WorldManager onRefresh={fetchWorlds} onSelectScene={handleSceneChange} selectedScene={selectedScene} />}
-            {currentTab === 'debug' && <DebugVectorPanel />}
+            {currentTab === 'debug' && (
+              <div className="flex flex-1 flex-col gap-6 h-full min-h-0">
+                <div className="glass rounded-2xl border border-border-color flex-1 min-h-0 overflow-hidden">
+                  <DebugVectorPanel />
+                </div>
+              </div>
+            )}
+            {currentTab === 'debug-config' && (
+              <div className="flex flex-1 flex-col gap-6 h-full min-h-0 justify-center">
+                <DebugConfigPanel debugConfig={debugConfig} onSave={handleDebugConfigSave} />
+              </div>
+            )}
             </div>
           </main>
 

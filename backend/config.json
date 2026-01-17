@@ -7,17 +7,20 @@
     "maxSummaryTokens": 1000
   },
   "debug": {
-    "enabledNamespaces": "roleforge:llm:*,roleforge:image:gen,roleforge:story:*",
+    "enabledNamespaces": "roleforge:llm:*,roleforge:image:gen,roleforge:vectorstore:*",
     "colors": true,
     "whitelist": [
+      "roleforge:server:*",
+      "roleforge:services:*",
+      "roleforge:agents:*",
+      "roleforge:vectorstore:*",
+      "roleforge:utils:*",
       "roleforge:llm:*",
       "roleforge:image:*",
-      "roleforge:ui:render",
-      "roleforge:story:guide",
+      "roleforge:ui:*",
+      "roleforge:story:*",
       "roleforge:frontend:*",
-      "roleforge:backend:*",
-      "roleforge:llm:prompt",
-      "roleforge:llm:response"
+      "roleforge:backend:*"
     ]
   },
   "comfyui": {
@@ -57,7 +60,7 @@
     },
     "kobold": {
       "type": "custom",
-      "baseURL": "http://192.168.88.135:5001",
+      "baseURL": "http://192.168.88.88:5001",
       "model": "koboldcpp/mistralai_Ministral-3-14B-Reasoning-2512-Q5_K_M",
       "template": "mistralv7tekken",
       "sampler": {

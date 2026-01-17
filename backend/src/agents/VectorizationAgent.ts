@@ -13,6 +13,7 @@ import { BaseAgent, AgentContext } from './BaseAgent.js';
 import VectorStoreFactory from '../utils/vectorStoreFactory.js';
 import { VectorStoreInterface } from '../interfaces/VectorStoreInterface.js';
 import EmbeddingManager from '../utils/embeddingManager.js';
+import { createLogger, NAMESPACES } from '../logging';
 
 export interface VectorizationContext extends AgentContext {
   roundNumber?: number;
@@ -24,6 +25,7 @@ export interface VectorizationContext extends AgentContext {
 export class VectorizationAgent extends BaseAgent {
   private vectorStore: VectorStoreInterface;
   private embeddingManager: EmbeddingManager;
+  private vectorizationLog = createLogger(NAMESPACES.agents.vectorization);
 
   constructor(configManager: any, env: any) {
     super('vectorization', configManager, env);
@@ -66,12 +68,12 @@ export class VectorizationAgent extends BaseAgent {
       const { sceneId, roundNumber, messages, activeCharacters, worldState } = context;
 
       if (!sceneId || !roundNumber) {
-        console.warn('[VECTORIZATION] Missing sceneId or roundNumber, skipping vectorization');
+        this.vectorizationLog('[VECTORIZATION] Missing sceneId or roundNumber, skipping vectorization');
         return 'skipped';
       }
 
       if (!messages || messages.length === 0) {
-        console.log(`[VECTORIZATION] No messages in round ${roundNumber}, skipping`);
+        this.vectorizationLog(`[VECTORIZATION] No messages in round ${roundNumber}, skipping`);
         return 'skipped';
       }
 
@@ -85,7 +87,7 @@ export class VectorizationAgent extends BaseAgent {
       });
 
       if (!filteredMessages || filteredMessages.length === 0) {
-        console.log(`[VECTORIZATION] No eligible messages (User/CharacterAgent) in round ${roundNumber}, skipping`);
+        this.vectorizationLog(`[VECTORIZATION] No eligible messages (User/CharacterAgent) in round ${roundNumber}, skipping`);
         return 'skipped';
       }
 
@@ -93,11 +95,11 @@ export class VectorizationAgent extends BaseAgent {
       const usableMessages = filteredMessages;
 
       if (!activeCharacters || activeCharacters.length === 0) {
-        console.log(`[VECTORIZATION] No active characters in round ${roundNumber}, skipping`);
+        this.vectorizationLog(`[VECTORIZATION] No active characters in round ${roundNumber}, skipping`);
         return 'skipped';
       }
 
-      console.log(
+      this.vectorizationLog(
         `[VECTORIZATION] Vectorizing round ${roundNumber} for scene ${sceneId} with characters: ${activeCharacters.join(', ')}`
       );
 
@@ -108,7 +110,7 @@ export class VectorizationAgent extends BaseAgent {
       const memorySnippet = this.summarizeRoundMessages(usableMessages, activeCharacters, roundNumber);
 
       if (!memorySnippet || memorySnippet.trim().length === 0) {
-        console.log(`[VECTORIZATION] Empty memory snippet for round ${roundNumber}, skipping storage`);
+        this.vectorizationLog(`[VECTORIZATION] Empty memory snippet for round ${roundNumber}, skipping storage`);
         return 'skipped';
       }
 
@@ -162,7 +164,7 @@ export class VectorizationAgent extends BaseAgent {
           sceneName = scene.name;
         }
       } catch (error) {
-        console.error(`[VECTORIZATION] Failed to get scene/world metadata for sceneId ${sceneId}:`, error);
+        this.vectorizationLog(`[VECTORIZATION] Failed to get scene/world metadata for sceneId ${sceneId}:`, error);
         return 'error';
       }
 
@@ -236,13 +238,13 @@ export class VectorizationAgent extends BaseAgent {
               await this.vectorStore.addMemory(memoryIdChunk, toStore, metadata, scope);
               successCount++;
 
-              console.log(`[VECTORIZATION] Stored memory ${memoryIdChunk} (chunk ${ci + 1}/${baseChunks.length}) for ${characterName} in scope ${scope}`);
+              this.vectorizationLog(`[VECTORIZATION] Stored memory ${memoryIdChunk} (chunk ${ci + 1}/${baseChunks.length}) for ${characterName} in scope ${scope}`);
             } catch (err) {
-              console.error(`[VECTORIZATION] Failed to store chunk ${ci} for ${characterName}:`, err);
+              this.vectorizationLog(`[VECTORIZATION] Failed to store chunk ${ci} for ${characterName}:`, err);
             }
           }
         } catch (error) {
-          console.error(
+          this.vectorizationLog(
             `[VECTORIZATION] Failed to store memory for character ${characterName}:`,
             error
           );
@@ -250,14 +252,14 @@ export class VectorizationAgent extends BaseAgent {
         }
       }
 
-      console.log(
+      this.vectorizationLog(
         `[VECTORIZATION] Round ${roundNumber} vectorization complete: stored ${successCount}/${activeCharacters.length} character memories`
       );
 
       return 'complete';
     } catch (error) {
       // Silent fallback - log but don't throw
-      console.warn('[VECTORIZATION] Vectorization error (non-blocking):', error);
+      this.vectorizationLog('[VECTORIZATION] Vectorization error (non-blocking):', error);
       return 'error';
     }
   }
@@ -316,7 +318,7 @@ export class VectorizationAgent extends BaseAgent {
 
       return memory;
     } catch (error) {
-      console.error('[VECTORIZATION] Error summarizing round messages:', error);
+      this.vectorizationLog('[VECTORIZATION] Error summarizing round messages:', error);
       return '';
     }
   }
@@ -329,7 +331,7 @@ export class VectorizationAgent extends BaseAgent {
     try {
       return await (this.vectorStore as any).getStats();
     } catch (error) {
-      console.error('[VECTORIZATION] Failed to get stats:', error);
+      this.vectorizationLog('[VECTORIZATION] Failed to get stats:', error);
       return { error: 'Failed to get stats' };
     }
   }
@@ -349,7 +351,7 @@ export class VectorizationAgent extends BaseAgent {
    */
   async revectorizeScene(sceneId: number, clearExisting: boolean = true): Promise<any> {
     try {
-      console.log(`[VECTORIZATION] Starting scene revectorization for sceneId ${sceneId}`);
+      this.vectorizationLog(`[VECTORIZATION] Starting scene revectorization for sceneId ${sceneId}`);
 
       // Import services
       const SceneService = (await import('../services/SceneService.js')).default;
@@ -370,7 +372,7 @@ export class VectorizationAgent extends BaseAgent {
       const sceneRounds = sceneRoundsStmt.all(sceneId) as any[];
 
       if (!sceneRounds || sceneRounds.length === 0) {
-        console.log(`[VECTORIZATION] No scene rounds found for scene ${sceneId}`);
+        this.vectorizationLog(`[VECTORIZATION] No scene rounds found for scene ${sceneId}`);
         return { 
           sceneId,
           worldId,
@@ -390,13 +392,13 @@ export class VectorizationAgent extends BaseAgent {
             activeChars.forEach((char: string) => allCharactersSet.add(char));
           }
         } catch (e) {
-          console.warn(`[VECTORIZATION] Failed to parse activeCharacters for round ${round.roundNumber}:`, e);
+          this.vectorizationLog(`[VECTORIZATION] Failed to parse activeCharacters for round ${round.roundNumber}:`, e);
         }
       }
 
       // Step 2: Clear existing vectors if requested
       if (clearExisting) {
-        console.log(`[VECTORIZATION] Clearing existing vectors for scene ${sceneId}`);
+        this.vectorizationLog(`[VECTORIZATION] Clearing existing vectors for scene ${sceneId}`);
         for (const characterEntry of Array.from(allCharactersSet)) {
           // Character entries are stored as strings (ids); normalize to string
           const characterId = String(characterEntry);
@@ -406,9 +408,9 @@ export class VectorizationAgent extends BaseAgent {
             // Prefer scoped deletion by metadata (safer than full clear)
             const filter = { sceneId: String(sceneId) };
             await (this.vectorStore as any).deleteByMetadata(filter, scope, { dryRun: false, confirm: true });
-            console.log(`[VECTORIZATION] deleteByMetadata invoked for scope ${scope} (sceneId=${sceneId})`);
+            this.vectorizationLog(`[VECTORIZATION] deleteByMetadata invoked for scope ${scope} (sceneId=${sceneId})`);
           } catch (error) {
-            console.warn(`[VECTORIZATION] Failed to clear scope ${scope}:`, error);
+            this.vectorizationLog(`[VECTORIZATION] Failed to clear scope ${scope}:`, error);
           }
         }
       }
@@ -423,7 +425,7 @@ export class VectorizationAgent extends BaseAgent {
       for (const sceneRound of sceneRounds) {
         try {
           const roundNumber = sceneRound.roundNumber;
-          console.log(`[VECTORIZATION] Processing round ${roundNumber} for scene ${sceneId}`);
+          this.vectorizationLog(`[VECTORIZATION] Processing round ${roundNumber} for scene ${sceneId}`);
 
           // Parse active characters for this round
           let activeCharacters: string[] = [];
@@ -431,12 +433,12 @@ export class VectorizationAgent extends BaseAgent {
             const parsed = JSON.parse(sceneRound.activeCharacters);
             activeCharacters = Array.isArray(parsed) ? parsed : [];
           } catch (e) {
-            console.warn(`[VECTORIZATION] Failed to parse activeCharacters for round ${roundNumber}`);
+            this.vectorizationLog(`[VECTORIZATION] Failed to parse activeCharacters for round ${roundNumber}`);
             continue;
           }
 
           if (activeCharacters.length === 0) {
-            console.log(`[VECTORIZATION] No active characters for round ${roundNumber}, skipping`);
+            this.vectorizationLog(`[VECTORIZATION] No active characters for round ${roundNumber}, skipping`);
             continue;
           }
 
@@ -444,7 +446,7 @@ export class VectorizationAgent extends BaseAgent {
           const roundMessages = MessageService.getRoundMessages(sceneId, roundNumber) || [];
           
           if (roundMessages.length === 0) {
-            console.log(`[VECTORIZATION] No messages found for scene ${sceneId} round ${roundNumber}`);
+            this.vectorizationLog(`[VECTORIZATION] No messages found for scene ${sceneId} round ${roundNumber}`);
             continue;
           }
 
@@ -454,7 +456,7 @@ export class VectorizationAgent extends BaseAgent {
           const memorySnippet = this.summarizeRoundMessages(roundMessages, activeCharacters, roundNumber);
 
           if (!memorySnippet || memorySnippet.trim().length === 0) {
-            console.log(`[VECTORIZATION] Empty memory snippet for round ${roundNumber}, skipping storage`);
+            this.vectorizationLog(`[VECTORIZATION] Empty memory snippet for round ${roundNumber}, skipping storage`);
             continue;
           }
 
@@ -525,24 +527,24 @@ export class VectorizationAgent extends BaseAgent {
                   const toStore = await this.personalizeMemory(chunkText, characterId, { scene, sceneId, roundNumber, worldId });
                   await this.vectorStore.addMemory(memoryId, toStore, metadata, scope);
                   totalMemoriesStored++;
-                  console.log(`[VECTORIZATION] Stored revectorized memory ${memoryId} (chunk ${ci + 1}/${baseChunks.length}) for character ${characterName} in round ${roundNumber}`);
+                  this.vectorizationLog(`[VECTORIZATION] Stored revectorized memory ${memoryId} (chunk ${ci + 1}/${baseChunks.length}) for character ${characterName} in round ${roundNumber}`);
                 } catch (err) {
-                  console.error(`[VECTORIZATION] Failed to store revectorized chunk ${ci} for ${characterName}:`, err);
+                  this.vectorizationLog(`[VECTORIZATION] Failed to store revectorized chunk ${ci} for ${characterName}:`, err);
                 }
               }
             } catch (error) {
-              console.error(
+              this.vectorizationLog(
                 `[VECTORIZATION] Failed to store revectorized memory for character in round ${roundNumber}:`,
                 error
               );
             }
           }
         } catch (error) {
-          console.error(`[VECTORIZATION] Failed to process round ${sceneRound.roundNumber}:`, error);
+          this.vectorizationLog(`[VECTORIZATION] Failed to process round ${sceneRound.roundNumber}:`, error);
         }
       }
 
-      console.log(
+      this.vectorizationLog(
         `[VECTORIZATION] Scene ${sceneId} revectorization complete: ${sceneRounds.length} rounds, ${totalMessagesProcessed} messages, ${totalMemoriesStored} memories stored`
       );
 
@@ -555,7 +557,7 @@ export class VectorizationAgent extends BaseAgent {
         status: 'complete'
       };
     } catch (error) {
-      console.error('[VECTORIZATION] Scene revectorization failed:', error);
+      this.vectorizationLog('[VECTORIZATION] Scene revectorization failed:', error);
       return {
         error: error instanceof Error ? error.message : 'Unknown error',
         sceneId,

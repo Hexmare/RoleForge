@@ -7,6 +7,7 @@ import { VectorStoreFactory } from './vectorStoreFactory.js';
 import { VectorStoreInterface, MemoryEntry } from '../interfaces/VectorStoreInterface.js';
 import { ConfigManager } from '../configManager.js';
 import { computeDecayAdjustedScore, applyConditionalBoost, formatMemoriesForPrompt } from './memoryHelpers.js';
+import { createLogger, NAMESPACES } from '../logging';
 
 // Helper functions moved to `memoryHelpers.ts` for reusability and testability
 
@@ -33,6 +34,8 @@ export interface MemoryRetrievalOptions {
 export class MemoryRetriever {
   private vectorStore: VectorStoreInterface | null = null;
 
+  private readonly memoryRetrieverLog = createLogger(NAMESPACES.utils.memory);
+
   /**
    * Initialize the memory retriever with a vector store instance
    */
@@ -42,9 +45,9 @@ export class MemoryRetriever {
       if (!this.vectorStore) {
         this.vectorStore = VectorStoreFactory.createVectorStore('vectra');
       }
-      console.log('[MEMORY_RETRIEVER] Initialized with vector store');
+      this.memoryRetrieverLog('[MEMORY_RETRIEVER] Initialized with vector store');
     } catch (error) {
-      console.warn('[MEMORY_RETRIEVER] Failed to initialize vector store:', error);
+      this.memoryRetrieverLog('[MEMORY_RETRIEVER] Failed to initialize vector store: %o', error);
       this.vectorStore = null;
     }
   }
@@ -59,12 +62,12 @@ export class MemoryRetriever {
     try {
       // Validate vector store availability
       if (!this.vectorStore) {
-        console.log('[MEMORY_RETRIEVER] Vector store not initialized, initializing now...');
+        this.memoryRetrieverLog('[MEMORY_RETRIEVER] Vector store not initialized, initializing now...');
         await this.initialize();
       }
 
       if (!this.vectorStore) {
-        console.warn('[MEMORY_RETRIEVER] Vector store unavailable after init, returning empty memories');
+        this.memoryRetrieverLog('[MEMORY_RETRIEVER] Vector store unavailable after init, returning empty memories');
         return [];
       }
 
@@ -74,7 +77,7 @@ export class MemoryRetriever {
 
       // If specific worldId and character (ID or name) provided, query just that scope
       const charId = options.characterId || options.characterName;
-      console.log(`[MEMORY_RETRIEVER] queryMemories called with:`, { 
+      this.memoryRetrieverLog('[MEMORY_RETRIEVER] queryMemories called with: %o', { 
         charId, 
         worldId: options.worldId, 
         characterId: options.characterId,
@@ -84,10 +87,10 @@ export class MemoryRetriever {
       
       if (options.worldId && charId) {
         const scope = `world_${options.worldId}_char_${charId}`;
-        console.log(`[MEMORY_RETRIEVER] Querying specific scope: ${scope}, query length: ${query.length}, topK: ${topK}, minSimilarity: ${minSimilarity}`);
+        this.memoryRetrieverLog('[MEMORY_RETRIEVER] Querying specific scope: %s, query length: %d, topK: %d, minSimilarity: %s', scope, query.length, topK, minSimilarity);
         try {
           const results = await this.vectorStore.query(query, scope, topK, minSimilarity);
-          console.log(`[MEMORY_RETRIEVER] Query returned ${results.length} results for scope ${scope}`);
+          this.memoryRetrieverLog('[MEMORY_RETRIEVER] Query returned %d results for scope %s', results.length, scope);
           
           for (const entry of results) {
             memories.push({
@@ -99,9 +102,9 @@ export class MemoryRetriever {
             });
           }
 
-          console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} memories for character ${charId} in world ${options.worldId}`);
+          this.memoryRetrieverLog('[MEMORY_RETRIEVER] Retrieved %d memories for character %s in world %d', results.length, charId, options.worldId);
         } catch (error) {
-          console.warn(`[MEMORY_RETRIEVER] Query failed for scope ${scope}:`, error);
+          this.memoryRetrieverLog('[MEMORY_RETRIEVER] Query failed for scope %s: %o', scope, error);
         }
       } else if (options.worldId && !charId) {
         
@@ -127,19 +130,19 @@ export class MemoryRetriever {
               }
               
               if (results.length > 0) {
-                console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} memories for ${char.name || charIdVal} in world ${options.worldId}`);
+                this.memoryRetrieverLog('[MEMORY_RETRIEVER] Retrieved %d memories for %s in world %d', results.length, char.name || charIdVal, options.worldId);
               }
-            } catch (error) {
-              // Scope might not exist yet, skip it
-              console.debug(`[MEMORY_RETRIEVER] No memories for ${char.name} in world ${options.worldId}`);
-            }
+              } catch (error) {
+                // Scope might not exist yet, skip it
+                this.memoryRetrieverLog('[MEMORY_RETRIEVER] No memories for %s in world %d', char.name || charIdVal, options.worldId);
+              }
           }
         } catch (error) {
-          console.warn(`[MEMORY_RETRIEVER] Failed to query characters in world ${options.worldId}:`, error);
+          this.memoryRetrieverLog('[MEMORY_RETRIEVER] Failed to query characters in world %d: %o', options.worldId, error);
         }
       } else if (!options.worldId && !options.characterName) {
         // Query all worlds and all characters
-        console.log('[MEMORY_RETRIEVER] Querying all worlds and characters');
+        this.memoryRetrieverLog('[MEMORY_RETRIEVER] Querying all worlds and characters');
         
         try {
           const { WorldService } = await import('../services/WorldService.js');
@@ -165,7 +168,7 @@ export class MemoryRetriever {
                 }
                 
                 if (results.length > 0) {
-                  console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} memories for ${char.name || charIdVal} in world ${world.id}`);
+                  this.memoryRetrieverLog('[MEMORY_RETRIEVER] Retrieved %d memories for %s in world %d', results.length, char.name || charIdVal, world.id);
                 }
               } catch (error) {
                 // Scope might not exist yet, skip it
@@ -173,7 +176,7 @@ export class MemoryRetriever {
             }
           }
         } catch (error) {
-          console.warn('[MEMORY_RETRIEVER] Failed to query all worlds/characters:', error);
+          this.memoryRetrieverLog('[MEMORY_RETRIEVER] Failed to query all worlds/characters: %o', error);
         }
       }
 
@@ -194,9 +197,9 @@ export class MemoryRetriever {
               });
             }
 
-            console.log(`[MEMORY_RETRIEVER] Retrieved ${results.length} shared memories for world ${options.worldId}`);
+            this.memoryRetrieverLog('[MEMORY_RETRIEVER] Retrieved %d shared memories for world %d', results.length, options.worldId);
           } catch (error) {
-            console.warn(`[MEMORY_RETRIEVER] Query failed for shared memories:`, error);
+            this.memoryRetrieverLog('[MEMORY_RETRIEVER] Query failed for shared memories: %o', error);
           }
         } else {
           // Query all multi-character scopes
@@ -222,9 +225,9 @@ export class MemoryRetriever {
               }
             }
 
-            console.log('[MEMORY_RETRIEVER] Queried shared memories across all worlds');
+            this.memoryRetrieverLog('[MEMORY_RETRIEVER] Queried shared memories across all worlds');
           } catch (error) {
-            console.warn('[MEMORY_RETRIEVER] Query failed for all shared memories:', error);
+            this.memoryRetrieverLog('[MEMORY_RETRIEVER] Query failed for all shared memories: %o', error);
           }
         }
       }
@@ -252,7 +255,7 @@ export class MemoryRetriever {
           mem.similarity = score;
         }
       } catch (e) {
-        console.warn('[MEMORY_RETRIEVER] Failed to apply decay/rules:', e);
+        this.memoryRetrieverLog('[MEMORY_RETRIEVER] Failed to apply decay/rules: %o', e);
       }
 
       // Sort by adjusted similarity descending
@@ -260,7 +263,7 @@ export class MemoryRetriever {
 
       return memories.slice(0, topK);
     } catch (error) {
-      console.error('[MEMORY_RETRIEVER] Unexpected error in queryMemories:', error);
+      this.memoryRetrieverLog('[MEMORY_RETRIEVER] Unexpected error in queryMemories: %o', error);
       return [];
     }
   }
@@ -297,7 +300,7 @@ export class MemoryRetriever {
       const results = await this.queryMemories(queryText, mergedOpts);
       return results;
     } catch (e) {
-      console.warn('[MEMORY_RETRIEVER] retrieve() failed:', e);
+      this.memoryRetrieverLog('[MEMORY_RETRIEVER] retrieve() failed: %o', e);
       return [];
     }
   }
@@ -336,7 +339,7 @@ export class MemoryRetriever {
         note: 'Detailed stats available via VectraVectorStore implementation'
       };
     } catch (error) {
-      console.warn('[MEMORY_RETRIEVER] Failed to get stats:', error);
+      this.memoryRetrieverLog('[MEMORY_RETRIEVER] Failed to get stats: %o', error);
       return { status: 'error', error: String(error) };
     }
   }

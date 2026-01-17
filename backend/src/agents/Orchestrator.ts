@@ -3,6 +3,7 @@ import { ConfigManager } from '../configManager.js';
 import * as nunjucks from 'nunjucks';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createLogger, NAMESPACES } from '../logging';
 
 import { NarratorAgent } from './NarratorAgent.js';
 import { CharacterAgent } from './CharacterAgent.js';
@@ -22,6 +23,8 @@ import LorebookService from '../services/LorebookService.js';
 import { matchLoreEntries } from '../utils/loreMatcher.js';
 import tryJsonRepair from '../utils/jsonRepair.js';
 import { getNestedField } from '../utils/memoryHelpers.js';
+
+const orchestratorLog = createLogger(NAMESPACES.agents.orchestrator);
 
 export class Orchestrator {
   private configManager: ConfigManager;
@@ -68,7 +71,7 @@ export class Orchestrator {
       .get(sceneId) as any;
     this.currentRoundNumber = scene?.currentRoundNumber || 1;
     this.roundActiveCharacters = [];
-    console.log(`[ORCHESTRATOR] Round initialized: scene=${sceneId}, roundNumber=${this.currentRoundNumber}`);
+    orchestratorLog('[ORCHESTRATOR] Round initialized: scene=%d, roundNumber=%d', sceneId, this.currentRoundNumber);
   }
 
   // Task 4.1: Get current round number
@@ -96,7 +99,7 @@ export class Orchestrator {
       
       // 1. Persist round metadata to database (completes previous, advances number, creates new)
       const nextRoundNumber = SceneService.completeRound(sceneId, charsToPass);
-      console.log(`[ORCHESTRATOR] Round completed. Previous: ${this.currentRoundNumber}, Next: ${nextRoundNumber}`);
+      orchestratorLog('[ORCHESTRATOR] Round completed. Previous: %d, Next: %d', this.currentRoundNumber, nextRoundNumber);
 
       // Task 4.4: Emit Socket.io event for roundCompleted
       if (this.io) {
@@ -130,7 +133,7 @@ export class Orchestrator {
           };
 
           vectorizationAgent.run(context).catch((err: any) => {
-            console.warn(`[ORCHESTRATOR] VectorizationAgent failed for round ${this.currentRoundNumber}:`, err);
+            orchestratorLog('[ORCHESTRATOR] VectorizationAgent failed for round %d: %o', this.currentRoundNumber, err);
           });
         }
       }
@@ -141,7 +144,7 @@ export class Orchestrator {
       
       return nextRoundNumber;
     } catch (error) {
-      console.error(`[ORCHESTRATOR] Failed to complete round ${this.currentRoundNumber}:`, error);
+      orchestratorLog('[ORCHESTRATOR] Failed to complete round %d: %o', this.currentRoundNumber, error);
       throw error;
     }
   }
@@ -154,7 +157,7 @@ export class Orchestrator {
       const scene = this.db.prepare('SELECT currentRoundNumber FROM Scenes WHERE id = ?')
         .get(sceneId) as any;
       const currentRoundNumber = scene?.currentRoundNumber || 1;
-      console.log(`[ORCHESTRATOR] Continuing round ${currentRoundNumber} for scene ${sceneId}`);
+      orchestratorLog('[ORCHESTRATOR] Continuing round %d for scene %d', currentRoundNumber, sceneId);
       
       // Load the round into orchestrator state
       this.currentRoundNumber = currentRoundNumber;
@@ -187,7 +190,7 @@ export class Orchestrator {
       // Extract active character UUIDs from the resolved character objects
       // sessionContext.activeCharacters are full character objects, we need just the IDs
       const activeCharacterUUIDs = sessionContext.activeCharacters.map((c: any) => c.id);
-      console.log(`[ORCHESTRATOR] Active character UUIDs for round ${currentRoundNumber}: ${JSON.stringify(activeCharacterUUIDs)}`);
+      orchestratorLog('[ORCHESTRATOR] Active character UUIDs for round %d: %s', currentRoundNumber, JSON.stringify(activeCharacterUUIDs));
 
       // REUSE THE EXACT SAME processUserInput PATH
       // This ensures all agent status messages, parsing, world updates, and frontend notifications happen
@@ -197,17 +200,17 @@ export class Orchestrator {
         activeCharacterUUIDs, // Pass active character UUIDs
         sceneId, // Pass scene ID for round tracking
         (response: { sender: string; content: string }) => {
-          console.log(`[CONTINUE_ROUND] Callback received response from ${response.sender}`);
+          orchestratorLog('[CONTINUE_ROUND] Callback received response from %s', response.sender);
           // Log character response with current round number
           MessageService.logMessage(sceneId, response.sender, response.content, {}, 'continue-round', this.currentRoundNumber);
           this.addActiveCharacter(response.sender);
           
           // Emit to frontend immediately
           if (this.io) {
-            console.log(`[CONTINUE_ROUND] Emitting characterResponse for ${response.sender} to scene-${sceneId}`);
+            orchestratorLog('[CONTINUE_ROUND] Emitting characterResponse for %s to scene-%d', response.sender, sceneId);
             this.io.to(`scene-${sceneId}`).emit('characterResponse', response);
           } else {
-            console.warn(`[CONTINUE_ROUND] No Socket.io instance available to emit`);
+            orchestratorLog('[CONTINUE_ROUND] No Socket.io instance available to emit');
           }
         }
       );
@@ -215,7 +218,7 @@ export class Orchestrator {
       // Complete the round
       await this.completeRound(sceneId, activeCharacterUUIDs);
     } catch (error) {
-      console.error(`[ORCHESTRATOR] Failed to continue round:`, error);
+      orchestratorLog('[ORCHESTRATOR] Failed to continue round: %o', error);
       throw error;
     }
   }
@@ -287,7 +290,7 @@ export class Orchestrator {
       // add other agents as needed
       return false;
     } catch (e) {
-      console.error('Failed to reload agent', agentName, e);
+      orchestratorLog('Failed to reload agent', agentName, e);
       return false;
     }
   }
@@ -299,7 +302,7 @@ export class Orchestrator {
 
   // Build a rich SessionContext for a given sceneId
   async buildSessionContext(sceneId: number) {
-    console.log(`\n========== [LORE ENGINE] Building SessionContext for Scene ${sceneId} ==========`);
+    orchestratorLog(`\n========== [LORE ENGINE] Building SessionContext for Scene ${sceneId} ==========`);
     const sceneRow = this.db.prepare('SELECT * FROM Scenes WHERE id = ?').get(sceneId) as any;
     if (!sceneRow) return null;
 
@@ -308,33 +311,33 @@ export class Orchestrator {
     const worldRow = this.db.prepare('SELECT * FROM Worlds WHERE id = ?').get(campaignRow.worldId) as any;
 
     // Get active lorebooks for world and campaign
-    console.log(`[LORE] Building session context for scene ${sceneId}`);
-    console.log(`[LORE] World: ${worldRow.name} (${worldRow.id}), Campaign: ${campaignRow.name} (${campaignRow.id})`);
+    orchestratorLog(`[LORE] Building session context for scene ${sceneId}`);
+    orchestratorLog(`[LORE] World: ${worldRow.name} (${worldRow.id}), Campaign: ${campaignRow.name} (${campaignRow.id})`);
     
     const activeLorebooks = LorebookService.getActiveLorebooks(worldRow.id, campaignRow.id);
-    console.log(`[LORE] Active lorebooks count: ${activeLorebooks.length}`);
+    orchestratorLog(`[LORE] Active lorebooks count: ${activeLorebooks.length}`);
     activeLorebooks.forEach((lb: any) => {
-      console.log(`[LORE]   - Lorebook: "${lb.name}" (uuid: ${lb.uuid}, entries: ${(lb.entries || []).length})`);
+      orchestratorLog(`[LORE]   - Lorebook: "${lb.name}" (uuid: ${lb.uuid}, entries: ${(lb.entries || []).length})`);
     });
     
     const allEntries: any[] = [];
     for (const lb of activeLorebooks) {
       allEntries.push(...(lb.entries || []));
     }
-    console.log(`[LORE] Total entries available: ${allEntries.length}`);
+    orchestratorLog(`[LORE] Total entries available: ${allEntries.length}`);
 
     // Get lore context for matching
     const loreContext = SceneService.getLoreContext(sceneId, 4); // scanDepth 4
-    console.log(`[LORE] Lore context keys: ${loreContext ? Object.keys(loreContext).join(', ') : 'none'}`);
+    orchestratorLog(`[LORE] Lore context keys: ${loreContext ? Object.keys(loreContext).join(', ') : 'none'}`);
     
     let matchedLore: string[] = [];
     let formattedLore = '';
     if (loreContext && allEntries.length > 0) {
-      console.log(`[LORE] Matching entries against context...`);
+      orchestratorLog(`[LORE] Matching entries against context...`);
       const result = matchLoreEntries(allEntries, loreContext, 4, 2048); // tokenBudget 2048
-      console.log(`[LORE] Match results: ${result.selectedEntries.length} selected out of ${allEntries.length} available entries`);
+      orchestratorLog(`[LORE] Match results: ${result.selectedEntries.length} selected out of ${allEntries.length} available entries`);
       result.selectedEntries.forEach((entry: any, idx: number) => {
-        console.log(`[LORE]   SELECTED ${idx + 1}: "${entry.key}" (position: ${entry.insertion_position})`);
+        orchestratorLog(`[LORE]   SELECTED ${idx + 1}: "${entry.key}" (position: ${entry.insertion_position})`);
       });
       matchedLore = result.selectedEntries.map(e => e.content);
       
@@ -354,10 +357,10 @@ export class Orchestrator {
         sections.push(`[LORE - ${position}]\n${contents.join('\n')}`);
       }
       formattedLore = sections.join('\n\n');
-      console.log(`[LORE] Formatted lore sections: ${Object.keys(groupedByPosition).join(', ')}`);
-      console.log(`[LORE] Total formatted lore length: ${formattedLore.length} chars`);
+      orchestratorLog(`[LORE] Formatted lore sections: ${Object.keys(groupedByPosition).join(', ')}`);
+      orchestratorLog(`[LORE] Total formatted lore length: ${formattedLore.length} chars`);
     } else {
-      console.log(`[LORE] No lore context or entries found. loreContext: ${!!loreContext}, entries: ${allEntries.length}`);
+      orchestratorLog(`[LORE] No lore context or entries found. loreContext: ${!!loreContext}, entries: ${allEntries.length}`);
     }
 
     // Campaign state
@@ -373,7 +376,7 @@ export class Orchestrator {
 
     // Parse active characters UUIDs
     const activeCharacters = sceneRow.activeCharacters ? JSON.parse(sceneRow.activeCharacters) : [];
-    console.log(`[ORCHESTRATOR] Scene ${sceneId}: activeCharacters in DB = ${JSON.stringify(activeCharacters)}`);
+    orchestratorLog(`[ORCHESTRATOR] Scene ${sceneId}: activeCharacters in DB = ${JSON.stringify(activeCharacters)}`);
 
     // Resolve merged character objects where possible
     const activeCharactersResolved: any[] = [];
@@ -381,7 +384,7 @@ export class Orchestrator {
     for (const item of activeCharacters) {
       const merged = CharacterService.getMergedCharacter({ characterId: item, worldId: worldRow.id, campaignId: campaignRow.id });
       if (merged) {
-        console.log(`[ORCHESTRATOR] Found merged character for ${item}: ${merged.name}`);
+        orchestratorLog(`[ORCHESTRATOR] Found merged character for ${item}: ${merged.name}`);
         // Apply current character state if available
         const currentState = characterStates[merged.id] || characterStates[merged.name];
         if (currentState) {
@@ -389,10 +392,10 @@ export class Orchestrator {
         }
         activeCharactersResolved.push(merged);
       } else {
-        console.log(`[ORCHESTRATOR] No merged character found for ${item}`);
+        orchestratorLog(`[ORCHESTRATOR] No merged character found for ${item}`);
       }
     }
-    console.log(`[ORCHESTRATOR] Scene ${sceneId}: resolved ${activeCharactersResolved.length} characters`);
+    orchestratorLog(`[ORCHESTRATOR] Scene ${sceneId}: resolved ${activeCharactersResolved.length} characters`);
 
     const sessionContext = {
       world: { id: worldRow.id, slug: worldRow.slug, name: worldRow.name, description: worldRow.description },
@@ -498,7 +501,7 @@ export class Orchestrator {
         // Add type field to the data for template usage
         const entityData = { ...entity.data, type: entity.type };
         matchedEntities.push(entityData);
-        console.log(`[searchForEntities] Found ${entity.type}: ${entity.name}`);
+        orchestratorLog(`[searchForEntities] Found ${entity.type}: ${entity.name}`);
       }
     }
     
@@ -622,19 +625,19 @@ export class Orchestrator {
             // Provide raw memories for template rendering and keep formatted string for compatibility
             context.vectorMemoriesRaw = memories;
             context.vectorMemories = retriever.formatMemoriesForPrompt(memories);
-            console.log(`[NARRATOR] Injected ${memories.length} memories into context`);
+            orchestratorLog(`[NARRATOR] Injected ${memories.length} memories into context`);
           }
         } catch (error) {
-          console.warn('[NARRATOR] Memory retrieval failed (non-blocking):', error);
+          orchestratorLog('[NARRATOR] Memory retrieval failed (non-blocking):', error);
         }
       }
 
       // Call only NarratorAgent for scene description
       const narratorAgent = this.agents.get('narrator')!;
-      console.log('Calling NarratorAgent');
+      orchestratorLog('Calling NarratorAgent');
       this.emitAgentStatus('Narrator', 'start', sceneId);
       const narration = await narratorAgent.run(context);
-      console.log('NarratorAgent completed');
+      orchestratorLog('NarratorAgent completed');
       this.emitAgentStatus('Narrator', 'complete', sceneId);
       this.history.push(`Narrator: ${narration}`);
       return { responses: [{ sender: 'Narrator', content: narration }], lore: [] };
@@ -667,7 +670,7 @@ export class Orchestrator {
     // Step 1: Summarize if history too long (simple check: > 10 messages)
     if (this.history.length > 10) {
       const summarizeAgent = this.agents.get('summarize')!;
-      console.log('Calling SummarizeAgent');
+      orchestratorLog('Calling SummarizeAgent');
       this.emitAgentStatus('Summarize', 'start', sceneId);
       let summary: string = '';
       let summarizeParsed: any = null;
@@ -707,9 +710,9 @@ export class Orchestrator {
         summary = summarizeParsed;
       } else {
         summary = '';
-        console.warn('SummarizeAgent failed to parse/repair JSON after', summarizeRetries, 'attempts:', summarizeLastError);
+        orchestratorLog('SummarizeAgent failed to parse/repair JSON after', summarizeRetries, 'attempts:', summarizeLastError);
       }
-      console.log('SummarizeAgent completed');
+      orchestratorLog('SummarizeAgent completed');
       this.emitAgentStatus('Summarize', 'complete', sceneId);
       this.sceneSummary = summary;
       // Truncate history
@@ -752,11 +755,11 @@ export class Orchestrator {
       activeCharacterNames: activeCharacterNamesStr,
       history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history
     };
-    console.log('Calling DirectorAgent');
+    orchestratorLog('Calling DirectorAgent');
     this.emitAgentStatus('Director', 'start', sceneId);
     const directorOutput = await directorAgent.run(directorContext);
-    console.log('DirectorAgent completed, output length:', directorOutput.length);
-    console.log('DirectorAgent raw output preview:', directorOutput.substring(0, 200) + (directorOutput.length > 200 ? '...' : ''));
+    orchestratorLog('DirectorAgent completed, output length:', directorOutput.length);
+    orchestratorLog('DirectorAgent raw output preview:', directorOutput.substring(0, 200) + (directorOutput.length > 200 ? '...' : ''));
     this.emitAgentStatus('Director', 'complete', sceneId);
     // Parse output: JSON {"guidance": "...", "characters": [...]}
     let directorGuidance = '';
@@ -809,7 +812,7 @@ export class Orchestrator {
       directorGuidance = directorParsed.guidance || '';
       charactersToRespond = Array.isArray(directorParsed.characters) ? directorParsed.characters : [];
     } else {
-      console.warn('DirectorAgent failed to parse/repair JSON after', directorRetries, 'attempts:', directorLastError);
+      orchestratorLog('DirectorAgent failed to parse/repair JSON after', directorRetries, 'attempts:', directorLastError);
       // Fallback: try old format
       const guidanceMatch = directorOutput.match(/Guidance:\s*(.+?)(?:\n|$)/i);
       const charactersMatch = directorOutput.match(/Characters:\s*(.+?)(?:\n|$)/i);
@@ -823,11 +826,11 @@ export class Orchestrator {
         }
       }
     }
-    console.log('Active characters passed to Director:', activeCharacters);
-    console.log('Director selected characters:', charactersToRespond);
+    orchestratorLog('Active characters passed to Director:', activeCharacters);
+    orchestratorLog('Director selected characters:', charactersToRespond);
     // Fallback if parsing fails
     if (!directorGuidance && !charactersToRespond.length) {
-      console.warn('Failed to parse DirectorAgent output properly:', directorOutput);
+      orchestratorLog('Failed to parse DirectorAgent output properly:', directorOutput);
       directorGuidance = directorOutput; // Use as guidance
       // Default to first active character if available, otherwise skip character responses
       if (activeCharacters && activeCharacters.length > 0) {
@@ -864,10 +867,10 @@ export class Orchestrator {
           location: sessionContext.scene.location || 'unknown',
           position: 'standing'
         };
-        console.log(`Initialized character state for ${char.name}:`, characterStates[char.name]);
+        orchestratorLog(`Initialized character state for ${char.name}:`, characterStates[char.name]);
       }
     }
-    console.log('Character states after initialization:', Object.keys(characterStates));
+    orchestratorLog('Character states after initialization:', Object.keys(characterStates));
     
     // Parse user actions for outfit updates
     if (userInput.includes('takes off his shirt') || userInput.includes('takes his shirt off')) {
@@ -900,10 +903,10 @@ export class Orchestrator {
       trackers: sessionContext.trackers
     };
     
-    console.log('Calling WorldAgent');
+    orchestratorLog('Calling WorldAgent');
     this.emitAgentStatus('WorldAgent', 'start', sceneId);
     const worldUpdateStr = await worldAgent.run(worldContext);
-    console.log('WorldAgent completed');
+    orchestratorLog('WorldAgent completed');
     this.emitAgentStatus('WorldAgent', 'complete', sceneId);
     // Parse JSON response from WorldAgent (enforced by response_format)
     let worldStateChanged = false;
@@ -959,7 +962,7 @@ export class Orchestrator {
           worldStateChanged = true;
           // Handle user persona state updates from worldState
           if (worldParsed.worldState.userPersonaState && typeof worldParsed.worldState.userPersonaState === 'object') {
-            console.log('[WORLD] Updating user persona state from worldState:', worldParsed.worldState.userPersonaState);
+            orchestratorLog('[WORLD] Updating user persona state from worldState:', worldParsed.worldState.userPersonaState);
             // Merge provided state fields, avoiding 'default' values
             const userPersonaKey = personaName || 'user';
             if (!characterStates[userPersonaKey]) {
@@ -970,7 +973,7 @@ export class Orchestrator {
                 characterStates[userPersonaKey][key] = value;
               }
             }
-            console.log('[WORLD] User persona state after update:', characterStates[userPersonaKey]);
+            orchestratorLog('[WORLD] User persona state after update:', characterStates[userPersonaKey]);
             // Remove userPersonaState from worldState after processing
             delete this.worldState.userPersonaState;
           }
@@ -986,7 +989,7 @@ export class Orchestrator {
         }
       }
     } else {
-      console.warn('WorldAgent failed to parse/repair JSON after', worldRetries, 'attempts:', worldLastError);
+      orchestratorLog('WorldAgent failed to parse/repair JSON after', worldRetries, 'attempts:', worldLastError);
     }
     
     // Save updated world state to scene if it changed
@@ -1014,11 +1017,11 @@ export class Orchestrator {
     const turnResponses: { character: string; response: string }[] = [];
 
     for (const charName of charactersToRespond) {
-      console.log(`Processing character: ${charName}`);
+      orchestratorLog(`Processing character: ${charName}`);
       
       // Ensure character state exists
       if (!characterStates[charName]) {
-        console.log(`Initializing character state for ${charName}`);
+        orchestratorLog(`Initializing character state for ${charName}`);
         characterStates[charName] = {
           clothingWorn: 'default',
           mood: 'neutral',
@@ -1030,7 +1033,7 @@ export class Orchestrator {
       
       const characterData = sessionContext.activeCharacters.find(c => c.name.toLowerCase() === charName.toLowerCase());
       if (!characterData) {
-        console.warn(`Character ${charName} not found in active characters`);
+        orchestratorLog(`Character ${charName} not found in active characters`);
         continue;
       }
 
@@ -1059,31 +1062,31 @@ export class Orchestrator {
       if (sceneId && characterData?.id) {
         try {
           const worldId = SceneService.getWorldIdFromSceneId(sceneId);
-          console.log(`[CHARACTER_MEMORY] Querying memories for ${charName} (id: ${characterData.id}) in world ${worldId}, scene ${sceneId}`);
+          orchestratorLog(`[CHARACTER_MEMORY] Querying memories for ${charName} (id: ${characterData.id}) in world ${worldId}, scene ${sceneId}`);
           const retriever = getMemoryRetriever();
           await retriever.initialize();
           const query = userInput + ' ' + this.history.join(' ').substring(0, 500);
-          console.log(`[CHARACTER_MEMORY] Query text length: ${query.length}`);
+          orchestratorLog(`[CHARACTER_MEMORY] Query text length: ${query.length}`);
           const scope = `world_${worldId}_char_${characterData.id}`;
           const memories = await retriever.retrieve({ scope, query, topK: 5, minSimilarity: 0.3 } as any);
-          console.log(`[CHARACTER_MEMORY] Retrieved ${memories.length} memories for ${charName}`);
+          orchestratorLog(`[CHARACTER_MEMORY] Retrieved ${memories.length} memories for ${charName}`);
           if (memories.length > 0) {
             // Inject raw memories into character context; leave formatted for backwards compatibility
             characterContext.vectorMemoriesRaw = memories;
             characterContext.vectorMemories = retriever.formatMemoriesForPrompt(memories);
-            console.log(`[CHARACTER] ${charName}: Injected ${memories.length} memories into context`);
+            orchestratorLog(`[CHARACTER] ${charName}: Injected ${memories.length} memories into context`);
           } else {
-            console.log(`[CHARACTER_MEMORY] No memories found for ${charName}`);
+            orchestratorLog(`[CHARACTER_MEMORY] No memories found for ${charName}`);
           }
         } catch (error) {
-          console.warn(`[CHARACTER] ${charName}: Memory retrieval failed (non-blocking):`, error);
+          orchestratorLog(`[CHARACTER] ${charName}: Memory retrieval failed (non-blocking):`, error);
         }
       } else {
-        console.log(`[CHARACTER_MEMORY] Skipping memory query - sceneId: ${sceneId}, worldId: ${this.worldState?.id}, charId: ${characterData?.id}`);
+        orchestratorLog(`[CHARACTER_MEMORY] Skipping memory query - sceneId: ${sceneId}, worldId: ${this.worldState?.id}, charId: ${characterData?.id}`);
       }
 
-      console.log(`[CHARACTER] Calling CharacterAgent for "${charName}"`);
-      console.log(`[CHARACTER] Character profile: name=${characterData?.name}, includes lore: ${!!context.formattedLore}`);
+      orchestratorLog(`[CHARACTER] Calling CharacterAgent for "${charName}"`);
+      orchestratorLog(`[CHARACTER] Character profile: name=${characterData?.name}, includes lore: ${!!context.formattedLore}`);
       let characterResponse: string | null = null;
       let characterParsed: any = null;
       let characterRetries = 0;
@@ -1091,13 +1094,13 @@ export class Orchestrator {
       this.emitAgentStatus(charName, 'start', sceneId);
       while (characterRetries < 3) {
         if (characterRetries > 0) {
-          console.warn(`[CHARACTER] Retry ${characterRetries} for "${charName}"`);
+          orchestratorLog(`[CHARACTER] Retry ${characterRetries} for "${charName}"`);
         }
         // Call LLM
         characterResponse = await characterAgent.run(characterContext);
-        console.log(`[CHARACTER] CharacterAgent for "${charName}" completed (attempt ${characterRetries + 1})`);
-        console.log(`[CHARACTER] Raw response length: ${characterResponse?.length || 0} chars`);
-        console.log(`[CHARACTER] First 200 chars of response: ${characterResponse?.substring(0, 200) || 'EMPTY'}`);
+        orchestratorLog(`[CHARACTER] CharacterAgent for "${charName}" completed (attempt ${characterRetries + 1})`);
+        orchestratorLog(`[CHARACTER] Raw response length: ${characterResponse?.length || 0} chars`);
+        orchestratorLog(`[CHARACTER] First 200 chars of response: ${characterResponse?.substring(0, 200) || 'EMPTY'}`);
         this.emitAgentStatus(charName, 'complete', sceneId);
         
         if (characterResponse) {
@@ -1112,15 +1115,15 @@ export class Orchestrator {
             characterParsed = JSON.parse(cleanedResponse);
             // Validate that parsed object has content
             if (characterParsed && characterParsed.response) {
-              console.log(`[CHARACTER] Successfully parsed JSON with content on attempt ${characterRetries + 1}`);
+              orchestratorLog(`[CHARACTER] Successfully parsed JSON with content on attempt ${characterRetries + 1}`);
               break;
             } else {
               characterLastError = new Error('Parsed JSON missing "response" field or empty content');
-              console.log(`[CHARACTER] Direct parse succeeded but missing content: ${characterLastError}`);
+              orchestratorLog(`[CHARACTER] Direct parse succeeded but missing content: ${characterLastError}`);
             }
           } catch (e) {
             characterLastError = e;
-            console.log(`[CHARACTER] Direct parse failed: ${e}`);
+            orchestratorLog(`[CHARACTER] Direct parse failed: ${e}`);
             
             // Try jsonrepair
             const repaired = tryJsonRepair(cleanedResponse);
@@ -1129,19 +1132,19 @@ export class Orchestrator {
                 characterParsed = JSON.parse(repaired);
                 // Validate that repaired JSON has content
                 if (characterParsed && characterParsed.response) {
-                  console.log(`[CHARACTER] Successfully repaired and parsed JSON with content on attempt ${characterRetries + 1}`);
+                  orchestratorLog(`[CHARACTER] Successfully repaired and parsed JSON with content on attempt ${characterRetries + 1}`);
                   break;
                 } else {
                   characterLastError = new Error('Repaired JSON missing "response" field or empty content');
-                  console.log(`[CHARACTER] Repaired parse succeeded but missing content: ${characterLastError}`);
+                  orchestratorLog(`[CHARACTER] Repaired parse succeeded but missing content: ${characterLastError}`);
                 }
               } catch (e2) {
                 characterLastError = e2;
-                console.log(`[CHARACTER] Repaired parse failed: ${e2}`);
+                orchestratorLog(`[CHARACTER] Repaired parse failed: ${e2}`);
                 // If repair failed, loop will retry with fresh LLM call
               }
             } else {
-              console.log(`[CHARACTER] jsonrepair returned null, will retry with fresh LLM call`);
+              orchestratorLog(`[CHARACTER] jsonrepair returned null, will retry with fresh LLM call`);
             }
           }
         }
@@ -1150,9 +1153,9 @@ export class Orchestrator {
       }
       
       if (!characterParsed) {
-        console.warn(`[CHARACTER] Failed to parse/repair JSON after ${characterRetries} attempts:`, characterLastError);
+        orchestratorLog(`[CHARACTER] Failed to parse/repair JSON after ${characterRetries} attempts:`, characterLastError);
         // Treat plain text response as the character's speech
-        console.log(`[CHARACTER] Treating response as plain text: ${characterResponse?.substring(0, 100)}...`);
+        orchestratorLog(`[CHARACTER] Treating response as plain text: ${characterResponse?.substring(0, 100)}...`);
         characterParsed = { response: characterResponse || '', characterState: null };
       }
       const content = characterParsed.response;
@@ -1205,10 +1208,10 @@ export class Orchestrator {
           userPersona: this.getPersona(personaName),
           creationRequest: args.join(' '),
         };
-        console.log('Calling CreatorAgent');
+        orchestratorLog('Calling CreatorAgent');
         this.emitAgentStatus('Creator', 'start', sceneId);
         const creatorResult = await creatorAgent.run(context);
-        console.log('CreatorAgent completed');
+        orchestratorLog('CreatorAgent completed');
         this.emitAgentStatus('Creator', 'complete', sceneId);
         return { responses: [{ sender: 'Creator', content: creatorResult }], lore: [] };
       case 'image':
@@ -1218,11 +1221,11 @@ export class Orchestrator {
         
         // Parse character names from the input (e.g., "/image Annie and Hex embracing")
         const imagePrompt = args.join(' ');
-        console.log(`[/image] Starting image command with prompt: "${imagePrompt}", sceneId: ${sceneId}`);
+        orchestratorLog(`[/image] Starting image command with prompt: "${imagePrompt}", sceneId: ${sceneId}`);
         
         // Load session context to get world/campaign info
         const imageSessionContext = sceneId ? await this.buildSessionContext(sceneId) : null;
-        console.log(`[/image] Session context loaded: ${imageSessionContext ? 'yes' : 'no'}`);
+        orchestratorLog(`[/image] Session context loaded: ${imageSessionContext ? 'yes' : 'no'}`);
         
         // Search for ONLY entities explicitly mentioned in the prompt
         const matchedEntities = this.searchForEntities(
@@ -1230,12 +1233,12 @@ export class Orchestrator {
           imageSessionContext?.world.id,
           imageSessionContext?.campaign.id
         );
-        console.log(`[/image] Matched ${matchedEntities.length} entities: [${matchedEntities.map((e: any) => e.name).join(', ')}]`);
+        orchestratorLog(`[/image] Matched ${matchedEntities.length} entities: [${matchedEntities.map((e: any) => e.name).join(', ')}]`);
         
         // If no entities found, pass the raw prompt directly to VisualAgent
         // to generate an SD prompt, then generate the image.
         if (matchedEntities.length === 0) {
-          console.log(`[/image] No characters or personas found; generating image from raw prompt`);
+          orchestratorLog(`[/image] No characters or personas found; generating image from raw prompt`);
           const visualAgent = this.agents.get('visual')! as any;
           try {
             this.emitAgentStatus('Visual', 'start', sceneId);
@@ -1249,11 +1252,11 @@ export class Orchestrator {
             
             // Get SD prompt from VisualAgent
             const sdPrompt = await visualAgent.run(visualContext);
-            console.log(`[/image] Generated SD prompt: ${String(sdPrompt).substring(0, 150)}...`);
+            orchestratorLog(`[/image] Generated SD prompt: ${String(sdPrompt).substring(0, 150)}...`);
             
             // Generate actual image from SD prompt
             const imageUrl = await visualAgent.generateImage(sdPrompt);
-            console.log(`[/image] Image generated: ${imageUrl}`);
+            orchestratorLog(`[/image] Image generated: ${imageUrl}`);
             
             this.emitAgentStatus('Visual', 'complete', sceneId);
             
@@ -1262,7 +1265,7 @@ export class Orchestrator {
             const md = `![${JSON.stringify(meta)}](${imageUrl})`;
             return { responses: [{ sender: 'Visual', content: md }], lore: imageSessionContext?.lore || [] };
           } catch (err) {
-            console.error('[/image] Image generation failed for open prompt', err);
+            orchestratorLog('[/image] Image generation failed for open prompt', err);
             this.emitAgentStatus('Visual', 'complete', sceneId);
             return { responses: [{ sender: 'System', content: 'Image generation failed.' }], lore: [] };
           }
@@ -1282,7 +1285,7 @@ export class Orchestrator {
           sceneElements: [],
         } as any;
         
-        console.log(`[/image] Calling VisualAgent with ${matchedEntities.length} matched entities`);
+        orchestratorLog(`[/image] Calling VisualAgent with ${matchedEntities.length} matched entities`);
         this.emitAgentStatus('Visual', 'start', sceneId);
         let visualResult: string = '';
         let visualParsed: any = null;
@@ -1344,9 +1347,9 @@ export class Orchestrator {
           visualResult = visualParsed;
         } else {
           visualResult = '';
-          console.warn('VisualAgent failed to parse/repair JSON after', visualRetries, 'attempts:', visualLastError);
+          orchestratorLog('VisualAgent failed to parse/repair JSON after', visualRetries, 'attempts:', visualLastError);
         }
-        console.log('[/image] VisualAgent completed');
+        orchestratorLog('[/image] VisualAgent completed');
         this.emitAgentStatus('Visual', 'complete', sceneId);
         return { responses: [{ sender: 'Visual', content: visualResult }], lore: imageSessionContext?.lore || [] };
       case 'scenepicture':
@@ -1386,10 +1389,10 @@ export class Orchestrator {
           timeOfDay: sessionContext?.scene.timeOfDay,
           sceneDescription: sessionContext?.scene.description,
         } as any;
-        console.log('Calling NarratorAgent for /scenepicture with scene-picture mode');
+        orchestratorLog('Calling NarratorAgent for /scenepicture with scene-picture mode');
         this.emitAgentStatus('Narrator', 'start', sceneId);
         const narration = await narratorAgent.run(narrContext);
-        console.log('NarratorAgent completed for /scenepicture');
+        orchestratorLog('NarratorAgent completed for /scenepicture');
         this.emitAgentStatus('Narrator', 'complete', sceneId);
 
         // Generate SD prompt for scene picture visualization
@@ -1421,7 +1424,7 @@ export class Orchestrator {
           const md = `![${JSON.stringify(meta)}](${imageUrl})`;
           return { responses: [{ sender: 'Visual', content: md }], lore: [] };
         } catch (err) {
-          console.error('scenepicture generation failed', err);
+          orchestratorLog('scenepicture generation failed', err);
           return { responses: [{ sender: 'System', content: 'Scene picture generation failed.' }], lore: [] };
         }
       default:

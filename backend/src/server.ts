@@ -2,7 +2,7 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import { ConfigManager, Config } from './configManager';
+import { ConfigManager, Config, DebugSettings } from './configManager';
 import { chatCompletion, ChatMessage } from './llm/client';
 import * as nunjucks from 'nunjucks';
 import * as fs from 'fs';
@@ -30,6 +30,7 @@ import { countTokens } from './utils/tokenCounter.js';
 import * as jobStore from './jobs/jobStore.js';
 import * as auditLog from './jobs/auditLog.js';
 import { getNestedField } from './utils/memoryHelpers.js';
+import { createLogger, NAMESPACES } from './logging';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -54,13 +55,16 @@ const io = new Server(server, {
 });
 
 const configManager = new ConfigManager();
+const serverLog = createLogger(NAMESPACES.server.main);
+const socketLog = createLogger(NAMESPACES.server.socket);
+const regenLog = createLogger(NAMESPACES.server.regen);
 
 const DEFAULT_DEBUG_WHITELIST = ['roleforge:*'];
 
 const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const buildWhitelistPatterns = (whitelist?: string[]) => {
-  const list = Array.isArray(whitelist) && whitelist.length ? whitelist : DEFAULT_DEBUG_WHITELIST;
+  const list = Array.isArray(whitelist) ? whitelist : DEFAULT_DEBUG_WHITELIST;
   return list.map(entry => new RegExp(`^${entry.split('*').map(escapePattern).join('.*')}$`));
 };
 
@@ -78,18 +82,42 @@ const sanitizeNamespaceList = (raw: string, patterns: RegExp[]) => {
 };
 
 const getSourceNamespaces = (cfg: Config) => {
-  const envValue = process.env.DEBUG?.trim();
-  if (envValue) return envValue;
-  return cfg.debug?.enabledNamespaces?.trim() || '';
+  const configValue = cfg.debug?.enabledNamespaces?.trim();
+  if (configValue) return configValue;
+  return process.env.DEBUG?.trim() || '';
 };
 
 const getSanitizedDebugConfig = (cfg: Config) => {
+  const whitelist = Array.isArray(cfg.debug?.whitelist)
+    ? [...cfg.debug.whitelist]
+    : [...DEFAULT_DEBUG_WHITELIST];
   const whitelistPatterns = buildWhitelistPatterns(cfg.debug?.whitelist);
   const namespaces = sanitizeNamespaceList(getSourceNamespaces(cfg), whitelistPatterns);
   return {
     enabledNamespaces: namespaces.join(','),
-    colors: cfg.debug?.colors ?? true
+    colors: cfg.debug?.colors ?? true,
+    whitelist
   };
+};
+
+const buildClientConfigPayload = () => {
+  const cfg = configManager.getConfig();
+  const sanitizedDebug = getSanitizedDebugConfig(cfg);
+  const out: any = {
+    features: cfg.features || {},
+    comfyui: cfg.comfyui ? { endpoint: cfg.comfyui.endpoint, workflow: cfg.comfyui.workflow } : {},
+    agents: cfg.agents || {}
+  };
+  out.debug = sanitizedDebug;
+  if (cfg.profiles) {
+    out.profiles = {};
+    for (const k of Object.keys(cfg.profiles)) {
+      const p = { ...cfg.profiles[k] } as any;
+      if ('apiKey' in p) p.apiKey = p.apiKey ? '***' : undefined;
+      out.profiles[k] = p;
+    }
+  }
+  return out;
 };
 
 const applyDebugConfig = () => {
@@ -97,7 +125,7 @@ const applyDebugConfig = () => {
   const sanitized = getSanitizedDebugConfig(cfg);
   if (sanitized.enabledNamespaces) {
     debug.enable(sanitized.enabledNamespaces);
-    console.log(`Debug enabled (namespaces: ${sanitized.enabledNamespaces})`);
+    serverLog(`Debug enabled (namespaces: ${sanitized.enabledNamespaces})`);
   }
   if (cfg.debug?.colors === false) {
     process.env.DEBUG_COLORS = '0';
@@ -665,7 +693,7 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
         await vectorizationAgent.run(vectorContext).catch((err: any) => {
           console.warn(`[REGENERATE] VectorizationAgent failed for round ${roundToRegenerate}:`, err);
         });
-        console.log(`[REGENERATE] Re-vectorized round ${roundToRegenerate} with ${regeneratedMessages.length} messages`);
+        regenLog(`[REGENERATE] Re-vectorized round ${roundToRegenerate} with ${regeneratedMessages.length} messages`);
       }
     } catch (e) {
       console.warn('[REGENERATE] Failed to re-vectorize round:', e);
@@ -716,7 +744,7 @@ app.post('/api/scenes/:sceneId/chat', async (req, res) => {
         INSERT INTO SceneRounds (sceneId, roundNumber, status, activeCharacters)
         VALUES (?, ?, 'in-progress', ?)
       `).run(sceneIdNum, currentRound, JSON.stringify(activeCharacters || []));
-      console.log(`[CHAT] Created round ${currentRound} record for scene ${sceneIdNum}`);
+      serverLog(`[CHAT] Created round ${currentRound} record for scene ${sceneIdNum}`);
     }
 
     // Create user message with roundNumber — use persona as sender and sourceId
@@ -754,7 +782,7 @@ app.post('/api/scenes/:sceneId/chat', async (req, res) => {
     // Task 6.1: Complete the round after all characters have responded
     // completeRound() now handles: completing previous round, incrementing round number, creating new round
     const nextRoundNumber = await orchestrator.completeRound(sceneIdNum, activeCharacters || []);
-    console.log(`[CHAT] Round ${currentRound} completed. Next round is ${nextRoundNumber}`);
+    serverLog(`[CHAT] Round ${currentRound} completed. Next round is ${nextRoundNumber}`);
 
     // Return response with round information
     res.json({
@@ -1040,7 +1068,7 @@ app.delete('/api/messages/:id', async (req, res) => {
             await vectorizationAgent.run(vectorContext).catch((err: any) => {
               console.warn(`[DELETE] VectorizationAgent failed for round ${messageRow.roundNumber}:`, err);
             });
-            console.log(`[DELETE] Re-vectorized round ${messageRow.roundNumber} after message deletion`);
+            serverLog(`[DELETE] Re-vectorized round ${messageRow.roundNumber} after message deletion`);
           }
         }
       } catch (e) {
@@ -1172,17 +1200,17 @@ app.get('/api/scenes/:sceneId/session', async (req, res) => {
 app.put('/api/scenes/:sceneId/active-characters', (req, res) => {
   const { sceneId } = req.params;
   const { activeCharacters } = req.body;
-  console.log(`Updating active characters for scene ${sceneId} to:`, activeCharacters);
+  serverLog(`Updating active characters for scene ${sceneId} to:`, activeCharacters);
   try {
     const stmt = db.prepare('UPDATE Scenes SET activeCharacters = ? WHERE id = ?');
     const result = stmt.run(JSON.stringify(activeCharacters || []), Number(sceneId));
     if (result.changes > 0) {
-      console.log('Successfully updated active characters in database');
+      serverLog('Successfully updated active characters in database');
       // Emit update
       try { io.emit('activeCharactersUpdated', { sceneId: Number(sceneId), activeCharacters }); } catch (e) { console.warn('Failed to emit activeCharactersUpdated', e); }
       res.json({ success: true });
     } else {
-      console.log('No scene found with id:', sceneId);
+      serverLog('No scene found with id:', sceneId);
       res.status(404).json({ error: 'Scene not found' });
     }
   } catch (e) {
@@ -1218,30 +1246,43 @@ app.get('/api/workflows/:name', (req, res) => {
 });
 
 // Debug config for clients: return non-sensitive debug configuration
-app.get('/api/debug-config', (req, res) => {
+app.get('/api/debug-config', (_req, res) => {
   try {
-    const cfg = configManager.getConfig();
-    const sanitizedDebug = getSanitizedDebugConfig(cfg);
-    // Clone minimal subset and mask secrets
-    const out: any = {
-      features: cfg.features || {},
-      comfyui: cfg.comfyui ? { endpoint: cfg.comfyui.endpoint, workflow: cfg.comfyui.workflow } : {},
-      agents: cfg.agents || {}
-    };
-    out.debug = sanitizedDebug;
-    // Mask any apiKey values in profiles
-    if (cfg.profiles) {
-      out.profiles = {};
-      for (const k of Object.keys(cfg.profiles)) {
-        const p = { ...cfg.profiles[k] } as any;
-        if ('apiKey' in p) p.apiKey = p.apiKey ? '***' : undefined;
-        out.profiles[k] = p;
-      }
-    }
-    return res.json(out);
+    const payload = buildClientConfigPayload();
+    return res.json(payload);
   } catch (e) {
     console.warn('Failed to return debug config', e);
     return res.status(500).json({ error: 'Failed to load config' });
+  }
+});
+
+app.post('/api/debug-config', (req, res) => {
+  try {
+    const body: any = req.body || {};
+    const updates: Partial<DebugSettings> = {};
+    if (Object.prototype.hasOwnProperty.call(body, 'enabledNamespaces')) {
+      updates.enabledNamespaces = String(body.enabledNamespaces || '').trim();
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'colors')) {
+      updates.colors = Boolean(body.colors);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'whitelist')) {
+      if (!Array.isArray(body.whitelist)) {
+        return res.status(400).json({ error: 'whitelist must be an array of namespace patterns' });
+      }
+      updates.whitelist = body.whitelist.map((entry: any) => String(entry || '').trim()).filter(Boolean);
+    }
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({ error: 'No debug settings provided' });
+    }
+    configManager.updateDebugSettings(updates);
+    applyDebugConfig();
+    const payload = buildClientConfigPayload();
+    serverLog('Debug config updated', updates);
+    return res.json(payload);
+  } catch (e) {
+    console.warn('Failed to update debug config', e);
+    return res.status(500).json({ error: 'Failed to update debug config' });
   }
 });
 
@@ -1316,7 +1357,7 @@ app.post('/api/comfyui/list', async (req, res) => {
   const { endpoint } = req.body;
   const ep = endpoint || (configManager.getConfig().comfyui && configManager.getConfig().comfyui.endpoint);
   if (!ep) return res.status(400).json({ error: 'ComfyUI endpoint not provided or configured' });
-  console.debug('ComfyUI list requested for endpoint:', ep);
+  serverLog('ComfyUI list requested for endpoint:', ep);
   const result: any = { models: [], vaes: [], samplers: [], schedulers: [], _debug: {} };
   try {
     // Preferred: query ComfyUI object_info endpoints for structured lists
@@ -2666,9 +2707,9 @@ io.on('connection', (socket) => {
   try {
     const _cfg = configManager.getConfig();
     const _logAcks = Boolean(_cfg && _cfg.features && ((_cfg.features as any).socketAckLogs));
-    if (_logAcks) console.log('Client connected', socket.id);
+    if (_logAcks) socketLog('Client connected', socket.id);
   } catch (e) {
-    console.log('Client connected');
+    socketLog('Client connected');
   }
 
   socket.on('userMessage', async (data: { input: string; persona?: string; activeCharacters?: string[]; sceneId?: number }) => {
@@ -2677,7 +2718,7 @@ io.on('connection', (socket) => {
       socket.join(`scene-${sceneId}`);
     }
     try {
-      console.log('User:', input);
+      serverLog('User:', input);
 
       let currentRound = 1;
       
@@ -2697,7 +2738,7 @@ io.on('connection', (socket) => {
             INSERT INTO SceneRounds (sceneId, roundNumber, status, activeCharacters)
             VALUES (?, ?, 'in-progress', ?)
           `).run(sceneId, currentRound, JSON.stringify(activeCharacters || []));
-          console.log(`[SOCKET] Created round ${currentRound} record for scene ${sceneId}`);
+          socketLog(`[SOCKET] Created round ${currentRound} record for scene ${sceneId}`);
         }
       }
 
@@ -2776,7 +2817,7 @@ io.on('connection', (socket) => {
       if (sceneId && Array.isArray(responses) && responses.length > 0) {
         try {
           const nextRoundNumber = await orchestrator.completeRound(sceneId, activeCharacters || []);
-          console.log(`[SOCKET] Round ${currentRound} completed. Next round is ${nextRoundNumber}`);
+          socketLog(`[SOCKET] Round ${currentRound} completed. Next round is ${nextRoundNumber}`);
         } catch (e) {
           console.error('[SOCKET] Failed to complete round:', e);
         }
@@ -2823,7 +2864,7 @@ io.on('connection', (socket) => {
                 db.prepare('UPDATE Scenes SET summary = ?, summaryTokenCount = ?, lastSummarizedMessageId = ? WHERE id = ?').run(
                   summary, tokenCount, latestMessage?.id || 0, sceneId
                 );
-                console.log(`Summarized scene ${sceneId} after ${messageCount.count} messages (${tokenCount} tokens)`);
+                serverLog(`Summarized scene ${sceneId} after ${messageCount.count} messages (${tokenCount} tokens)`);
               }
               
               // Emit agent status complete
@@ -2848,7 +2889,7 @@ io.on('connection', (socket) => {
       const sid = data && data.sceneId;
       if (sid) {
         socket.join(`scene-${sid}`);
-        console.log('Socket joined scene', sid);
+        socketLog('Socket joined scene', sid);
 
         // Persist the selected scene for the campaign so reconnects/emit-only flows
         // also update the authoritative campaign state. Resolve scene -> arc -> campaign.
@@ -2860,7 +2901,7 @@ io.on('connection', (socket) => {
             if (campaignId) {
               try {
                 CampaignService.updateState(campaignId, { currentSceneId: Number(sid) });
-                console.log(`Persisted currentSceneId=${sid} on campaign ${campaignId} via joinScene`);
+                socketLog(`Persisted currentSceneId=${sid} on campaign ${campaignId} via joinScene`);
                 // Emit stateUpdated so connected clients refresh their campaign state
                 try { io.emit('stateUpdated', { campaignId, state: CampaignService.getState(campaignId).dynamicFacts || {}, trackers: CampaignService.getState(campaignId).trackers || {} }); } catch (e) {}
               } catch (e) {
@@ -2882,7 +2923,7 @@ io.on('connection', (socket) => {
       const sid = data && data.sceneId;
       if (sid) {
         socket.leave(`scene-${sid}`);
-        console.log('Socket left scene', sid);
+        socketLog('Socket left scene', sid);
       }
     } catch (e) {
       console.warn('leaveScene failed', e);
@@ -2989,7 +3030,7 @@ io.on('connection', (socket) => {
             try { io.to(`scene-${data.sceneId}`).emit('imageStored', { messageId: data.messageId, sceneId: Number(data.sceneId), originalUrl: newUrl, localUrl: stored.localUrl, size: stored.size, width: stored.width, height: stored.height }); } catch (e) { console.warn('Failed to emit imageStored after regen', e); }
             db.prepare('UPDATE Messages SET message = ? WHERE id = ?').run(newContent, data.messageId);
             io.to(`scene-${data.sceneId}`).emit('messageUpdated', { messageId: data.messageId, newContent });
-            console.log('Emitted messageUpdated for', { messageId: data.messageId, sceneId: data.sceneId, preview: newContent.slice(0,120) });
+            serverLog('Emitted messageUpdated for', { messageId: data.messageId, sceneId: data.sceneId, preview: newContent.slice(0,120) });
           }
         }
       } else {
@@ -3004,14 +3045,14 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     orchestrator.clearHistory();
-    console.log('Client disconnected, history cleared');
+    socketLog('Client disconnected, history cleared');
   });
 });
 
 const PORT = 3001;
 if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
-    console.log(`Backend running on http://localhost:${PORT}`);
+    serverLog(`Backend running on http://localhost:${PORT}`);
   });
 }
 
@@ -3305,7 +3346,7 @@ async function cleanupOrphanedGeneratedFiles() {
     };
     removeEmptyDirs(base);
 
-    if (deleted > 0) console.log(`Cleanup removed ${deleted} orphaned generated files`);
+    if (deleted > 0) serverLog(`Cleanup removed ${deleted} orphaned generated files`);
   } catch (e) {
     console.warn('Scheduled cleanup failed', e);
   }

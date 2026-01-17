@@ -5,6 +5,9 @@
 
 import { VectorStoreInterface, VectorStoreProvider } from '../interfaces/VectorStoreInterface.js';
 import VectraVectorStore from '../stores/VectraVectorStore.js';
+import { createLogger, NAMESPACES } from '../logging';
+
+const vectorStoreFactoryLog = createLogger(NAMESPACES.vectorStore.factory);
 
 class VectorStoreFactory {
   private static instances: Map<string, VectorStoreInterface> = new Map();
@@ -47,7 +50,7 @@ class VectorStoreFactory {
     }
 
     this.instances.set(key, store);
-    console.log(`[VECTOR_STORE] Created ${provider} instance`);
+    vectorStoreFactoryLog(`[VECTOR_STORE] Created ${provider} instance`);
 
     return store;
   }
@@ -68,7 +71,7 @@ class VectorStoreFactory {
    */
   static clearCache(): void {
     this.instances.clear();
-    console.log('[VECTOR_STORE] Cleared all cached instances');
+    vectorStoreFactoryLog('[VECTOR_STORE] Cleared all cached instances');
   }
 
   /**
