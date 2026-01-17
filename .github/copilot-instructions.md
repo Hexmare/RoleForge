@@ -4,6 +4,7 @@
 
 **CRITICAL DIRECTION**: 
   - DO NOT EVER ASK TO COMMIT OR GENERATE Pull requests FOR ANYHTING IN THIS PROJECT. THE USER WILL HANDLE ALL OF THAT THEMSELVES.
+  - UNDER NO CIRCUMSTANCES USE BROWSER LOCAL STORAGE FOR CONFIGURATION, FEATURE FLAGS, OR DEBUG/LOGGING SETTINGS. All debug and configuration flags must be persisted in the backend and served to the frontend from a secure, validated endpoint. Never rely on `localStorage` for any cross-session or production configuration.
 
 > **For detailed implementation status, architecture, and feature documentation, see** `DevDocumentation/IMPLEMENTATION_STATUS.md` and keep [`.github/RoleForgeDesign.md`](.github/RoleForgeDesign.md) up to date as the live design snapshot.
 
