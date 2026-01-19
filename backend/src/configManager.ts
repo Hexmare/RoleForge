@@ -59,6 +59,7 @@ export interface Config {
   agents?: Record<string, AgentConfig>;
   features?: {
     visualAgentEnabled?: boolean;
+    worldAgentEnabled?: boolean;
     socketAckLogs?: boolean;
     summarizationInterval?: number;
     maxSummaryTokens?: number;
@@ -67,6 +68,7 @@ export interface Config {
     jsonValidationEnabled?: boolean;
     jsonValidationDevLog?: boolean;
     jsonValidationMaxRetries?: number;
+    maxDirectorPasses?: number;
   };
   vector?: any;
   debug?: DebugSettings;
@@ -166,6 +168,10 @@ export class ConfigManager {
 
   isVisualAgentEnabled(): boolean {
     return this.config.features?.visualAgentEnabled ?? false;
+  }
+
+  isWorldAgentEnabled(): boolean {
+    return this.config.features?.worldAgentEnabled ?? false;
   }
 
   updateDebugSettings(updates: Partial<DebugSettings>): Config {

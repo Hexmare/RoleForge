@@ -30,6 +30,7 @@ Keep in sync with: [DevDocumentation/AgentRestructure-architecture.md](DevDocume
 - Responsibilities: initialize rounds, build session context, call Director/Character/World/Narrator, manage history/summary, persist world/character state, emit socket events.
 - Planned flow per round: user/continuation → Director pass 1 (select actors, guidance, state updates, activations/deactivations) → Character agents (per actor) → Director pass 2 (reconcile) → round close (persist + events).
 - Guardrails: `maxDirectorPasses` default 2; WorldAgent feature-flagged off by default; Director authoritative on pre-character state updates.
+- WorldAgent flag: set `features.worldAgentEnabled=true` in `backend/config.json` to enable; default false keeps Director as owner of trackers/world updates. When enabled, WorldAgent uses the shared context envelope + JSON templating. Trackers/world state persist once per round after reconciliation to avoid double writes.
 
 ## Context Envelope (planned shared type)
 - `AgentContextEnvelope`: request metadata (requestType, sceneId, roundNumber); history (raw, summaries, per-round bullets, last-round messages verbatim); lore (raw/formatted); memories (per character, with scopes); scenario/author notes (world/campaign/arc/scene) truncated; persona & character summaries; character/world state; trackers; director guidance placeholders; token budget metadata.

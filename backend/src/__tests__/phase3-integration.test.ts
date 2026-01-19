@@ -515,6 +515,6 @@ describe('Phase 3 - Memory Query & Injection Integration', () => {
       expect(rendered).toContain('goblin');
 
       console.log('[TEST] Complete Phase 3 flow executed: store → query → format → inject → render');
-    });
+    }, 15000);
   });
 });

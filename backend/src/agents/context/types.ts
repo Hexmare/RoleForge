@@ -66,4 +66,6 @@ export interface AgentContextEnvelope {
   trackers?: Record<string, any>;
   directorGuidance?: Record<string, any>;
   tokenBudget?: TokenBudgetMetadata;
+  recentCharacterResponses?: Array<{ character: string; response: string }>;
+  directorPass?: number;
 }

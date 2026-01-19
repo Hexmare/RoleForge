@@ -24,6 +24,8 @@ export interface DirectorPlan {
   activations: string[];
   deactivations: string[];
   stateUpdates: DirectorStateUpdate[];
+  remainingActors?: string[];
+  newActivations?: string[];
 }
 
 export interface DirectorApplicationResult {
@@ -34,6 +36,8 @@ export interface DirectorApplicationResult {
   appliedStateUpdates: Array<{ name: string; changes: Record<string, string> }>;
   activations: Array<{ id?: string; name: string }>;
   deactivations: Array<{ id?: string; name: string }>;
+  remainingActors?: string[];
+  newActivations?: string[];
 }
 
 type CharacterResolver = (ref: string) => { id?: string; name: string } | null;
@@ -83,7 +87,13 @@ export function normalizeDirectorPlan(raw: any): DirectorPlan {
   const activations = toArray<string>(raw?.activations);
   const deactivations = toArray<string>(raw?.deactivations);
   const stateUpdates = toArray<DirectorStateUpdate>(raw?.stateUpdates);
-  return { openGuidance, actingCharacters, activations, deactivations, stateUpdates };
+    const remainingActors = toArray<string>(raw?.remainingActors || raw?.remaining)
+      .filter((v) => typeof v === 'string' && v.trim().length > 0)
+      .map((v) => v.trim());
+    const newActivations = toArray<string>(raw?.newActivations || raw?.nextActivations)
+      .filter((v) => typeof v === 'string' && v.trim().length > 0)
+      .map((v) => v.trim());
+    return { openGuidance, actingCharacters, activations, deactivations, stateUpdates, remainingActors, newActivations };
 }
 
 export function orderActingCharacters(plan: DirectorPlan, resolver?: CharacterResolver): DirectorActingCharacter[] {
@@ -200,6 +210,8 @@ export function applyDirectorPlan(plan: DirectorPlan, sessionContext: SessionCon
     updatedStates,
     appliedStateUpdates,
     activations: resolvedActivations,
-    deactivations: resolvedDeactivations
+    deactivations: resolvedDeactivations,
+    remainingActors: plan.remainingActors,
+    newActivations: plan.newActivations
   };
 }

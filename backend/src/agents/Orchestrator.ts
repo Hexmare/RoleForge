@@ -43,6 +43,7 @@ export class Orchestrator {
   // Task 4.1: Round tracking properties
   private currentRoundNumber: number = 1;
   private roundActiveCharacters: string[] = [];
+  private pendingCharacterPass: string[] = [];
 
   constructor(configManager: ConfigManager, env: nunjucks.Environment, db: Database.Database, io?: Server) {
     this.configManager = configManager;
@@ -601,6 +602,13 @@ export class Orchestrator {
       await this.initializeRoundState(sceneId);
     }
 
+    // Clear any pending follow-up passes at the start of a new request
+    this.pendingCharacterPass = [];
+
+    const worldAgentEnabled = this.configManager.isWorldAgentEnabled();
+    let pendingWorldStateUpdate: { lastWorldStateMessageNumber: number | null } | null = null;
+    let pendingTrackersUpdate: { campaignId: number } | null = null;
+
     // Load scene summary from database if sceneId is provided
     if (sceneId && !this.sceneSummary) {
       const sceneRow = this.db.prepare('SELECT summary FROM Scenes WHERE id = ?').get(sceneId) as any;
@@ -697,6 +705,16 @@ export class Orchestrator {
       // Fallback to basic interaction without scene-level state
       // This would be for non-scene based interactions
       return { responses: [{ sender: 'System', content: 'Scene context required for full interaction' }], lore: [] };
+    }
+
+    const maxDirectorPasses = this.configManager.getConfig().features?.maxDirectorPasses ?? 2;
+    const roundTimeline: any = { roundNumber: this.currentRoundNumber };
+
+    if (sceneId) {
+      const seedActiveCharacters = (sessionContext.activeCharacters || [])
+        .map((c: any) => c?.id || c?.name)
+        .filter((v: any) => !!v);
+      SceneService.startRound(sceneId, seedActiveCharacters);
     }
 
     const contextEnvelope = sceneId
@@ -875,6 +893,15 @@ export class Orchestrator {
     charactersToRespond = directorApplication.charactersToRespond;
     characterStates = directorApplication.updatedStates;
 
+    roundTimeline.directorPass1 = {
+      rawOutput: directorOutput,
+      plan: directorPlan,
+      orderedActors: directorApplication.orderedActors,
+      activations: directorApplication.activations,
+      deactivations: directorApplication.deactivations,
+      stateUpdates: directorApplication.appliedStateUpdates
+    };
+
     const directiveMap: Record<string, string | undefined> = {};
     for (const actor of directorApplication.orderedActors) {
       if (actor.name) {
@@ -980,133 +1007,137 @@ export class Orchestrator {
     }
     
     // Step 3: World state update
-    const worldAgent = this.agents.get('world')!;
-    // Get messages since last world state update
-    const lastMessageNumber = sessionContext.scene.lastWorldStateMessageNumber || 0;
-    const recentMessages = this.db.prepare('SELECT message, sender FROM Messages WHERE sceneId = ? AND messageNumber > ? ORDER BY messageNumber').all(sceneId!, lastMessageNumber) as any[];
-    const recentEvents = recentMessages.map(m => `${m.sender}: ${m.message}`);
-    
-    // Get current user persona state from character states
-    const userPersonaState = characterStates[personaName || 'user'] || {};
-    
-    const worldContext = {
-      ...context,
-      previousWorldState: sessionContext.scene.worldState,
-      userPersonaState,
-      scene: sessionContext.scene,
-      recentEvents,
-      trackers: sessionContext.trackers
-    };
-    
-    orchestratorLog('Calling WorldAgent');
-    this.emitAgentStatus('WorldAgent', 'start', sceneId);
-    const worldUpdateStr = await worldAgent.run(worldContext);
-    orchestratorLog('WorldAgent completed');
-    this.emitAgentStatus('WorldAgent', 'complete', sceneId);
-    // Parse JSON response from WorldAgent (enforced by response_format)
-    let worldStateChanged = false;
-    let trackersChanged = false;
-    let worldParsed: any = null;
-    let worldRetries = 0;
-    let worldLastError: any = null;
-    while (worldRetries < 3) {
-      let cleanedOutput = worldUpdateStr.trim();
-      if (cleanedOutput.startsWith('```json') && cleanedOutput.endsWith('```')) {
-        cleanedOutput = cleanedOutput.slice(7, -3).trim();
-      }
-      try {
-        worldParsed = JSON.parse(cleanedOutput);
-        break;
-      } catch (e) {
-        worldLastError = e;
-        // Try jsonrepair
-        const repaired = tryJsonRepair(cleanedOutput);
-        if (repaired) {
-          try {
-            worldParsed = JSON.parse(repaired);
-            break;
-          } catch (e2) {
-            worldLastError = e2;
+    if (worldAgentEnabled) {
+      const worldAgent = this.agents.get('world');
+      if (!worldAgent) {
+        orchestratorLog('[WORLD] WorldAgent not registered; skipping world update');
+      } else {
+        // Get messages since last world state update
+        const lastMessageNumber = sessionContext.scene.lastWorldStateMessageNumber || 0;
+        const recentMessages = this.db.prepare('SELECT message, sender FROM Messages WHERE sceneId = ? AND messageNumber > ? ORDER BY messageNumber').all(sceneId!, lastMessageNumber) as any[];
+        const recentEvents = recentMessages.map(m => `${m.sender}: ${m.message}`);
+        
+        // Get current user persona state from character states
+        const userPersonaState = characterStates[personaName || 'user'] || {};
+        
+        const worldContext = {
+          ...context,
+          previousWorldState: sessionContext.scene.worldState,
+          userPersonaState,
+          scene: sessionContext.scene,
+          recentEvents,
+          trackers: sessionContext.trackers
+        };
+        
+        orchestratorLog('Calling WorldAgent');
+        this.emitAgentStatus('WorldAgent', 'start', sceneId);
+        const worldUpdateStr = await worldAgent.run(worldContext);
+        orchestratorLog('WorldAgent completed');
+        this.emitAgentStatus('WorldAgent', 'complete', sceneId);
+        // Parse JSON response from WorldAgent (enforced by response_format)
+        let worldStateChanged = false;
+        let trackersChanged = false;
+        let worldParsed: any = null;
+        let worldRetries = 0;
+        let worldLastError: any = null;
+        while (worldRetries < 3) {
+          let cleanedOutput = worldUpdateStr.trim();
+          if (cleanedOutput.startsWith('```json') && cleanedOutput.endsWith('```')) {
+            cleanedOutput = cleanedOutput.slice(7, -3).trim();
           }
-        }
-        // Try to extract JSON object from within the string
-        const jsonMatch = cleanedOutput.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
           try {
-            worldParsed = JSON.parse(jsonMatch[0]);
+            worldParsed = JSON.parse(cleanedOutput);
             break;
-          } catch (innerE) {
-            worldLastError = innerE;
-          }
-        }
-      }
-      worldRetries++;
-    }
-    if (worldParsed) {
-      // Handle both object and array responses
-      if (Array.isArray(worldParsed)) {
-        if (worldParsed.length > 0 && typeof worldParsed[0] === 'object' && worldParsed[0] !== null) {
-          worldParsed = worldParsed[0];
-        } else {
-          worldParsed = {};
-        }
-      }
-      if (!worldParsed.unchanged) {
-        if (worldParsed.worldState) {
-          Object.assign(this.worldState, worldParsed.worldState);
-          worldStateChanged = true;
-          // Handle user persona state updates from worldState
-          if (worldParsed.worldState.userPersonaState && typeof worldParsed.worldState.userPersonaState === 'object') {
-            orchestratorLog('[WORLD] Updating user persona state from worldState:', worldParsed.worldState.userPersonaState);
-            // Merge provided state fields, avoiding 'default' values
-            const userPersonaKey = personaName || 'user';
-            if (!characterStates[userPersonaKey]) {
-              characterStates[userPersonaKey] = {};
-            }
-            for (const [key, value] of Object.entries(worldParsed.worldState.userPersonaState)) {
-              if (value && value !== 'default' && value !== 'Default') {
-                characterStates[userPersonaKey][key] = value;
+          } catch (e) {
+            worldLastError = e;
+            // Try jsonrepair
+            const repaired = tryJsonRepair(cleanedOutput);
+            if (repaired) {
+              try {
+                worldParsed = JSON.parse(repaired);
+                break;
+              } catch (e2) {
+                worldLastError = e2;
               }
             }
-            orchestratorLog('[WORLD] User persona state after update:', characterStates[userPersonaKey]);
-            // Remove userPersonaState from worldState after processing
-            delete this.worldState.userPersonaState;
+            // Try to extract JSON object from within the string
+            const jsonMatch = cleanedOutput.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              try {
+                worldParsed = JSON.parse(jsonMatch[0]);
+                break;
+              } catch (innerE) {
+                worldLastError = innerE;
+              }
+            }
           }
+          worldRetries++;
         }
-        // NOTE: WorldAgent should NOT modify character states - those are handled by CharacterAgent only
-        if (worldParsed.trackers) {
-          // Normalize objectives to array if it's an object
-          if (worldParsed.trackers.objectives && typeof worldParsed.trackers.objectives === 'object' && !Array.isArray(worldParsed.trackers.objectives)) {
-            worldParsed.trackers.objectives = Object.values(worldParsed.trackers.objectives).map((obj: any) => typeof obj === 'string' ? obj : obj.description || JSON.stringify(obj));
+        if (worldParsed) {
+          // Handle both object and array responses
+          if (Array.isArray(worldParsed)) {
+            if (worldParsed.length > 0 && typeof worldParsed[0] === 'object' && worldParsed[0] !== null) {
+              worldParsed = worldParsed[0];
+            } else {
+              worldParsed = {};
+            }
           }
-          Object.assign(this.trackers, worldParsed.trackers);
-          trackersChanged = true;
+          if (!worldParsed.unchanged) {
+            if (worldParsed.worldState) {
+              Object.assign(this.worldState, worldParsed.worldState);
+              worldStateChanged = true;
+              // Handle user persona state updates from worldState
+              if (worldParsed.worldState.userPersonaState && typeof worldParsed.worldState.userPersonaState === 'object') {
+                orchestratorLog('[WORLD] Updating user persona state from worldState:', worldParsed.worldState.userPersonaState);
+                // Merge provided state fields, avoiding 'default' values
+                const userPersonaKey = personaName || 'user';
+                if (!characterStates[userPersonaKey]) {
+                  characterStates[userPersonaKey] = {};
+                }
+                for (const [key, value] of Object.entries(worldParsed.worldState.userPersonaState)) {
+                  if (value && value !== 'default' && value !== 'Default') {
+                    characterStates[userPersonaKey][key] = value;
+                  }
+                }
+                orchestratorLog('[WORLD] User persona state after update:', characterStates[userPersonaKey]);
+                // Remove userPersonaState from worldState after processing
+                delete this.worldState.userPersonaState;
+              }
+            }
+            // NOTE: WorldAgent should NOT modify character states - those are handled by CharacterAgent only
+            if (worldParsed.trackers) {
+              // Normalize objectives to array if it's an object
+              if (worldParsed.trackers.objectives && typeof worldParsed.trackers.objectives === 'object' && !Array.isArray(worldParsed.trackers.objectives)) {
+                worldParsed.trackers.objectives = Object.values(worldParsed.trackers.objectives).map((obj: any) => typeof obj === 'string' ? obj : obj.description || JSON.stringify(obj));
+              }
+              Object.assign(this.trackers, worldParsed.trackers);
+              trackersChanged = true;
+            }
+          }
+        } else {
+          orchestratorLog('WorldAgent failed to parse/repair JSON after', worldRetries, 'attempts:', worldLastError);
         }
+        
+        // Save staged world/trackers updates for end-of-round persistence
+        if (worldStateChanged) {
+          const currentMaxMessageNumber = this.db.prepare('SELECT MAX(messageNumber) as maxNum FROM Messages WHERE sceneId = ?').get(sceneId!) as any;
+          const newLastMessageNumber = currentMaxMessageNumber?.maxNum || 0;
+          pendingWorldStateUpdate = { lastWorldStateMessageNumber: newLastMessageNumber };
+        }
+        if (trackersChanged) {
+          pendingTrackersUpdate = { campaignId: sessionContext.campaign.id };
+        }
+        
+        // Emit updated state to frontend
+        this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { state: this.worldState, trackers: this.trackers, characterStates: characterStates });
+        
+        context.worldState = this.worldState;
+        roundTimeline.worldAgent = { enabled: true, parsed: !!worldParsed };
       }
     } else {
-      orchestratorLog('WorldAgent failed to parse/repair JSON after', worldRetries, 'attempts:', worldLastError);
+      orchestratorLog('[WORLD] WorldAgent disabled via feature flag; skipping world update (Director owns trackers/world updates)');
+      roundTimeline.worldAgent = { enabled: false, reason: 'disabled' };
     }
-    
-    // Save updated world state to scene if it changed
-    if (worldStateChanged) {
-      const currentMaxMessageNumber = this.db.prepare('SELECT MAX(messageNumber) as maxNum FROM Messages WHERE sceneId = ?').get(sceneId!) as any;
-      const newLastMessageNumber = currentMaxMessageNumber?.maxNum || 0;
-      SceneService.update(sceneId!, {
-        worldState: this.worldState,
-        characterStates: characterStates,
-        lastWorldStateMessageNumber: newLastMessageNumber
-      });
-    }
-    
-    // Save updated trackers to campaign if they changed
-    if (trackersChanged) {
-      this.db.prepare('UPDATE CampaignState SET trackers = ?, updatedAt = CURRENT_TIMESTAMP WHERE campaignId = ?').run(JSON.stringify(this.trackers), sessionContext.campaign.id);
-    }
-    
-    // Emit updated state to frontend
-    this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { state: this.worldState, trackers: this.trackers, characterStates: characterStates });
-    
-    context.worldState = this.worldState;
 
     // Track responses from this turn to pass to subsequent characters
     const turnResponses: { character: string; response: string }[] = [];
@@ -1308,12 +1339,151 @@ export class Orchestrator {
       }
     }
 
+    roundTimeline.characterResponses = responses;
+
     // Final save and emit (in case any updates weren't already saved per-character)
     if (Object.keys(characterStates).length > 0) {
       SceneService.update(sceneId!, { characterStates });
       this.characterStates = characterStates; // Update instance
       // Emit final character states update as safety measure
       this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates: this.characterStates });
+    }
+
+    // Director reconciliation pass (post-character) when enabled
+    if (sceneId && maxDirectorPasses > 1) {
+      const reconciliationEnvelope = context.contextEnvelope
+        ? { ...context.contextEnvelope, directorPass: 2, recentCharacterResponses: turnResponses }
+        : undefined;
+
+      const reconciliationContext: AgentContext = {
+        ...context,
+        history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history,
+        contextEnvelope: reconciliationEnvelope,
+        characterStates,
+        activeCharacters: sessionContext.activeCharacters || [],
+        userInput
+      };
+
+      orchestratorLog('Calling DirectorAgent (reconciliation pass)');
+      this.emitAgentStatus('Director', 'start', sceneId);
+      const directorReconOutput = await directorAgent.run(reconciliationContext);
+      orchestratorLog('DirectorAgent reconciliation completed, output length:', directorReconOutput.length);
+      orchestratorLog('DirectorAgent reconciliation raw output preview:', directorReconOutput.substring(0, 200) + (directorReconOutput.length > 200 ? '...' : ''));
+      this.emitAgentStatus('Director', 'complete', sceneId);
+
+      let directorReconParsed: any = null;
+      let directorReconRetries = 0;
+      let directorReconLastError: any = null;
+      while (directorReconRetries < 3) {
+        let cleanedOutput = directorReconOutput.trim();
+        if (cleanedOutput.startsWith('```json') && cleanedOutput.endsWith('```')) {
+          cleanedOutput = cleanedOutput.slice(7, -3).trim();
+        }
+        try {
+          directorReconParsed = JSON.parse(cleanedOutput);
+          break;
+        } catch (e) {
+          directorReconLastError = e;
+          const repaired = tryJsonRepair(cleanedOutput);
+          if (repaired) {
+            try {
+              directorReconParsed = JSON.parse(repaired);
+              break;
+            } catch (e2) {
+              directorReconLastError = e2;
+            }
+          }
+          const jsonMatch = cleanedOutput.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              directorReconParsed = JSON.parse(jsonMatch[0]);
+              break;
+            } catch (innerE) {
+              directorReconLastError = innerE;
+            }
+          }
+        }
+        directorReconRetries++;
+      }
+
+      let directorReconPlan = directorReconParsed ? normalizeDirectorPlan(directorReconParsed) : normalizeDirectorPlan({ openGuidance: directorReconOutput });
+      if (!directorReconParsed) {
+        orchestratorLog('DirectorAgent reconciliation failed to parse/repair JSON after', directorReconRetries, 'attempts:', directorReconLastError);
+        const guidanceMatch = directorReconOutput.match(/Guidance:\s*(.+?)(?:\n|$)/i);
+        const charactersMatch = directorReconOutput.match(/Characters:\s*(.+?)(?:\n|$)/i);
+        if (guidanceMatch) {
+          directorReconPlan = { ...directorReconPlan, openGuidance: guidanceMatch[1].trim() };
+        }
+        if (charactersMatch) {
+          const charsStr = charactersMatch[1].trim();
+          if (charsStr.toLowerCase() !== 'none') {
+            directorReconPlan.actingCharacters = charsStr.split(',').map((name: string) => ({ name: name.trim() })).filter((c: any) => c.name);
+          }
+        }
+      }
+
+      const directorReconApplication = applyDirectorPlan(directorReconPlan, sessionContext, characterStates);
+      characterStates = directorReconApplication.updatedStates;
+
+      roundTimeline.directorPass2 = {
+        rawOutput: directorReconOutput,
+        plan: directorReconPlan,
+        orderedActors: directorReconApplication.orderedActors,
+        activations: directorReconApplication.activations,
+        deactivations: directorReconApplication.deactivations,
+        remainingActors: directorReconPlan.remainingActors,
+        newActivations: directorReconPlan.newActivations,
+        stateUpdates: directorReconApplication.appliedStateUpdates
+      };
+
+      const reconActiveIds = directorReconApplication.activeCharacterIds;
+      if (sceneId && reconActiveIds.length > 0) {
+        SceneService.update(sceneId, { activeCharacters: reconActiveIds, characterStates });
+        const rehydrated = this.rehydrateActiveCharacters(reconActiveIds, sessionContext.world.id, sessionContext.campaign.id);
+        if (rehydrated.length > 0) {
+          sessionContext.activeCharacters = rehydrated;
+        }
+      }
+      this.characterStates = characterStates;
+      this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates: this.characterStates });
+
+      const nextActors = (directorReconPlan.remainingActors && directorReconPlan.remainingActors.length > 0)
+        ? directorReconPlan.remainingActors
+        : (directorReconApplication.charactersToRespond || []);
+
+      if (nextActors.length > 0) {
+        const followupAllowed = maxDirectorPasses > 2;
+        if (followupAllowed) {
+          this.pendingCharacterPass = nextActors;
+          roundTimeline.followupCharacterPass = { queued: true, actors: nextActors };
+          orchestratorLog('[DIRECTOR] Queued follow-up character pass for remaining actors (maxDirectorPasses=%d): %s', maxDirectorPasses, JSON.stringify(nextActors));
+          this.io?.to(`scene-${sceneId}`).emit('remainingActorsQueued', {
+            sceneId,
+            roundNumber: this.currentRoundNumber,
+            actors: nextActors
+          });
+        } else {
+          roundTimeline.followupCharacterPass = { queued: false, actors: nextActors, reason: 'guardrail' };
+          orchestratorLog('[DIRECTOR] Remaining actors requested but guardrail reached (maxDirectorPasses=%d): %s', maxDirectorPasses, JSON.stringify(nextActors));
+        }
+      }
+    }
+
+    if (sceneId) {
+      if (pendingWorldStateUpdate) {
+        SceneService.update(sceneId, {
+          worldState: this.worldState,
+          characterStates,
+          lastWorldStateMessageNumber: pendingWorldStateUpdate.lastWorldStateMessageNumber || undefined
+        });
+      }
+
+      if (pendingTrackersUpdate) {
+        this.db.prepare('UPDATE CampaignState SET trackers = ?, updatedAt = CURRENT_TIMESTAMP WHERE campaignId = ?')
+          .run(JSON.stringify(this.trackers), pendingTrackersUpdate.campaignId);
+      }
+
+      SceneService.updateRoundTimeline(sceneId, this.currentRoundNumber, roundTimeline);
     }
 
     return { responses, lore: sessionContext.lore };

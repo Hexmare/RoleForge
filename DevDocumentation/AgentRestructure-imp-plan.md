@@ -6,6 +6,8 @@ Backend/front-end references: [DevDocumentation/AgentRestructure-backend.md](Dev
 
 > Critical: Only the user will handle all commits and pull requests. Mark each checkbox `[ ]` as tasks are completed.
 
+**Next focus:** Phase 7 — World/Tracker integration guardrails.
+
 ## Phase 1 — Foundations & Contracts
 - [x] Define `AgentContextEnvelope` TypeScript interface with all fields (history raw/summarized, lore raw/formatted, memories, world/character state, director guidance, round metadata, request type, persona info, scenario/author notes).
 - [ ] Add defaults and required/optional notes in code comments and a short README entry in DevDocumentation pointing to this plan.
@@ -42,15 +44,15 @@ Backend/front-end references: [DevDocumentation/AgentRestructure-backend.md](Dev
 - [x] Update character state storage accordingly; prepare data for Director reconciliation pass.
 
 ## Phase 6 — Director Reconciliation Pass
-- [ ] Run Director post-character pass with recent responses and updated state; request `remainingActors`/`newActivations`.
-- [ ] Enforce guardrail `maxDirectorPasses` (default 2); current flow is exactly two passes.
-- [ ] Persist per-round timeline: Director pass 1 output, character outputs, Director pass 2 output.
-- [ ] If remaining actors exist, enqueue another character pass only if guardrail allows (future-proofing); otherwise end round.
+- [x] Run Director post-character pass with recent responses and updated state; request `remainingActors`/`newActivations`.
+- [x] Enforce guardrail `maxDirectorPasses` (default 2); current flow is exactly two passes.
+- [x] Persist per-round timeline: Director pass 1 output, character outputs, Director pass 2 output.
+- [x] If remaining actors exist, enqueue another character pass only if guardrail allows (future-proofing); otherwise end round.
 
 ## Phase 7 — World/Tracker Integration
-- [ ] Keep World agent behind feature flag (disabled by default); ensure context builder compatibility if re-enabled.
-- [ ] Document how to re-enable World agent using unified context and JSON templating; when disabled, Director owns trackers/world updates.
-- [ ] Ensure trackers/world state persist once per round after reconciliation to avoid double writes.
+- [x] Keep World agent behind feature flag (disabled by default); ensure context builder compatibility if re-enabled.
+- [x] Document how to re-enable World agent using unified context and JSON templating; when disabled, Director owns trackers/world updates.
+- [x] Ensure trackers/world state persist once per round after reconciliation to avoid double writes.
 
 ## Phase 8 — Persistence, Events, and UX
 - [ ] Standardize socket events: director start/complete (pass 1 & 2), character start/complete, world updates (if enabled), round completed.
@@ -70,7 +72,7 @@ Backend/front-end references: [DevDocumentation/AgentRestructure-backend.md](Dev
 - [ ] Add topK/maxChars limits for memories and lore to prevent prompt bloat; enforce in retrieval.
 
 ## Operational Notes
-- [ ] Ensure deterministic tie-breakers for action ordering (priority then name) are coded and tested.
+- [x] Ensure deterministic tie-breakers for action ordering (priority then name) are coded and tested.
 - [ ] Keep guidance non-persistent between director passes; rely on history + summaries + notes.
 - [ ] Always include last-round messages verbatim in context sent to Director.
 - [ ] Mark each task above when completed; user will handle commits/PRs.

@@ -391,6 +391,23 @@ export const SceneService = {
     ).get(sceneId, roundNumber) || null;
   },
 
+  updateRoundTimeline(sceneId: number, roundNumber: number, timeline: any): void {
+    const payload = timeline === undefined ? null : JSON.stringify(timeline);
+    const existing = db.prepare(
+      'SELECT id FROM SceneRounds WHERE sceneId = ? AND roundNumber = ?'
+    ).get(sceneId, roundNumber) as any;
+
+    if (existing?.id) {
+      db.prepare('UPDATE SceneRounds SET timeline = ? WHERE sceneId = ? AND roundNumber = ?')
+        .run(payload, sceneId, roundNumber);
+      return;
+    }
+
+    db.prepare(
+      'INSERT INTO SceneRounds (sceneId, roundNumber, status, activeCharacters, timeline) VALUES (?, ?, "in-progress", ?, ?)'
+    ).run(sceneId, roundNumber, '[]', payload);
+  },
+
   // Task 3.5: Mark a round as processed by VectorizationAgent
   markRoundVectorized(sceneId: number, roundNumber: number): void {
     db.prepare(`

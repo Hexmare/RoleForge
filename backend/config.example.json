@@ -197,7 +197,9 @@
               ],
               "additionalProperties": false
             }
-          }
+          },
+          "remainingActors": { "type": "array", "items": { "type": "string" } },
+          "newActivations": { "type": "array", "items": { "type": "string" } }
         },
         "required": ["openGuidance", "actingCharacters", "activations", "deactivations", "stateUpdates"],
         "additionalProperties": false
@@ -211,7 +213,9 @@
         "deactivations": [],
         "stateUpdates": [
           { "name": "NPC-A", "mood": "determined" }
-        ]
+        ],
+        "remainingActors": [],
+        "newActivations": []
       }
     },
     "world": {
@@ -249,6 +253,7 @@
     }
   },
   "features": {
+    "worldAgentEnabled": false,
     "visualAgentEnabled": false,
     "socketAckLogs": false,
     "summarizationInterval": 300000,
@@ -257,6 +262,7 @@
     "summarizationTriggerMessages": 40,
     "jsonValidationEnabled": true,
     "jsonValidationDevLog": false,
-    "jsonValidationMaxRetries": 1
+    "jsonValidationMaxRetries": 1,
+    "maxDirectorPasses": 2
   }
 }

@@ -86,6 +86,7 @@ export function createTestDatabase(): any {
       roundCompletedAt DATETIME,
       vectorized BOOLEAN DEFAULT 0,
       vectorizedAt DATETIME,
+      timeline JSON,
       UNIQUE(sceneId, roundNumber)
     );
 

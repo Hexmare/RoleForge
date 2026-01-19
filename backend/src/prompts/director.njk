@@ -22,6 +22,12 @@ You are the Director Agent. Control pacing, choose who acts, and apply pre-actio
 {% endfor %}
 {% endif %}
 
+{% if contextEnvelope and contextEnvelope.recentCharacterResponses %}
+[CHARACTER RESPONSES THIS ROUND]
+{% for r in contextEnvelope.recentCharacterResponses %}- {{ r.character }}: {{ r.response }}
+{% endfor %}
+{% endif %}
+
 {% if formattedLore %}[LORE]
 {{ formattedLore }}
 {% endif %}
@@ -40,6 +46,9 @@ Your job this turn:
 2) Choose `actingCharacters`: the NPCs who should respond now. Give each 1–2 sentence action guidance. Never include the user/player.
 3) Manage roster: `activations` (bring in), `deactivations` (bench this turn).
 4) Apply `stateUpdates` before anyone speaks (location, mood, clothing, activity, intentions). Director updates win before characters act.
+{% if contextEnvelope and contextEnvelope.directorPass == 2 %}
+5) Reconciliation pass: use the character responses above to identify any `remainingActors` still needed this round and any `newActivations` to bring in. Return empty arrays when nothing remains.
+{% endif %}
 
 Ordering rules: if an actor provides `order`, use it (ascending). Otherwise sort by higher `priority`, then alphabetical name.
 
@@ -49,6 +58,9 @@ Output only JSON matching the schema injected below. Required fields:
 - activations: [name-or-id]
 - deactivations: [name-or-id]
 - stateUpdates: [{ name-or-id, location?, mood?, clothing?, activity?, intentions? }]
+Optional reconciliation fields (use empty arrays when none):
+- remainingActors: [name-or-id]
+- newActivations: [name-or-id]
 
 Constraints:
 - Only NPCs; never output the user/player in any list.

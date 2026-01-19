@@ -48,7 +48,9 @@ vi.mock('../services/SceneService.js', () => {
       getById: (id: number) => ({ id, title: 'Scene', description: '', location: '' }),
       update: (id: number, fields: any) => ({ ...fields, id }),
       getWorldIdFromSceneId: (sceneId: number) => 1,
-      create: (obj: any) => ({ id: 1, ...obj })
+      create: (obj: any) => ({ id: 1, ...obj }),
+      startRound: (_sceneId: number, _activeCharacters: string[] = []) => 1,
+      updateRoundTimeline: (_sceneId: number, _roundNumber: number, _timeline: any) => {}
     }
   };
 });
