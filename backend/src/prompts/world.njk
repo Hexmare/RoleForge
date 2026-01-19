@@ -47,10 +47,10 @@ IMPORTANT GUIDELINES:
 - Use recent events ACTIVELY to extract location, clothing, and activity changes for the user persona
 - Carefully parse each event to find implicit or explicit state changes
 - keep all descripttions short ,concise, and factual
-- DO NOT modify clothingWorn, mood, activity, position, or location for ANY character except the user persona
+- DO NOT modify clothing, mood, activity, position, or location for ANY character except the user persona
 - For the user persona: EXTRACT state changes from recent events. Examples:
   * Event: "I walk into the tavern" → Update location to "tavern"
-  * Event: "I put on my heavy coat" → Update clothingWorn to "heavy coat"
+  * Event: "I put on my heavy coat" → Update clothing to "heavy coat"
   * Event: "I sit down at the bar" → Update activity to "sitting at the bar"
 - DO NOT use "default" or "Default" as values
 - DO NOT include recent events or interactions in the trackers - use them only as context to determine what world facts changed

@@ -845,7 +845,7 @@ Before Nunjucks rendering, preprocess:
 {
   "response": "Character's dialogue/action",
   "characterState": {
-    "clothingWorn": "description",
+    "clothing": "description",
     "mood": "emotional state",
     "activity": "current action",
     "location": "current location",

@@ -30,10 +30,23 @@ import { tokenTelemetry } from '../utils/tokenTelemetry.js';
 
 const orchestratorLog = createLogger(NAMESPACES.agents.orchestrator);
 
-export function buildReconciliationEnvelope(base?: AgentContextEnvelope, turnResponses?: Array<{ character: string; response: string }>) {
+export function buildReconciliationEnvelope(
+  base?: AgentContextEnvelope,
+  turnResponses?: Array<{ character: string; response: string }>,
+  actedThisRound: string[] = []
+) {
   if (!base) return undefined;
   const { directorGuidance, ...rest } = base;
-  return { ...rest, directorPass: 2, recentCharacterResponses: turnResponses } as AgentContextEnvelope & { directorPass: number; recentCharacterResponses?: Array<{ character: string; response: string }>; };
+  return {
+    ...rest,
+    directorPass: 2,
+    recentCharacterResponses: turnResponses,
+    actedThisRound
+  } as AgentContextEnvelope & {
+    directorPass: number;
+    recentCharacterResponses?: Array<{ character: string; response: string }>;
+    actedThisRound?: string[];
+  };
 }
 
 export class Orchestrator {
@@ -260,7 +273,7 @@ export class Orchestrator {
       for (const pattern of clothingPatterns) {
         const match = desc.match(pattern);
         if (match) {
-          state.clothingWorn = match[1].trim();
+          state.clothing = match[1].trim();
           break;
         }
       }
@@ -390,6 +403,28 @@ export class Orchestrator {
       updatedAt: cs.updatedAt
     } : { campaignId: campaignRow.id, currentSceneId: null, elapsedMinutes: 0, dynamicFacts: {}, trackers: {}, updatedAt: null };
 
+    // Ensure CampaignState row exists (if legacy data missed creation)
+    if (!cs) {
+      const insertStmt = this.db.prepare(`
+        INSERT OR IGNORE INTO CampaignState (campaignId, currentSceneId, elapsedMinutes, dynamicFacts, trackers)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      if (insertStmt && typeof insertStmt.run === 'function') {
+        insertStmt.run(campaignRow.id, null, 0, JSON.stringify({}), JSON.stringify({ stats: {}, objectives: [], relationships: {} }));
+      }
+    }
+
+    const sanitizedTrackers = this.sanitizeTrackers(campaignState.trackers);
+    // Persist sanitized trackers back to DB if they changed (e.g., removing clothing fields)
+    const rawTrackersStr = JSON.stringify(campaignState.trackers || {});
+    const sanitizedTrackersStr = JSON.stringify(sanitizedTrackers);
+    if (rawTrackersStr !== sanitizedTrackersStr) {
+      const updateStmt = this.db.prepare('UPDATE CampaignState SET trackers = ?, updatedAt = CURRENT_TIMESTAMP WHERE campaignId = ?');
+      if (updateStmt && typeof updateStmt.run === 'function') {
+        updateStmt.run(sanitizedTrackersStr, campaignRow.id);
+      }
+    }
+
     // Parse active characters UUIDs
     const activeCharacters = sceneRow.activeCharacters ? JSON.parse(sceneRow.activeCharacters) : [];
     orchestratorLog(`[ORCHESTRATOR] Scene ${sceneId}: activeCharacters in DB = ${JSON.stringify(activeCharacters)}`);
@@ -436,7 +471,7 @@ export class Orchestrator {
       },
       activeCharacters: activeCharactersResolved,
       worldState: { elapsedMinutes: campaignState.elapsedMinutes, dynamicFacts: campaignState.dynamicFacts },
-      trackers: campaignState.trackers || { stats: {}, objectives: [], relationships: {} },
+      trackers: sanitizedTrackers,
       locationMap: (sceneRow.locationRelationships ? JSON.parse(sceneRow.locationRelationships) : {}),
       lore: matchedLore,
       formattedLore: formattedLore
@@ -444,7 +479,7 @@ export class Orchestrator {
 
     // Seed orchestrator worldState from scene-level world state, falling back to campaign dynamic facts
     this.worldState = sessionContext.scene.worldState || sessionContext.worldState.dynamicFacts || {};
-    this.trackers = sessionContext.trackers;
+    this.trackers = sanitizedTrackers;
     this.characterStates = sessionContext.scene.characterStates || {};
 
     return sessionContext;
@@ -471,6 +506,24 @@ export class Orchestrator {
       }
     }
     return activated;
+  }
+
+  private sanitizeTrackers(trackers: any): { stats: Record<string, any>; objectives: any[]; relationships: Record<string, any> } {
+    const safeTrackers = trackers || {};
+    const stats = { ...(safeTrackers.stats || {}) };
+
+    for (const key of Object.keys(stats)) {
+      const lower = key.toLowerCase();
+      if (lower.includes('clothing')) {
+        delete stats[key];
+      }
+    }
+
+    return {
+      stats,
+      objectives: Array.isArray(safeTrackers.objectives) ? safeTrackers.objectives : [],
+      relationships: safeTrackers.relationships || {}
+    };
   }
 
   private getCharacterByName(name: string): any {
@@ -1057,24 +1110,32 @@ export class Orchestrator {
     const userPersonaName = personaName || 'user';
     if (!characterStates[userPersonaName]) {
       const userPersona = context.userPersona;
-      characterStates[userPersonaName] = {
-        clothingWorn: userPersona.currentOutfit || userPersona.appearance?.aesthetic || 'casual attire',
+      const initialState: Record<string, any> = {
         mood: userPersona.personality?.split(',')[0]?.trim() || 'neutral',
         activity: userPersona.occupation || 'interacting',
         location: sessionContext.scene.location || 'unknown',
         position: 'standing'
       };
+      const clothing = userPersona.currentOutfit || userPersona.appearance?.aesthetic;
+      if (clothing) {
+        initialState.clothing = clothing;
+      }
+      characterStates[userPersonaName] = initialState;
     }
     for (const char of sessionContext.activeCharacters) {
       if (!characterStates[char.name]) {
         const extractedState = this.extractStateFromDescription(char);
-        characterStates[char.name] = {
-          clothingWorn: extractedState.clothingWorn || char.currentOutfit || char.appearance?.aesthetic || 'casual attire',
+        const initialState: Record<string, any> = {
           mood: extractedState.mood || char.personality?.split(',')[0]?.trim() || 'neutral',
           activity: extractedState.activity || char.occupation || 'present',
           location: sessionContext.scene.location || 'unknown',
           position: 'standing'
         };
+        const clothing = extractedState.clothing || char.currentOutfit || char.appearance?.aesthetic;
+        if (clothing) {
+          initialState.clothing = clothing;
+        }
+        characterStates[char.name] = initialState;
         orchestratorLog(`Initialized character state for ${char.name}:`, characterStates[char.name]);
       }
       // Track per-round flags
@@ -1250,7 +1311,6 @@ export class Orchestrator {
       if (!characterStates[charName]) {
         orchestratorLog(`Initializing character state for ${charName}`);
         characterStates[charName] = {
-          clothingWorn: 'default',
           mood: 'neutral',
           activity: 'responding',
           location: sessionContext?.scene?.location || 'unknown',
@@ -1470,7 +1530,11 @@ export class Orchestrator {
 
     // Director reconciliation pass (post-character) when enabled
     if (sceneId && maxDirectorPasses > 1) {
-      const reconciliationEnvelope = buildReconciliationEnvelope(context.contextEnvelope, turnResponses);
+      const actedThisRound = Object.entries(characterStates)
+        .filter(([, state]) => state?.hasActedThisRound)
+        .map(([name]) => name);
+
+      const reconciliationEnvelope = buildReconciliationEnvelope(context.contextEnvelope, turnResponses, actedThisRound);
 
       const reconciliationContext: AgentContext = {
         ...context,
@@ -1583,9 +1647,11 @@ export class Orchestrator {
       this.characterStates = characterStates;
       this.emitSceneEvent('stateUpdated', { characterStates: this.characterStates }, sceneId);
 
-      const nextActors = (directorReconPlan.remainingActors && directorReconPlan.remainingActors.length > 0)
-        ? directorReconPlan.remainingActors
-        : (directorReconApplication.charactersToRespond || []);
+      const actedSet = new Set((actedThisRound || []).map((n) => n.toLowerCase()));
+      const filteredRemaining = (directorReconPlan.remainingActors || []).filter((n: string) => !actedSet.has(String(n).toLowerCase()));
+      const filteredResponses = (directorReconApplication.charactersToRespond || []).filter((n: string) => !actedSet.has(String(n).toLowerCase()));
+
+      const nextActors = filteredRemaining.length > 0 ? filteredRemaining : filteredResponses;
 
       if (nextActors.length > 0) {
         const followupAllowed = maxDirectorPasses > 2;

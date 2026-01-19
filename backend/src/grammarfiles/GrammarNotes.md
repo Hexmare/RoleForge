@@ -29,13 +29,13 @@ Your schema is mostly fine structurally, but the converter chokes on **loose/und
            "additionalProperties": {
              "type": "object",
              "properties": {
-               "clothingWorn": {"type": "string"},
+               "clothing": {"type": "string"},
                "mood": {"type": "string"},
                "activity": {"type": "string"},
                "location": {"type": "string"},
                "position": {"type": "string"}
              },
-             "required": ["clothingWorn", "mood", "activity", "location", "position"],
+             "required": ["clothing", "mood", "activity", "location", "position"],
              "additionalProperties": false
            }
          },

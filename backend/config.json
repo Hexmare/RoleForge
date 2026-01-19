@@ -92,7 +92,7 @@
       "jsonExample": {
         "response": "\"Hello there.\" *I nod once.*",
         "characterState": {
-          "clothingWorn": "casual attire",
+          "clothing": "casual attire",
           "mood": "neutral",
           "activity": "listening",
           "location": "common room",

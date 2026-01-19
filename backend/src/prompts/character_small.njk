@@ -15,8 +15,8 @@ Stop your response after your dialogue and actions. Do not continue the story or
 
 Respond to the latest events as {{ character.name }} would. Keep your response Short, concise and limited to approximately {{ estimateWordsFromTokens(maxCompletionTokens / 2) }} words, ({{ maxCompletionTokens / 2 }} tokens).
 
-Based on the conversation and user actions, update your characterState if any changes occurred to your clothingWorn, mood, activity, location, or position.
+Based on the conversation and user actions, update your characterState if any changes occurred to your clothing, mood, activity, location, or position.
 
 CRITICAL: Output ONLY valid JSON on a single line with NO markdown code blocks:
-{"response": "your dialogue and actions here with all internal quotes escaped as \" ", "characterState": {"clothingWorn": "...", "mood": "...", "activity": "...", "location": "...", "position": "..."}
+{"response": "your dialogue and actions here with all internal quotes escaped as \" ", "characterState": {"clothing": "...", "mood": "...", "activity": "...", "location": "...", "position": "..."}
 IMPORTANT: Every double quote (") inside the response text MUST be escaped as \". Do NOT use code fences, backticks, or markdown formatting.

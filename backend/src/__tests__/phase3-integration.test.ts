@@ -214,7 +214,7 @@ describe('Phase 3 - Memory Query & Injection Integration', () => {
           currentOutfit: 'Adventure gear',
         },
         characterState: {
-          clothingWorn: 'Traveling clothes',
+          clothing: 'Traveling clothes',
           mood: 'Cheerful',
           activity: 'Playing lute',
           location: 'Tavern',
