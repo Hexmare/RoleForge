@@ -154,6 +154,64 @@
       "sampler": {
         "temperature": 0.5,
         "max_completion_tokens": 200
+      },
+      "expectsJson": true,
+      "jsonMode": "schema",
+      "jsonSchema": {
+        "type": "object",
+        "properties": {
+          "openGuidance": { "type": "string" },
+          "actingCharacters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "guidance": { "type": "string" },
+                "priority": { "type": "number" },
+                "order": { "type": "number" }
+              },
+              "required": ["name"],
+              "additionalProperties": false
+            }
+          },
+          "activations": { "type": "array", "items": { "type": "string" } },
+          "deactivations": { "type": "array", "items": { "type": "string" } },
+          "stateUpdates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "location": { "type": "string" },
+                "mood": { "type": "string" },
+                "clothing": { "type": "string" },
+                "activity": { "type": "string" },
+                "intentions": { "type": "string" }
+              },
+              "anyOf": [
+                { "required": ["name"] },
+                { "required": ["id"] }
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["openGuidance", "actingCharacters", "activations", "deactivations", "stateUpdates"],
+        "additionalProperties": false
+      },
+      "jsonExample": {
+        "openGuidance": "Keep the beat moving with quick cuts.",
+        "actingCharacters": [
+          { "name": "NPC-A", "guidance": "Push the player for a commitment.", "priority": 2 }
+        ],
+        "activations": ["NPC-A"],
+        "deactivations": [],
+        "stateUpdates": [
+          { "name": "NPC-A", "mood": "determined" }
+        ]
       }
     },
     "world": {
@@ -161,6 +219,11 @@
       "sampler": {
         "temperature": 0.6,
         "max_completion_tokens": 150
+      },
+      "expectsJson": true,
+      "jsonMode": "object",
+      "jsonExample": {
+        "updates": []
       }
     },
     "summarize": {
@@ -189,6 +252,11 @@
     "visualAgentEnabled": false,
     "socketAckLogs": false,
     "summarizationInterval": 300000,
-    "maxSummaryTokens": 500
+    "maxSummaryTokens": 500,
+    "historyWindowMessages": 60,
+    "summarizationTriggerMessages": 40,
+    "jsonValidationEnabled": true,
+    "jsonValidationDevLog": false,
+    "jsonValidationMaxRetries": 1
   }
 }

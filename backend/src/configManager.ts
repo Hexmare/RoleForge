@@ -46,6 +46,10 @@ export interface AgentConfig {
   model?: string;
   template?: string;
   returnsJson?: boolean; // Indicates if agent returns JSON responses
+  expectsJson?: boolean; // New: enforce JSON response
+  jsonMode?: 'object' | 'schema'; // New: controls template injection
+  jsonSchema?: string | Record<string, any>; // New: inline schema when jsonMode === 'schema'
+  jsonExample?: Record<string, any>; // New: example object when jsonMode === 'object'
 }
 
 export interface Config {
@@ -58,6 +62,11 @@ export interface Config {
     socketAckLogs?: boolean;
     summarizationInterval?: number;
     maxSummaryTokens?: number;
+    historyWindowMessages?: number;
+    summarizationTriggerMessages?: number;
+    jsonValidationEnabled?: boolean;
+    jsonValidationDevLog?: boolean;
+    jsonValidationMaxRetries?: number;
   };
   vector?: any;
   debug?: DebugSettings;
@@ -95,7 +104,21 @@ export class ConfigManager {
       fs.writeFileSync(configPath, JSON.stringify(dummyConfig, null, 2));
       return dummyConfig;
     }
-    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    this.validateAgentConfigs(parsed?.agents || {});
+    return parsed;
+  }
+
+  private validateAgentConfigs(agents: Record<string, AgentConfig>): void {
+    for (const [name, cfg] of Object.entries(agents)) {
+      if (!cfg) continue;
+      if ((cfg.jsonMode === 'schema' || cfg.expectsJson) && !cfg.jsonSchema && cfg.jsonMode === 'schema') {
+        console.warn(`[configManager] Agent ${name} expects schema mode but no jsonSchema provided.`);
+      }
+      if ((cfg.jsonMode === 'object' || cfg.expectsJson) && cfg.jsonMode === 'object' && !cfg.jsonExample) {
+        // Example optional; no warning
+      }
+    }
   }
 
   // Load vector config from backend/config/vectorConfig.json if present

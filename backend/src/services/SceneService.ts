@@ -63,8 +63,9 @@ export const SceneService = {
     const lastWorldStateMessageNumber = fields.lastWorldStateMessageNumber ?? existing.lastWorldStateMessageNumber;
     const characterStates = fields.characterStates !== undefined ? JSON.stringify(fields.characterStates) : existing.characterStates;
     const userPersonaState = fields.userPersonaState !== undefined ? JSON.stringify(fields.userPersonaState) : existing.userPersonaState;
-    const stmt = db.prepare('UPDATE Scenes SET title = ?, description = ?, location = ?, timeOfDay = ?, orderIndex = ?, worldState = ?, lastWorldStateMessageNumber = ?, characterStates = ?, userPersonaState = ? WHERE id = ?');
-    const result = stmt.run(title, description, location, timeOfDay, orderIndex, worldState, lastWorldStateMessageNumber, characterStates, userPersonaState, id);
+    const activeCharacters = fields.activeCharacters !== undefined ? JSON.stringify(fields.activeCharacters) : existing.activeCharacters;
+    const stmt = db.prepare('UPDATE Scenes SET title = ?, description = ?, location = ?, timeOfDay = ?, orderIndex = ?, worldState = ?, lastWorldStateMessageNumber = ?, characterStates = ?, userPersonaState = ?, activeCharacters = ? WHERE id = ?');
+    const result = stmt.run(title, description, location, timeOfDay, orderIndex, worldState, lastWorldStateMessageNumber, characterStates, userPersonaState, activeCharacters, id);
     return { changes: result.changes };
   },
 

@@ -4,7 +4,10 @@
     "visualAgentEnabled": true,
     "socketAckLogs": true,
     "summarizationInterval": 1000,
-    "maxSummaryTokens": 1000
+    "maxSummaryTokens": 1000,
+    "jsonValidationEnabled": true,
+    "jsonValidationDevLog": false,
+    "jsonValidationMaxRetries": 1
   },
   "debug": {
     "enabledNamespaces": "roleforge:llm:*,roleforge:image:gen,roleforge:agents:*",
@@ -84,17 +87,92 @@
     "character": {
       "llmProfile": "default",
       "returnsJson": true,
+      "expectsJson": true,
+      "jsonMode": "object",
+      "jsonExample": {
+        "response": "\"Hello there.\" *I nod once.*",
+        "characterState": {
+          "clothingWorn": "casual attire",
+          "mood": "neutral",
+          "activity": "listening",
+          "location": "common room",
+          "position": "standing"
+        }
+      },
       "sampler": {
         "max_completion_tokens": 400
       }
     },
     "director": {
       "llmProfile": "default",
-      "returnsJson": true
+      "returnsJson": true,
+      "expectsJson": true,
+      "jsonMode": "schema",
+      "jsonSchema": {
+        "type": "object",
+        "properties": {
+          "openGuidance": { "type": "string" },
+          "actingCharacters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "guidance": { "type": "string" },
+                "priority": { "type": "number" },
+                "order": { "type": "number" }
+              },
+              "required": ["name"],
+              "additionalProperties": false
+            }
+          },
+          "activations": { "type": "array", "items": { "type": "string" } },
+          "deactivations": { "type": "array", "items": { "type": "string" } },
+          "stateUpdates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "location": { "type": "string" },
+                "mood": { "type": "string" },
+                "clothing": { "type": "string" },
+                "activity": { "type": "string" },
+                "intentions": { "type": "string" }
+              },
+              "anyOf": [
+                { "required": ["name"] },
+                { "required": ["id"] }
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["openGuidance", "actingCharacters", "activations", "deactivations", "stateUpdates"],
+        "additionalProperties": false
+      },
+      "jsonExample": {
+        "openGuidance": "Keep the scene tight and reactive.",
+        "actingCharacters": [
+          { "name": "Rin", "guidance": "Lead the exchange with a bold move.", "priority": 3 }
+        ],
+        "activations": ["Rin"],
+        "deactivations": [],
+        "stateUpdates": [
+          { "name": "Rin", "mood": "focused", "intentions": "test boundaries" }
+        ]
+      }
     },
     "world": {
       "llmProfile": "default",
       "returnsJson": true,
+      "expectsJson": true,
+      "jsonMode": "object",
+      "jsonExample": {
+        "updates": []
+      },
       "sampler": {
         "max_completion_tokens": 2048
       }
@@ -113,6 +191,11 @@
     "creator": {
       "llmProfile": "default",
       "returnsJson": true,
+      "expectsJson": true,
+      "jsonMode": "object",
+      "jsonExample": {
+        "result": "..."
+      },
       "sampler": {
         "max_completion_tokens": 4096
       }

@@ -13,6 +13,7 @@ import { SummarizeAgent } from './SummarizeAgent.js';
 import { VisualAgent } from './VisualAgent.js';
 import { CreatorAgent } from './CreatorAgent.js';
 import { VectorizationAgent } from './VectorizationAgent.js';
+import { applyDirectorPlan, normalizeDirectorPlan } from './directorUtils.js';
 import { getMemoryRetriever } from '../utils/memoryRetriever.js';
 import CharacterService from '../services/CharacterService.js';
 import SceneService from '../services/SceneService.js';
@@ -23,6 +24,7 @@ import LorebookService from '../services/LorebookService.js';
 import { matchLoreEntries } from '../utils/loreMatcher.js';
 import tryJsonRepair from '../utils/jsonRepair.js';
 import { getNestedField } from '../utils/memoryHelpers.js';
+import { buildAgentContextEnvelope, BuildAgentContextEnvelopeOptions } from './context/contextBuilder.js';
 
 const orchestratorLog = createLogger(NAMESPACES.agents.orchestrator);
 
@@ -468,6 +470,21 @@ export class Orchestrator {
     return null;
   }
 
+  private rehydrateActiveCharacters(activeCharacterIds: string[], worldId?: number, campaignId?: number): any[] {
+    const resolved: any[] = [];
+    for (const identifier of activeCharacterIds) {
+      const merged = CharacterService.getMergedCharacter({
+        characterId: identifier,
+        worldId,
+        campaignId
+      });
+      if (merged) {
+        resolved.push(merged);
+      }
+    }
+    return resolved;
+  }
+
   // Search for characters and personas by name with overrides applied
   private searchForEntities(prompt: string, worldId?: number, campaignId?: number): any[] {
     const matchedEntities: any[] = [];
@@ -524,6 +541,18 @@ export class Orchestrator {
       };
     }
     return { name: 'Default', description: 'A user in the story.', data: {} };
+  }
+
+  private buildContextEnvelope(sceneId: number, requestType: 'user' | 'continuation', overrides?: Partial<BuildAgentContextEnvelopeOptions>) {
+    const features = this.configManager.getConfig().features || {};
+    return buildAgentContextEnvelope({
+      db: this.db,
+      sceneId,
+      requestType,
+      historyWindow: features.historyWindowMessages,
+      summarizationTrigger: features.summarizationTriggerMessages,
+      ...overrides
+    });
   }
 
   private extractFirstJson(text: string): string | null {
@@ -593,6 +622,18 @@ export class Orchestrator {
       // Add user input to history
       this.history.push(`User: ${userInput}`);
 
+      const contextEnvelope = sceneId
+        ? this.buildContextEnvelope(sceneId, 'user', {
+            roundNumber: this.currentRoundNumber,
+            history: this.history,
+            summarizedHistory: this.sceneSummary ? [this.sceneSummary] : undefined,
+            characterSummaries: sessionContext?.activeCharacters,
+            characterStates: sessionContext?.scene.characterStates,
+            worldState: sessionContext?.scene.worldState,
+            trackers: sessionContext?.trackers
+          })
+        : undefined;
+
       // Extract user persona state from characterStates if available
       const userPersonaState = sessionContext?.scene.characterStates?.['user'] || 
                                sessionContext?.scene.characterStates?.[personaName] || {};
@@ -607,6 +648,7 @@ export class Orchestrator {
         userPersonaState: userPersonaState,
         activeCharacters: sessionContext?.activeCharacters || [],
         formattedLore: sessionContext?.formattedLore || '',
+        contextEnvelope
       };
 
       // Query memories for narrator (Phase 3)
@@ -657,6 +699,18 @@ export class Orchestrator {
       return { responses: [{ sender: 'System', content: 'Scene context required for full interaction' }], lore: [] };
     }
 
+    const contextEnvelope = sceneId
+      ? this.buildContextEnvelope(sceneId, 'user', {
+          roundNumber: this.currentRoundNumber,
+          history: this.history,
+          summarizedHistory: this.sceneSummary ? [this.sceneSummary] : undefined,
+          characterSummaries: sessionContext.activeCharacters,
+          characterStates: sessionContext.scene.characterStates,
+          worldState: sessionContext.scene.worldState,
+          trackers: sessionContext.trackers
+        })
+      : undefined;
+
     // Prepare base context
     let context: AgentContext = {
       userInput,
@@ -665,7 +719,10 @@ export class Orchestrator {
       lore: this.getActivatedLore(userInput + ' ' + this.history.join(' ')),
       formattedLore: sessionContext.formattedLore,
       userPersona: this.getPersona(personaName),
+      contextEnvelope
     };
+
+    let characterStates = { ...(sessionContext.scene.characterStates || {}) };
 
     // Step 1: Summarize if history too long (simple check: > 10 messages)
     if (this.history.length > 10) {
@@ -761,8 +818,7 @@ export class Orchestrator {
     orchestratorLog('DirectorAgent completed, output length:', directorOutput.length);
     orchestratorLog('DirectorAgent raw output preview:', directorOutput.substring(0, 200) + (directorOutput.length > 200 ? '...' : ''));
     this.emitAgentStatus('Director', 'complete', sceneId);
-    // Parse output: JSON {"guidance": "...", "characters": [...]}
-    let directorGuidance = '';
+    // Parse Director output using schema (actingCharacters, activations, stateUpdates, openGuidance)
     let charactersToRespond: string[] = [];
     let directorParsed: any = null;
     let directorRetries = 0;
@@ -777,7 +833,6 @@ export class Orchestrator {
         break;
       } catch (e) {
         directorLastError = e;
-        // Try jsonrepair
         const repaired = tryJsonRepair(cleanedOutput);
         if (repaired) {
           try {
@@ -787,7 +842,6 @@ export class Orchestrator {
             directorLastError = e2;
           }
         }
-        // Try to extract JSON object from within the string
         const jsonMatch = cleanedOutput.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           try {
@@ -800,39 +854,74 @@ export class Orchestrator {
       }
       directorRetries++;
     }
-    if (directorParsed) {
-      // Check if we got a valid response object/array
-      if (Array.isArray(directorParsed)) {
-        if (directorParsed.length > 0 && typeof directorParsed[0] === 'object' && directorParsed[0] !== null) {
-          directorParsed = directorParsed[0];
-        } else {
-          directorParsed = {};
-        }
-      }
-      directorGuidance = directorParsed.guidance || '';
-      charactersToRespond = Array.isArray(directorParsed.characters) ? directorParsed.characters : [];
-    } else {
+
+    let directorPlan = directorParsed ? normalizeDirectorPlan(directorParsed) : normalizeDirectorPlan({ openGuidance: directorOutput });
+    if (!directorParsed) {
       orchestratorLog('DirectorAgent failed to parse/repair JSON after', directorRetries, 'attempts:', directorLastError);
-      // Fallback: try old format
       const guidanceMatch = directorOutput.match(/Guidance:\s*(.+?)(?:\n|$)/i);
       const charactersMatch = directorOutput.match(/Characters:\s*(.+?)(?:\n|$)/i);
       if (guidanceMatch) {
-        directorGuidance = guidanceMatch[1].trim();
+        directorPlan = { ...directorPlan, openGuidance: guidanceMatch[1].trim() };
       }
       if (charactersMatch) {
         const charsStr = charactersMatch[1].trim();
         if (charsStr.toLowerCase() !== 'none') {
-          charactersToRespond = charsStr.split(',').map(c => c.trim()).filter(c => c);
+          directorPlan.actingCharacters = charsStr.split(',').map((name: string) => ({ name: name.trim() })).filter((c: any) => c.name);
         }
       }
     }
+
+    const directorApplication = applyDirectorPlan(directorPlan, sessionContext, characterStates);
+    charactersToRespond = directorApplication.charactersToRespond;
+    characterStates = directorApplication.updatedStates;
+
+    const directiveMap: Record<string, string | undefined> = {};
+    for (const actor of directorApplication.orderedActors) {
+      if (actor.name) {
+        directiveMap[actor.name] = actor.guidance;
+      }
+    }
+
+    const entrySet = new Set<string>((directorApplication.activations || []).map((a) => a.name || a.id || ''));
+    const exitSet = new Set<string>((directorApplication.deactivations || []).map((a) => a.name || a.id || ''));
+
+    const activeCharacterIds = directorApplication.activeCharacterIds;
+    if (sceneId && activeCharacterIds.length > 0) {
+      SceneService.update(sceneId, { activeCharacters: activeCharacterIds, characterStates });
+    }
+
+    // Refresh resolved active characters for downstream agents
+    if (activeCharacterIds.length > 0) {
+      const rehydrated = this.rehydrateActiveCharacters(activeCharacterIds, sessionContext.world.id, sessionContext.campaign.id);
+      if (rehydrated.length > 0) {
+        sessionContext.activeCharacters = rehydrated;
+      }
+    }
+    sessionContext.scene.characterStates = characterStates;
+    if (context.contextEnvelope) {
+      context.contextEnvelope.characterStates = characterStates;
+      context.contextEnvelope.directorGuidance = {
+        openGuidance: directorPlan.openGuidance,
+        actingCharacters: directorApplication.orderedActors,
+        activations: directorApplication.activations,
+        deactivations: directorApplication.deactivations,
+        appliedStateUpdates: directorApplication.appliedStateUpdates
+      };
+    }
+
+    const directorGuidance = directorPlan.openGuidance || directorOutput;
     orchestratorLog('Active characters passed to Director:', activeCharacters);
     orchestratorLog('Director selected characters:', charactersToRespond);
-    // Fallback if parsing fails
+    orchestratorLog('[DIRECTOR] Audit snapshot:', {
+      openGuidance: directorGuidance,
+      actingCharacters: directorApplication.orderedActors,
+      activations: directorApplication.activations,
+      deactivations: directorApplication.deactivations,
+      stateUpdates: directorApplication.appliedStateUpdates
+    });
+
     if (!directorGuidance && !charactersToRespond.length) {
       orchestratorLog('Failed to parse DirectorAgent output properly:', directorOutput);
-      directorGuidance = directorOutput; // Use as guidance
-      // Default to first active character if available, otherwise skip character responses
       if (activeCharacters && activeCharacters.length > 0) {
         charactersToRespond = [activeCharacters[0]];
       } else {
@@ -845,7 +934,6 @@ export class Orchestrator {
     let responses: { sender: string; content: string }[] = [];
     
     // Initialize character states if not present
-    const characterStates = { ...sessionContext.scene.characterStates };
     const userPersonaName = personaName || 'user';
     if (!characterStates[userPersonaName]) {
       const userPersona = context.userPersona;
@@ -868,6 +956,13 @@ export class Orchestrator {
           position: 'standing'
         };
         orchestratorLog(`Initialized character state for ${char.name}:`, characterStates[char.name]);
+      }
+      // Track per-round flags
+      characterStates[char.name].enteredThisRound = entrySet.has(char.name) || entrySet.has(char.id || '');
+      characterStates[char.name].exitedThisRound = exitSet.has(char.name) || exitSet.has(char.id || '');
+      characterStates[char.name].hasActedThisRound = false;
+      if (!characterStates[char.name].intentions && directiveMap[char.name]) {
+        characterStates[char.name].intentions = directiveMap[char.name];
       }
     }
     orchestratorLog('Character states after initialization:', Object.keys(characterStates));
@@ -1066,6 +1161,14 @@ export class Orchestrator {
         history: historyToPass,
         character: characterData,
         characterState: characterStates[charName],
+        characterDirective: directiveMap[charName],
+        entryGuidance: entrySet.has(charName) || entrySet.has(characterData?.id || '') ? 'You are entering this turn; establish presence with decisive action.' : undefined,
+        exitGuidance: exitSet.has(charName) || exitSet.has(characterData?.id || '') ? 'You may be exiting after this response; close the beat cleanly.' : undefined,
+        roundFlags: {
+          enteredThisRound: characterStates[charName].enteredThisRound,
+          exitedThisRound: characterStates[charName].exitedThisRound,
+          hasActedThisRound: characterStates[charName].hasActedThisRound
+        },
         maxCompletionTokens: (characterAgent as any).getProfile().sampler?.max_completion_tokens || 400,
       };
 
@@ -1178,6 +1281,14 @@ export class Orchestrator {
             newState[key] = value;
           }
         }
+        // Phase 5 heuristic: mark action flags and intentions
+        newState.hasActedThisRound = true;
+        if (!newState.intentions && characterContext.characterDirective) {
+          newState.intentions = characterContext.characterDirective;
+        }
+        if (characterContext.roundFlags?.enteredThisRound) newState.enteredThisRound = true;
+        if (characterContext.roundFlags?.exitedThisRound) newState.exitedThisRound = true;
+
         characterStates[charName] = newState;
         // Save updated character state to scene immediately
         SceneService.update(sceneId!, { characterStates });

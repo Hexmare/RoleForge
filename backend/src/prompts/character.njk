@@ -45,6 +45,10 @@ Current world state: {{ JSON.stringify(worldState, null, 2) }}
 Your current state: {{ JSON.stringify(characterState, null, 2) }}
 current userpersona state: {{ JSON.stringify(userPersonaState, null, 2) }}
 
+Director directive for this turn (follow it decisively): {{ characterDirective | default('') }}
+Entry guidance (only if present): {{ entryGuidance | default('') }}
+Exit guidance (only if present): {{ exitGuidance | default('') }}
+
 IMPORTANT RULES FOR ROLEPLAY:
 - Speak and act **only** as {{ character.name }} in third person.
 - Always Respond in this exact formatting: \"speech\", *narrative*, (thoughts)

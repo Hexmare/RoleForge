@@ -5,15 +5,19 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { chatCompletion, ChatMessage } from '../llm/client';
 import { customLLMRequest } from '../llm/customClient';
-import { ConfigManager, LLMProfile } from '../configManager';
+import { ConfigManager, LLMProfile, Config } from '../configManager';
 import { estimateWordsFromTokens } from '../utils/tokenCounter.js';
 import { createLogger, NAMESPACES } from '../logging';
+import { buildJsonReturnTemplate } from './context/jsonTemplates.js';
+import { AgentContextEnvelope } from './context/types.js';
+import { validateAgentJson } from './context/jsonValidation.js';
 
 export interface AgentContext {
   userInput: string;
   history: string[];
   worldState: Record<string, any>;
   sceneSummary?: string;
+  contextEnvelope?: AgentContextEnvelope;
   lore?: string[];
   formattedLore?: string;
   directorGuidance?: string;
@@ -23,6 +27,10 @@ export interface AgentContext {
   plotArc?: string;
   character?: any; // For CharacterAgent
   characterState?: any; // For CharacterAgent - current state of the character
+  characterDirective?: string; // For CharacterAgent - director-provided guidance for this turn
+  entryGuidance?: string; // For CharacterAgent - guidance when entering this round
+  exitGuidance?: string; // For CharacterAgent - guidance when exiting this round
+  roundFlags?: Record<string, any>; // For CharacterAgent - per-round flags (entered/exited/hasActed)
   creationRequest?: string; // For CreatorAgent
   mode?: string; // For CreatorAgent - 'create', 'update', 'field'
   narrationMode?: string; // For NarratorAgent - 'default' or 'scene-picture'
@@ -97,7 +105,7 @@ export abstract class BaseAgent {
     // Determine format: explicit agent override -> agent returnsJson flag -> sampler.forceJson -> base profile
     if (agentConfig?.format) {
       mergedProfile.format = agentConfig.format;
-    } else if (agentConfig?.returnsJson) {
+    } else if (agentConfig?.expectsJson || agentConfig?.jsonMode || agentConfig?.returnsJson) {
       mergedProfile.format = 'json';
     } else if (mergedProfile.sampler?.forceJson) {
       mergedProfile.format = 'json';
@@ -117,18 +125,64 @@ export abstract class BaseAgent {
   protected async callLLM(systemPrompt: string, userMessage: string, assistantMessage: string = ''): Promise<string> {
     try {
       const profile = this.getProfile();
-      
-      // Route based on profile type
-      if (profile.type === 'custom') {
-        // For custom profiles, use raw template rendering + customLLMRequest
-        return await this.callCustomLLM(systemPrompt, userMessage, assistantMessage);
+      const fullConfig = this.configManager.getConfig();
+      const agentConfig = fullConfig.agents?.[this.agentName];
+      const features = fullConfig.features || {};
+      const jsonTemplate = buildJsonReturnTemplate(agentConfig);
+      const maxValidationRetries = Math.max(0, features.jsonValidationMaxRetries ?? 1);
+
+      let promptToSend = systemPrompt;
+      if (jsonTemplate) {
+        const parts = [systemPrompt];
+        parts.push('\n[OUTPUT FORMAT]\n');
+        parts.push(jsonTemplate.instructions);
+        if (jsonTemplate.schema) {
+          parts.push('\nSchema:\n');
+          parts.push(typeof jsonTemplate.schema === 'string' ? jsonTemplate.schema : JSON.stringify(jsonTemplate.schema, null, 2));
+        }
+        if (jsonTemplate.example) {
+          parts.push('\nExample:\n');
+          parts.push(JSON.stringify(jsonTemplate.example, null, 2));
+        }
+        promptToSend = parts.join('');
       }
       
-      // For openai profiles, render to ChatMessage[] and use OpenAI SDK
-      const messages = this.renderLLMTemplate(systemPrompt, userMessage, assistantMessage);
-      const result = await chatCompletion(profile, messages, { stream: false });
-      // chatCompletion with stream: false returns a string, not an AsyncIterable
-      return result as string;
+      let attempt = 0;
+      let lastValidation: { output: string; valid: boolean; errors?: string[] } | null = null;
+      let lastRaw = '';
+
+      while (attempt <= maxValidationRetries) {
+        const promptForAttempt = attempt === 0
+          ? promptToSend
+          : this.buildValidationRetryPrompt(promptToSend, lastValidation?.errors, lastRaw);
+
+        let raw = '';
+        if (profile.type === 'custom') {
+          raw = await this.callCustomLLM(promptForAttempt, userMessage, assistantMessage);
+        } else {
+          const messages = this.renderLLMTemplate(promptForAttempt, userMessage, assistantMessage);
+          const result = await chatCompletion(profile, messages, { stream: false });
+          raw = result as string;
+        }
+
+        lastRaw = raw;
+        const validation = this.validateAndMaybeCoerceJson(raw, agentConfig, features);
+        lastValidation = validation;
+
+        if (validation.valid) {
+          return validation.output;
+        }
+
+        attempt += 1;
+      }
+
+      this.baseAgentLog('[JSON VALIDATION] agent=%s failed after %d attempts errors=%o', this.agentName, maxValidationRetries + 1, lastValidation?.errors);
+
+      if (agentConfig && (agentConfig.expectsJson || agentConfig.jsonMode || agentConfig.returnsJson)) {
+        return JSON.stringify({ error: 'failed_json_validation', errors: lastValidation?.errors || ['unknown_error'] });
+      }
+
+      return lastRaw;
     } catch (error: any) {
       this.baseAgentLog('[LLM] Call failed for agent %s: %o', this.agentName, error);
       
@@ -152,6 +206,46 @@ export abstract class BaseAgent {
           return "I apologize, but I'm experiencing technical difficulties.";
       }
     }
+  }
+
+  private validateAndMaybeCoerceJson(raw: string, agentConfig: any, features?: Config['features']): { output: string; valid: boolean; errors?: string[] } {
+    const shouldValidate = (features?.jsonValidationEnabled ?? true) !== false;
+    const expectsJson = agentConfig && (agentConfig.expectsJson || agentConfig.jsonMode || agentConfig.returnsJson);
+
+    if (!shouldValidate || !expectsJson) {
+      return { output: raw, valid: true };
+    }
+
+    const result = validateAgentJson(agentConfig, raw);
+    const payloadForLog = result.parsed !== null && result.parsed !== undefined ? JSON.stringify(result.parsed) : raw;
+    if (features?.jsonValidationDevLog) {
+      this.baseAgentLog(
+        '[JSON VALIDATION] agent=%s valid=%s repaired=%s errors=%o payload=%s',
+        this.agentName,
+        result.valid,
+        result.repaired,
+        result.errors,
+        this.truncateForLog(payloadForLog)
+      );
+    }
+
+    if (result.valid && result.parsed !== null && result.parsed !== undefined) {
+      return { output: JSON.stringify(result.parsed), valid: true };
+    }
+
+    return { output: raw, valid: false, errors: result.errors };
+  }
+
+  private buildValidationRetryPrompt(basePrompt: string, errors: string[] | undefined, raw: string): string {
+    const snippet = this.truncateForLog(raw);
+    const errorText = errors && errors.length > 0 ? errors.join('; ') : 'invalid JSON output';
+    return `${basePrompt}\n\n[VALIDATION RETRY]\nPrevious response was invalid (${errorText}). Return valid JSON only, matching the expected schema/object. No commentary. Previous response (truncated):\n${snippet}`;
+  }
+
+  private truncateForLog(value: string): string {
+    if (!value) return '';
+    const limit = 500;
+    return value.length <= limit ? value : `${value.slice(0, limit)}...`;
   }
 
   protected cleanResponse(response: string): string {

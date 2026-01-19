@@ -76,7 +76,16 @@ describe('Orchestrator per-character memory injection', () => {
     };
 
     // Replace director and world agents with lightweight mocks
-    orch.getAgents().set('director', { run: async (_ctx: any) => JSON.stringify({ guidance: '', characters: ['CharA', 'CharB'] }) } as any);
+    orch.getAgents().set('director', { run: async (_ctx: any) => JSON.stringify({
+      openGuidance: 'Keep it quick',
+      actingCharacters: [
+        { name: 'CharA', guidance: 'Lead with a greeting', order: 1 },
+        { name: 'CharB', guidance: 'React to CharA', order: 2 }
+      ],
+      activations: ['CharA'],
+      deactivations: [] ,
+      stateUpdates: []
+    }) } as any);
     orch.getAgents().set('world', { run: async (_ctx: any) => JSON.stringify({ unchanged: true }) } as any);
 
     // Memory retriever module is mocked above via vi.mock
@@ -94,10 +103,13 @@ describe('Orchestrator per-character memory injection', () => {
     const second = capturedContexts[1];
     // First character (CharA) should have no injected memories
     expect(first.name).toBe('CharA');
+    expect(first.ctx.characterDirective).toBe('Lead with a greeting');
+    expect(first.ctx.entryGuidance).toBeTruthy();
     expect(first.ctx.vectorMemoriesRaw && first.ctx.vectorMemoriesRaw.length).toBeFalsy();
 
     // Second character (CharB) should have injected memories that include CharA's response in history
     expect(second.name).toBe('CharB');
+    expect(second.ctx.characterDirective).toBe('React to CharA');
     expect(second.ctx.vectorMemoriesRaw && second.ctx.vectorMemoriesRaw.length).toBeGreaterThan(0);
     const memText = second.ctx.vectorMemoriesRaw[0].text as string;
     expect(memText).toContain('CharA: Hi!');
