@@ -1,5 +1,5 @@
 {
-  "defaultProfile": "kobold",
+  "defaultProfile": "openai",
   "features": {
     "visualAgentEnabled": true,
     "socketAckLogs": true,
@@ -7,7 +7,7 @@
     "maxSummaryTokens": 1000
   },
   "debug": {
-    "enabledNamespaces": "roleforge:llm:*,roleforge:image:gen,roleforge:vectorstore:*",
+    "enabledNamespaces": "roleforge:llm:*,roleforge:image:gen,roleforge:agents:*",
     "colors": true,
     "whitelist": [
       "roleforge:server:*",
@@ -60,7 +60,7 @@
     },
     "kobold": {
       "type": "custom",
-      "baseURL": "http://192.168.88.88:5001",
+      "baseURL": "http://192.168.88.135:5001",
       "model": "koboldcpp/mistralai_Ministral-3-14B-Reasoning-2512-Q5_K_M",
       "template": "mistralv7tekken",
       "sampler": {

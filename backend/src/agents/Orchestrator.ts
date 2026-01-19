@@ -1031,9 +1031,20 @@ export class Orchestrator {
         };
       }
       
-      const characterData = sessionContext.activeCharacters.find(c => c.name.toLowerCase() === charName.toLowerCase());
+      // Try multiple matching strategies to find the character
+      let characterData = sessionContext.activeCharacters.find(c => c.name.toLowerCase() === charName.toLowerCase());
+      
+      // If not found by exact name match, try substring matching
+      if (!characterData && charName) {
+        characterData = sessionContext.activeCharacters.find(c => 
+          c.name.toLowerCase().includes(charName.toLowerCase()) || 
+          charName.toLowerCase().includes(c.name.toLowerCase())
+        );
+      }
+      
+      // If still not found, log available characters and skip
       if (!characterData) {
-        orchestratorLog(`Character ${charName} not found in active characters`);
+        orchestratorLog(`Character ${charName} not found in active characters. Available: ${JSON.stringify(sessionContext.activeCharacters.map(c => c.name))}`);
         continue;
       }
 
