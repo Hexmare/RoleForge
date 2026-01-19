@@ -1616,8 +1616,8 @@ export class Orchestrator {
       this.emitSceneEvent('stateUpdated', { characterStates: this.characterStates }, sceneId);
     }
 
-    // Director reconciliation pass (post-character) when enabled
-    if (sceneId && maxDirectorPasses > 1) {
+    // Director reconciliation pass (post-character) always runs when a scene is active
+    if (sceneId) {
       const actedThisRound = Object.entries(characterStates)
         .filter(([, state]) => (state as any)?.hasActedThisRound)
         .map(([name]) => name);
