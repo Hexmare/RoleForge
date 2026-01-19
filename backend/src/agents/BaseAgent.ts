@@ -53,6 +53,7 @@ export interface AgentContext {
   roundNumber?: number; // For VectorizationAgent - round number
   messages?: any[]; // For VectorizationAgent - round messages to vectorize
   vectorMemories?: string; // For Phase 3 - formatted memories from vector store for prompt injection
+  vectorMemoriesRaw?: any[]; // Raw vector memories payload (pre-formatting)
 }
 
 export abstract class BaseAgent {

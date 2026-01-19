@@ -45,7 +45,7 @@ const DEFAULT_ALLOCATIONS: TokenAllocation = {
   characterGuidance: 0.1
 };
 
-function trimArrayToChars(values: string[] = [], cap?: SectionCap): string[] {
+function trimArrayToChars(values: string[] = [], cap?: SectionCap, opts?: { allowEmptyOnCap?: boolean }): string[] {
   if (!cap?.maxChars || cap.maxChars <= 0) return values;
   const result: string[] = [];
   let used = 0;
@@ -54,6 +54,10 @@ function trimArrayToChars(values: string[] = [], cap?: SectionCap): string[] {
     if (used + len > cap.maxChars) break;
     result.push(v);
     used += len;
+  }
+  // If nothing fit under the cap, keep first unless explicitly allowing empty
+  if (result.length === 0 && values.length > 0 && !opts?.allowEmptyOnCap) {
+    result.push(values[0]);
   }
   return result;
 }
@@ -241,10 +245,10 @@ export function buildAgentContextEnvelope(options: BuildAgentContextEnvelopeOpti
   const cappedLastRound = trimArrayToChars(options.lastRoundMessages || [], caps?.history);
   const cappedMemories = trimMemories(options.memories || {}, caps?.memories);
   const cappedScenarioNotes = {
-    world: trimArrayToChars([scenarioNotes.world || ''], caps?.scenarioNotes)[0] || '',
-    campaign: trimArrayToChars([scenarioNotes.campaign || ''], caps?.scenarioNotes)[0] || '',
-    arc: trimArrayToChars([scenarioNotes.arc || ''], caps?.scenarioNotes)[0] || '',
-    scene: trimArrayToChars([scenarioNotes.scene || ''], caps?.scenarioNotes)[0] || ''
+    world: trimArrayToChars([scenarioNotes.world || ''], caps?.scenarioNotes, { allowEmptyOnCap: true })[0] || '',
+    campaign: trimArrayToChars([scenarioNotes.campaign || ''], caps?.scenarioNotes, { allowEmptyOnCap: true })[0] || '',
+    arc: trimArrayToChars([scenarioNotes.arc || ''], caps?.scenarioNotes, { allowEmptyOnCap: true })[0] || '',
+    scene: trimArrayToChars([scenarioNotes.scene || ''], caps?.scenarioNotes, { allowEmptyOnCap: true })[0] || ''
   };
 
   const characters = options.characterSummaries || toCharacterSummaries(activeCharactersResolved);

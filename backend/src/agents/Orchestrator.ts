@@ -431,7 +431,7 @@ export class Orchestrator {
 
     // Resolve merged character objects where possible
     const activeCharactersResolved: any[] = [];
-    const characterStates = sceneRow.characterStates ? JSON.parse(sceneRow.characterStates) : {};
+    const characterStates: Record<string, any> = sceneRow.characterStates ? JSON.parse(sceneRow.characterStates) : {};
     for (const item of activeCharacters) {
       const merged = CharacterService.getMergedCharacter({ characterId: item, worldId: worldRow.id, campaignId: campaignRow.id });
       if (merged) {
@@ -1531,7 +1531,7 @@ export class Orchestrator {
     // Director reconciliation pass (post-character) when enabled
     if (sceneId && maxDirectorPasses > 1) {
       const actedThisRound = Object.entries(characterStates)
-        .filter(([, state]) => state?.hasActedThisRound)
+        .filter(([, state]) => (state as any)?.hasActedThisRound)
         .map(([name]) => name);
 
       const reconciliationEnvelope = buildReconciliationEnvelope(context.contextEnvelope, turnResponses, actedThisRound);

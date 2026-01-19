@@ -32,7 +32,9 @@ describe('MemoryRetriever retrieval caps', () => {
     });
 
     expect(querySpy).toHaveBeenCalledTimes(1);
-    const [passedQuery, , passedTopK] = querySpy.mock.calls[0];
+    const call = (querySpy.mock.calls[0] || []) as any[];
+    const passedQuery = call[0];
+    const passedTopK = call[2];
     expect(passedQuery.length).toBe(5);
     expect(passedTopK).toBe(3);
     expect(results.length).toBeLessThanOrEqual(3);

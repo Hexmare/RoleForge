@@ -183,7 +183,12 @@ describe('buildAgentContextEnvelope caps', () => {
         maxContextTokens: 100,
         allocations: {
           history: 0.3,
-          summaries: 0.1
+          summaries: 0.1,
+          lore: 0,
+          memories: 0,
+          scenarioNotes: 0,
+          directorGuidance: 0,
+          characterGuidance: 0
         }
       }
     });
@@ -205,7 +210,15 @@ describe('buildAgentContextEnvelope caps', () => {
       history: ['older'],
       tokenBudget: {
         maxContextTokens: 100,
-        allocations: { history: 0.2 }
+        allocations: {
+          history: 0.2,
+          summaries: 0,
+          lore: 0,
+          memories: 0,
+          scenarioNotes: 0,
+          directorGuidance: 0,
+          characterGuidance: 0
+        }
       }
     });
 
