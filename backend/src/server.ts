@@ -1647,18 +1647,6 @@ app.put('/api/characters/:id', (req, res) => {
 app.post('/api/characters/import', async (req, res) => {
   const { card, directions } = req.body;
   try {
-    const result = await orchestrator.summarizeScene(Number(sceneId), { emitStatus: true, force: true, reason: 'manual-endpoint' });
-
-    if (result) {
-      res.json({ success: true, summary: result.summary, tokenCount: result.tokenCount });
-    } else {
-      res.status(500).json({ error: 'Failed to generate summary' });
-    }
-    res.status(500).json({ error: 'Failed to generate character' });
-  }
-app.post('/api/characters/import', async (req, res) => {
-  const { card, directions } = req.body;
-  try {
     const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'Character_Schema.json'), 'utf8'));
     const orchestrator = new Orchestrator(configManager, env, db, io);
     const context = {
