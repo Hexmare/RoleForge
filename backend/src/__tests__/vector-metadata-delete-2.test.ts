@@ -61,13 +61,7 @@ describe('Vector Store - deleteByMetadata (metadata-specific) v2', () => {
     }
 
     // Attempt delete without confirm should throw
-    let threw = false;
-    try {
-      await store.deleteByMetadata({ group: 'bulk' }, scope);
-    } catch (e) {
-      threw = true;
-    }
-    expect(threw).toBeTruthy();
+    await expect(store.deleteByMetadata({ group: 'bulk' }, scope)).rejects.toThrow();
 
     // Now delete with confirm should succeed
     await store.deleteByMetadata({ group: 'bulk' }, scope, { confirm: true });

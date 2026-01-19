@@ -1,5 +1,19 @@
 [
   {
+    "id": "testJob-1768847861759-gjhnrk",
+    "type": "testJob",
+    "createdAt": 1768847861759,
+    "updatedAt": 1768847861760,
+    "status": "completed",
+    "payload": {
+      "foo": "bar"
+    },
+    "result": {
+      "ok": true,
+      "value": 42
+    }
+  },
+  {
     "id": "testJob-1768847263808-oh5517",
     "type": "testJob",
     "createdAt": 1768847263808,

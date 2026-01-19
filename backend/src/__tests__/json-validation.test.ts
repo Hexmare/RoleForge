@@ -55,6 +55,14 @@ describe('JSON validation with retries', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rf-json-'));
   });
 
+  afterEach(() => {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+  });
+
   it('retries once on invalid JSON and succeeds on second attempt', async () => {
     const agentConfig: AgentConfig = {
       expectsJson: true,

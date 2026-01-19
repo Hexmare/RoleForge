@@ -4,7 +4,7 @@
     "visualAgentEnabled": true,
     "socketAckLogs": true,
     "summarizationInterval": 1000,
-    "maxSummaryTokens": 1000,
+    "maxSummaryTokens": 2000,
     "jsonValidationEnabled": true,
     "jsonValidationDevLog": false,
     "jsonValidationMaxRetries": 1

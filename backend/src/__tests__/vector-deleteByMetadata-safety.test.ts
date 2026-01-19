@@ -35,13 +35,7 @@ describe('deleteByMetadata safety flags', () => {
         await store.addMemory(`x${i}`, `bulk ${i}`, { tag: 'bulk' }, scope);
       }
 
-      let threw = false;
-      try {
-        await store.deleteByMetadata({ tag: 'bulk' }, undefined, { confirm: false });
-      } catch (e) {
-        threw = true;
-      }
-      expect(threw).toBe(true);
+      await expect(store.deleteByMetadata({ tag: 'bulk' }, undefined, { confirm: false })).rejects.toThrow();
 
       // Now confirm
       await store.deleteByMetadata({ tag: 'bulk' }, undefined, { confirm: true });
