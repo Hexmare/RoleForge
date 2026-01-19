@@ -209,15 +209,15 @@ app.get('/api/worlds', (req, res) => {
 });
 
 app.post('/api/worlds', (req, res) => {
-  const { name, description } = req.body;
-  const created = WorldService.create(name, description);
+  const { name, description, authorNote, settingDetails, storyDetails } = req.body;
+  const created = WorldService.create(name, description, authorNote, settingDetails, storyDetails);
   res.json(created);
 });
 
 app.put('/api/worlds/:id', (req, res) => {
   const { id } = req.params;
-  const { name, description } = req.body;
-  res.json(WorldService.update(Number(id), { name, description }));
+  const { name, description, authorNote, settingDetails, storyDetails } = req.body;
+  res.json(WorldService.update(Number(id), { name, description, authorNote, settingDetails, storyDetails }));
 });
 
 app.delete('/api/worlds/:id', (req, res) => {
@@ -238,14 +238,14 @@ app.get('/api/worlds/:worldId/campaigns', (req, res) => {
 
 app.post('/api/worlds/:worldId/campaigns', (req, res) => {
   const { worldId } = req.params;
-  const { name, description } = req.body;
-  res.json(CampaignService.create(Number(worldId), name, description));
+  const { name, description, authorNote, plot, goals, storyDetails } = req.body;
+  res.json(CampaignService.create(Number(worldId), name, description, authorNote, plot, goals, storyDetails));
 });
 
 app.put('/api/campaigns/:id', (req, res) => {
   const { id } = req.params;
-  const { name, description } = req.body;
-  res.json(CampaignService.update(Number(id), { name, description }));
+  const { name, description, authorNote, plot, goals, storyDetails } = req.body;
+  res.json(CampaignService.update(Number(id), { name, description, authorNote, plot, goals, storyDetails }));
 });
 
 app.delete('/api/campaigns/:id', (req, res) => {
@@ -272,8 +272,8 @@ app.get('/api/campaigns/:campaignId/arcs', (req, res) => {
 
 app.post('/api/campaigns/:campaignId/arcs', (req, res) => {
   const { campaignId } = req.params;
-  const { name, description } = req.body;
-  res.json(ArcService.create(Number(campaignId), name, description));
+  const { name, description, authorNote, plot, goals, storyDetails } = req.body;
+  res.json(ArcService.create(Number(campaignId), name, description, undefined, authorNote, plot, goals, storyDetails));
 });
 
 app.put('/api/arcs/:id', (req, res) => {
@@ -294,8 +294,8 @@ app.get('/api/arcs/:arcId/scenes', (req, res) => {
 
 app.post('/api/arcs/:arcId/scenes', (req, res) => {
   const { arcId } = req.params;
-  const { title, description, location, timeOfDay } = req.body;
-  res.json(SceneService.create(Number(arcId), title, description, location, timeOfDay));
+  const { title, description, location, timeOfDay, authorNote, plot, goals, scenario } = req.body;
+  res.json(SceneService.create(Number(arcId), title, description, location, timeOfDay, undefined, authorNote, plot, goals, scenario));
 });
 
 app.put('/api/scenes/:id', (req, res) => {

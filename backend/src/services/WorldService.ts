@@ -5,11 +5,11 @@ function slugify(text: string) {
 }
 
 export const WorldService = {
-  create(name: string, description?: string) {
+  create(name: string, description?: string, authorNote?: string, settingDetails?: string, storyDetails?: string) {
     const slug = slugify(name);
-    const stmt = db.prepare('INSERT INTO Worlds (slug, name, description) VALUES (?, ?, ?)');
-    const result = stmt.run(slug, name, description || null);
-    return { id: result.lastInsertRowid, slug, name, description };
+    const stmt = db.prepare('INSERT INTO Worlds (slug, name, description, authorNote, settingDetails, storyDetails) VALUES (?, ?, ?, ?, ?, ?)');
+    const result = stmt.run(slug, name, description || null, authorNote || null, settingDetails || null, storyDetails || null);
+    return { id: result.lastInsertRowid, slug, name, description, authorNote, settingDetails, storyDetails };
   },
 
   getAll() {
@@ -24,9 +24,24 @@ export const WorldService = {
     return { ...world, lorebookUuids };
   },
 
-  update(id: number, { name, description }: { name: string; description?: string }) {
-    const stmt = db.prepare('UPDATE Worlds SET name = ?, description = ? WHERE id = ?');
-    const result = stmt.run(name, description || null, id);
+  update(id: number, {
+    name,
+    description,
+    authorNote,
+    settingDetails,
+    storyDetails
+  }: { name?: string; description?: string; authorNote?: string; settingDetails?: string; storyDetails?: string }) {
+    const existing = this.getById(id);
+    if (!existing) return { changes: 0 };
+
+    const nextName = name ?? existing.name;
+    const nextDescription = description ?? existing.description;
+    const nextAuthorNote = authorNote ?? existing.authorNote;
+    const nextSettingDetails = settingDetails ?? existing.settingDetails;
+    const nextStoryDetails = storyDetails ?? existing.storyDetails;
+
+    const stmt = db.prepare('UPDATE Worlds SET name = ?, description = ?, authorNote = ?, settingDetails = ?, storyDetails = ? WHERE id = ?');
+    const result = stmt.run(nextName, nextDescription || null, nextAuthorNote || null, nextSettingDetails || null, nextStoryDetails || null, id);
     return { changes: result.changes };
   },
 

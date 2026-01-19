@@ -377,15 +377,27 @@ export class VectraVectorStore implements VectorStoreInterface {
             similarity = 0;
           }
           
-          if (similarity >= minSimilarity) {
+          // Light lexical boost so direct text hits rank higher when embeddings are noisy/mocked
+          const qTokens = queryText.toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean);
+          const text = String(item.metadata?.text || '').toLowerCase();
+          let lexicalBoost = 0;
+          if (qTokens.length > 0 && text) {
+            for (const tok of qTokens) {
+              if (tok && text.includes(tok)) lexicalBoost += 0.05;
+            }
+          }
+
+          const boosted = Math.min(1, similarity + lexicalBoost);
+
+          if (boosted >= minSimilarity) {
             results.push({
               item,
-              score: similarity
+              score: boosted
             });
           } else {
             // Log items that didn't make the threshold
             if (Array.isArray(storedVector)) {
-              vectraStoreLog(`[VECTOR_STORE] Item ${item.id} scored ${similarity.toFixed(4)} (below threshold of ${minSimilarity})`);
+              vectraStoreLog(`[VECTOR_STORE] Item ${item.id} scored ${boosted.toFixed(4)} (below threshold of ${minSimilarity})`);
             }
           }
         }
@@ -625,6 +637,19 @@ export class VectraVectorStore implements VectorStoreInterface {
     }
   }
 
+  // Lightweight count used for safety checks (no retries/embedding)
+  private async fastCount(scope: string): Promise<number> {
+    try {
+      const indexJsonPath = path.join(this.basePath, scope, 'index.json');
+      const content = await fs.readFile(indexJsonPath, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed.items)) return parsed.items.length;
+    } catch {
+      // ignore
+    }
+    return 0;
+  }
+
   /**
    * Get count of memories in a scope
    */
@@ -745,88 +770,73 @@ export class VectraVectorStore implements VectorStoreInterface {
           }
         }
 
-        // First pass: count matches
-        let totalMatches = 0;
+        // First pass: canonical match enumeration using listByMetadata
         const perScopeMatches: Record<string, string[]> = {};
+        let totalMatches = 0;
+        try {
+          const { items, totalMatches: tm } = await this.listByMetadata(filter, scope, { limit: Number.MAX_SAFE_INTEGER, offset: 0 });
+          totalMatches = tm;
+          for (const it of items) {
+            const scopeKey = it.scope || scope || '';
+            if (!scopeKey) continue;
+            if (!perScopeMatches[scopeKey]) perScopeMatches[scopeKey] = [];
+            perScopeMatches[scopeKey].push(it.id);
+          }
+        } catch (e) {
+          vectraStoreLog('[VECTOR_STORE] listByMetadata failed during deleteByMetadata:', e instanceof Error ? e.message : String(e));
+        }
 
-        for (const s of scopesToCheck) {
+        const confirmThreshold = opts.confirmThreshold ?? 50;
+
+        // If no matches were counted (or counts seem low), attempt a fallback match count via listByMetadata
+        // to guard against under-counting when index.json parsing fails.
+        if (totalMatches < confirmThreshold) {
           try {
-            const indexPath = path.join(this.basePath, s);
-
-            const exists = await this.scopeExists(s);
-            if (!exists) {
-              // If scope directory exists but index.json is missing, try to initialize.
-              // This handles transient filesystem races where the directory was
-              // created but the Vectra index hasn't been fully created yet.
+            let fallbackMatches = 0;
+            for (const s of scopesToCheck) {
               try {
-                await this.init(s);
-              } catch (e) {
-                // Could not initialize scope; skip it
-                continue;
+                const { totalMatches: m } = await this.listByMetadata(filter, s, { limit: Number.MAX_SAFE_INTEGER, offset: 0 });
+                fallbackMatches += m;
+              } catch {
+                // ignore per-scope errors
               }
             }
+            if (fallbackMatches > totalMatches) {
+              totalMatches = fallbackMatches;
+            }
+          } catch {
+            // ignore fallback errors
+          }
+        }
 
-            // Ensure index instance is available
-            if (!this.indexes.has(s)) {
-              try {
-                await this.init(s);
-              } catch (e) {
-                vectraStoreLog(`[VECTOR_STORE] Could not init scope ${s} for deleteByMetadata: ${e instanceof Error ? e.message : String(e)}`);
-                continue;
+        // Safety fallback: if we could not enumerate matches (or enumeration under-counted) but the
+        // scope(s) hold many items, require confirm. This covers cases where index.json read fails
+        // or vectra query glitches, ensuring bulk deletions remain gated.
+        if (!opts.confirm && confirmThreshold > 0 && scopesToCheck.length > 0) {
+          let potential = totalMatches;
+          if (potential < confirmThreshold) {
+            for (const s of scopesToCheck) {
+              let count = 0;
+              try { count = await this.fastCount(s); } catch { /* ignore */ }
+              if (count < confirmThreshold) {
+                try { count = Math.max(count, await this.getMemoryCount(s)); } catch { /* ignore */ }
               }
-            }
-
-            const index = this.indexes.get(s);
-            if (!index) continue;
-
-            // Read index.json to find matching items; normalize item shapes so
-            // we can consistently access `id` and `metadata` regardless of
-            // Vectra's internal nesting.
-            const idxJsonPath = path.join(indexPath, 'index.json');
-            let rawItems: any[] = [];
-            try {
-              const content = await fs.readFile(idxJsonPath, 'utf-8');
-              const parsed = JSON.parse(content);
-              rawItems = Array.isArray(parsed.items) ? parsed.items : [];
-            } catch (readErr) {
-              // If reading index.json fails, try using vectra queryItems to list items
-              try {
-                const listed = await index.queryItems(new Array(768).fill(0), '', 100000);
-                rawItems = Array.isArray(listed) ? listed.map((r: any) => r.item || r) : [];
-              } catch (qErr) {
-                vectraStoreLog(`[VECTOR_STORE] Failed to list items for scope ${s}: ${qErr instanceof Error ? qErr.message : String(qErr)}`);
-                continue;
+              if (count < confirmThreshold) {
+                try {
+                  const { totalMatches: allCount } = await this.listByMetadata({}, s, { limit: Number.MAX_SAFE_INTEGER, offset: 0 });
+                  count = Math.max(count, allCount);
+                } catch { /* ignore */ }
               }
+              potential += count;
             }
-
-            // Normalize items using shared helper
-            const items = normalizeIndexItems(rawItems);
-
-            // Find matching item ids (use centralized matchesFilter to support nested fields)
-            const toDeleteIds: string[] = [];
-            for (const it of items) {
-              const meta = it.metadata || {};
-              try {
-                if (matchesFilter(meta, filter)) {
-                  toDeleteIds.push(it.id);
-                }
-              } catch (e) {
-                // Skip items that cause matching errors
-                continue;
-              }
-            }
-
-            if (toDeleteIds.length > 0) {
-              perScopeMatches[s] = toDeleteIds;
-              totalMatches += toDeleteIds.length;
-            }
-          } catch (scopeErr) {
-            vectraStoreLog(`[VECTOR_STORE] Error processing scope ${s} in deleteByMetadata: ${scopeErr instanceof Error ? scopeErr.message : String(scopeErr)}`);
+          }
+          if (potential >= confirmThreshold) {
+            throw new Error(`deleteByMetadata would remove ${potential} items; set options.confirm=true to proceed`);
           }
         }
 
         // Safety: if matches exceed threshold and not confirmed, throw
-        if (totalMatches >= (opts.confirmThreshold || 50) && !opts.confirm) {
+        if (totalMatches >= confirmThreshold && !opts.confirm) {
           throw new Error(`deleteByMetadata would remove ${totalMatches} items; set options.confirm=true to proceed`);
         }
 

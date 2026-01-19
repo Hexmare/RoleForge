@@ -6,6 +6,9 @@ interface World {
   slug: string;
   name: string;
   description?: string;
+  authorNote?: string;
+  settingDetails?: string;
+  storyDetails?: string;
 }
 
 interface Campaign {
@@ -14,6 +17,10 @@ interface Campaign {
   slug: string;
   name: string;
   description?: string;
+  authorNote?: string;
+  plot?: string;
+  goals?: string;
+  storyDetails?: string;
 }
 
 interface Arc {
@@ -22,6 +29,10 @@ interface Arc {
   orderIndex: number;
   name: string;
   description?: string;
+  authorNote?: string;
+  plot?: string;
+  goals?: string;
+  storyDetails?: string;
 }
 
 interface Scene {
@@ -31,6 +42,10 @@ interface Scene {
   title: string;
   description?: string;
   location?: string;
+  authorNote?: string;
+  plot?: string;
+  goals?: string;
+  scenario?: string;
 }
 
 type EditingType = 'world' | 'campaign' | 'arc' | 'scene' | null;
@@ -120,19 +135,47 @@ function WorldManager({
     switch (editing.type) {
       case 'world':
         url = editing.item && editing.item.id ? `/api/worlds/${editing.item.id}` : '/api/worlds';
-        body = { name: form.name, description: form.description };
+        body = {
+          name: form.name,
+          description: form.description,
+          authorNote: form.authorNote,
+          settingDetails: form.settingDetails,
+          storyDetails: form.storyDetails
+        };
         break;
       case 'campaign':
         url = editing.item && editing.item.id ? `/api/campaigns/${editing.item.id}` : `/api/worlds/${form.worldId}/campaigns`;
-        body = { name: form.name, description: form.description };
+        body = {
+          name: form.name,
+          description: form.description,
+          authorNote: form.authorNote,
+          plot: form.plot,
+          goals: form.goals,
+          storyDetails: form.storyDetails
+        };
         break;
       case 'arc':
         url = editing.item && editing.item.id ? `/api/arcs/${editing.item.id}` : `/api/campaigns/${form.campaignId}/arcs`;
-        body = { name: form.name, description: form.description };
+        body = {
+          name: form.name,
+          description: form.description,
+          authorNote: form.authorNote,
+          plot: form.plot,
+          goals: form.goals,
+          storyDetails: form.storyDetails
+        };
         break;
       case 'scene':
         url = editing.item && editing.item.id ? `/api/scenes/${editing.item.id}` : `/api/arcs/${form.arcId}/scenes`;
-        body = { title: form.title, description: form.description, location: form.location };
+        body = {
+          title: form.title,
+          description: form.description,
+          authorNote: form.authorNote,
+          plot: form.plot,
+          goals: form.goals,
+          scenario: form.scenario,
+          location: form.location
+        };
         break;
     }
 
@@ -150,13 +193,13 @@ function WorldManager({
     if (!item) {
       // Initialize form with defaults for new items
       if (type === 'world') {
-        setForm({ name: '', description: '' });
+        setForm({ name: '', description: '', authorNote: '', settingDetails: '', storyDetails: '' });
       } else if (type === 'campaign') {
-        setForm({ name: '', description: '', worldId: selectedWorld });
+        setForm({ name: '', description: '', authorNote: '', plot: '', goals: '', storyDetails: '', worldId: selectedWorld });
       } else if (type === 'arc') {
-        setForm({ name: '', description: '', orderIndex: 0 });
+        setForm({ name: '', description: '', authorNote: '', plot: '', goals: '', storyDetails: '', orderIndex: 0 });
       } else if (type === 'scene') {
-        setForm({ title: '', description: '', location: '', orderIndex: 0 });
+        setForm({ title: '', description: '', authorNote: '', plot: '', goals: '', scenario: '', location: '', orderIndex: 0 });
       }
     } else {
       setForm(item);
@@ -209,6 +252,33 @@ function WorldManager({
                 rows={4}
               />
             </div>
+            <div className="form-group">
+              <label>Author Note</label>
+              <textarea
+                placeholder="Author Note"
+                value={form.authorNote || ''}
+                onChange={(e) => setForm({ ...form, authorNote: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="form-group">
+              <label>Setting Details</label>
+              <textarea
+                placeholder="Setting details and tone"
+                value={form.settingDetails || ''}
+                onChange={(e) => setForm({ ...form, settingDetails: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="form-group">
+              <label>Story Details</label>
+              <textarea
+                placeholder="Core story beats or canon"
+                value={form.storyDetails || ''}
+                onChange={(e) => setForm({ ...form, storyDetails: e.target.value })}
+                rows={3}
+              />
+            </div>
             {editing.item && (editing.item as World).id && (
               <div className="form-group">
                 <label>Lore Management</label>
@@ -250,6 +320,42 @@ function WorldManager({
                 rows={4}
               />
             </div>
+            <div className="form-group">
+              <label>Author Note</label>
+              <textarea
+                placeholder="Author guidance"
+                value={form.authorNote || ''}
+                onChange={(e) => setForm({ ...form, authorNote: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="form-group">
+              <label>Plot</label>
+              <textarea
+                placeholder="Plot outline"
+                value={form.plot || ''}
+                onChange={(e) => setForm({ ...form, plot: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="form-group">
+              <label>Goals</label>
+              <textarea
+                placeholder="Goals or objectives"
+                value={form.goals || ''}
+                onChange={(e) => setForm({ ...form, goals: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="form-group">
+              <label>Story Details</label>
+              <textarea
+                placeholder="Continuity notes"
+                value={form.storyDetails || ''}
+                onChange={(e) => setForm({ ...form, storyDetails: e.target.value })}
+                rows={3}
+              />
+            </div>
             {editing.item && (editing.item as Campaign).id && (
               <div className="form-group">
                 <label>Lore Management</label>
@@ -289,6 +395,42 @@ function WorldManager({
                 value={form.description || ''}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 rows={4}
+              />
+            </div>
+            <div className="form-group">
+              <label>Author Note</label>
+              <textarea
+                placeholder="Author note"
+                value={form.authorNote || ''}
+                onChange={(e) => setForm({ ...form, authorNote: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="form-group">
+              <label>Plot</label>
+              <textarea
+                placeholder="Plot outline"
+                value={form.plot || ''}
+                onChange={(e) => setForm({ ...form, plot: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="form-group">
+              <label>Goals</label>
+              <textarea
+                placeholder="Goals"
+                value={form.goals || ''}
+                onChange={(e) => setForm({ ...form, goals: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="form-group">
+              <label>Story Details</label>
+              <textarea
+                placeholder="Story details"
+                value={form.storyDetails || ''}
+                onChange={(e) => setForm({ ...form, storyDetails: e.target.value })}
+                rows={3}
               />
             </div>
           </>
@@ -333,6 +475,42 @@ function WorldManager({
                 value={form.description || ''}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 rows={4}
+              />
+            </div>
+            <div className="form-group">
+              <label>Author Note</label>
+              <textarea
+                placeholder="Author note"
+                value={form.authorNote || ''}
+                onChange={(e) => setForm({ ...form, authorNote: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="form-group">
+              <label>Plot</label>
+              <textarea
+                placeholder="Plot"
+                value={form.plot || ''}
+                onChange={(e) => setForm({ ...form, plot: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="form-group">
+              <label>Goals</label>
+              <textarea
+                placeholder="Goals"
+                value={form.goals || ''}
+                onChange={(e) => setForm({ ...form, goals: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="form-group">
+              <label>Scenario</label>
+              <textarea
+                placeholder="Scenario"
+                value={form.scenario || ''}
+                onChange={(e) => setForm({ ...form, scenario: e.target.value })}
+                rows={3}
               />
             </div>
           </>

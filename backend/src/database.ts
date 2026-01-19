@@ -157,6 +157,9 @@ db.exec(`
     slug TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
+    authorNote TEXT,
+    settingDetails TEXT,
+    storyDetails TEXT,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -166,6 +169,10 @@ db.exec(`
     slug TEXT NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
+    authorNote TEXT,
+    plot TEXT,
+    goals TEXT,
+    storyDetails TEXT,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(worldId, slug)
   );
@@ -176,6 +183,10 @@ db.exec(`
     orderIndex INTEGER NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
+    authorNote TEXT,
+    plot TEXT,
+    goals TEXT,
+    storyDetails TEXT,
     UNIQUE(campaignId, orderIndex)
   );
 
@@ -185,6 +196,10 @@ db.exec(`
     orderIndex INTEGER NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
+    authorNote TEXT,
+    plot TEXT,
+    goals TEXT,
+    scenario TEXT,
     location TEXT,
     timeOfDay TEXT,
     elapsedMinutes INTEGER DEFAULT 0,
@@ -312,6 +327,46 @@ try {
   }
 } catch (e) {
   console.warn('Could not ensure Scenes.summary column exists:', e);
+}
+
+// Ensure new narrative metadata columns exist for legacy DBs
+try {
+  const wcols = safePragmaAll(db, 'Worlds');
+  if (!wcols.some((c: any) => c.name === 'authorNote')) db.exec(`ALTER TABLE Worlds ADD COLUMN authorNote TEXT;`);
+  if (!wcols.some((c: any) => c.name === 'settingDetails')) db.exec(`ALTER TABLE Worlds ADD COLUMN settingDetails TEXT;`);
+  if (!wcols.some((c: any) => c.name === 'storyDetails')) db.exec(`ALTER TABLE Worlds ADD COLUMN storyDetails TEXT;`);
+} catch (e) {
+  console.warn('Could not ensure Worlds metadata columns exist:', e);
+}
+
+try {
+  const cc = safePragmaAll(db, 'Campaigns');
+  if (!cc.some((c: any) => c.name === 'authorNote')) db.exec(`ALTER TABLE Campaigns ADD COLUMN authorNote TEXT;`);
+  if (!cc.some((c: any) => c.name === 'plot')) db.exec(`ALTER TABLE Campaigns ADD COLUMN plot TEXT;`);
+  if (!cc.some((c: any) => c.name === 'goals')) db.exec(`ALTER TABLE Campaigns ADD COLUMN goals TEXT;`);
+  if (!cc.some((c: any) => c.name === 'storyDetails')) db.exec(`ALTER TABLE Campaigns ADD COLUMN storyDetails TEXT;`);
+} catch (e) {
+  console.warn('Could not ensure Campaigns metadata columns exist:', e);
+}
+
+try {
+  const ac = safePragmaAll(db, 'Arcs');
+  if (!ac.some((c: any) => c.name === 'authorNote')) db.exec(`ALTER TABLE Arcs ADD COLUMN authorNote TEXT;`);
+  if (!ac.some((c: any) => c.name === 'plot')) db.exec(`ALTER TABLE Arcs ADD COLUMN plot TEXT;`);
+  if (!ac.some((c: any) => c.name === 'goals')) db.exec(`ALTER TABLE Arcs ADD COLUMN goals TEXT;`);
+  if (!ac.some((c: any) => c.name === 'storyDetails')) db.exec(`ALTER TABLE Arcs ADD COLUMN storyDetails TEXT;`);
+} catch (e) {
+  console.warn('Could not ensure Arcs metadata columns exist:', e);
+}
+
+try {
+  const sc = safePragmaAll(db, 'Scenes');
+  if (!sc.some((c: any) => c.name === 'authorNote')) db.exec(`ALTER TABLE Scenes ADD COLUMN authorNote TEXT;`);
+  if (!sc.some((c: any) => c.name === 'plot')) db.exec(`ALTER TABLE Scenes ADD COLUMN plot TEXT;`);
+  if (!sc.some((c: any) => c.name === 'goals')) db.exec(`ALTER TABLE Scenes ADD COLUMN goals TEXT;`);
+  if (!sc.some((c: any) => c.name === 'scenario')) db.exec(`ALTER TABLE Scenes ADD COLUMN scenario TEXT;`);
+} catch (e) {
+  console.warn('Could not ensure Scenes metadata columns exist:', e);
 }
 
 // Ensure Scenes.lastSummarizedMessageId and summaryTokenCount columns exist

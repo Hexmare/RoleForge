@@ -6,10 +6,10 @@ function slugify(text: string) {
 }
 
 export const CampaignService = {
-  create(worldId: number, name: string, description?: string) {
+  create(worldId: number, name: string, description?: string, authorNote?: string, plot?: string, goals?: string, storyDetails?: string) {
     const slug = slugify(name);
-    const stmt = db.prepare('INSERT INTO Campaigns (worldId, slug, name, description) VALUES (?, ?, ?, ?)');
-    const result = stmt.run(worldId, slug, name, description || null);
+    const stmt = db.prepare('INSERT INTO Campaigns (worldId, slug, name, description, authorNote, plot, goals, storyDetails) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    const result = stmt.run(worldId, slug, name, description || null, authorNote || null, plot || null, goals || null, storyDetails || null);
     const campaignId = result.lastInsertRowid as number;
     
     // Create initial campaign state
@@ -19,7 +19,7 @@ export const CampaignService = {
     `);
     stateStmt.run(campaignId, null, 0, '{}', JSON.stringify({ stats: {}, objectives: [], relationships: {} }));
     
-    return { id: campaignId, worldId, slug, name, description };
+    return { id: campaignId, worldId, slug, name, description, authorNote, plot, goals, storyDetails };
   },
 
   listByWorld(worldId: number) {
@@ -34,9 +34,26 @@ export const CampaignService = {
     return { ...campaign, lorebookUuids };
   },
 
-  update(id: number, { name, description }: { name: string; description?: string }) {
-    const stmt = db.prepare('UPDATE Campaigns SET name = ?, description = ? WHERE id = ?');
-    const result = stmt.run(name, description || null, id);
+  update(id: number, {
+    name,
+    description,
+    authorNote,
+    plot,
+    goals,
+    storyDetails
+  }: { name?: string; description?: string; authorNote?: string; plot?: string; goals?: string; storyDetails?: string }) {
+    const existing = this.getById(id);
+    if (!existing) return { changes: 0 };
+
+    const nextName = name ?? existing.name;
+    const nextDescription = description ?? existing.description;
+    const nextAuthorNote = authorNote ?? existing.authorNote;
+    const nextPlot = plot ?? existing.plot;
+    const nextGoals = goals ?? existing.goals;
+    const nextStoryDetails = storyDetails ?? existing.storyDetails;
+
+    const stmt = db.prepare('UPDATE Campaigns SET name = ?, description = ?, authorNote = ?, plot = ?, goals = ?, storyDetails = ? WHERE id = ?');
+    const result = stmt.run(nextName, nextDescription || null, nextAuthorNote || null, nextPlot || null, nextGoals || null, nextStoryDetails || null, id);
     return { changes: result.changes };
   },
 

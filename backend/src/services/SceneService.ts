@@ -31,16 +31,33 @@ const ensureSceneRoundsTimelineColumn = (): void => {
 };
 
 export const SceneService = {
-  create(arcId: number, title: string, description?: string, location?: string, timeOfDay?: string, orderIndex?: number) {
+  create(arcId: number, title: string, description?: string, location?: string, timeOfDay?: string, orderIndex?: number, authorNote?: string, plot?: string, goals?: string, scenario?: string) {
     // determine next orderIndex if not provided
     if (orderIndex === undefined || orderIndex === null) {
       const row = db.prepare('SELECT MAX(orderIndex) as maxIdx FROM Scenes WHERE arcId = ?').get(arcId) as any;
       const maxIdx = row?.maxIdx || 0;
       orderIndex = Number(maxIdx) + 1;
     }
-    const stmt = db.prepare('INSERT INTO Scenes (arcId, orderIndex, title, description, location, timeOfDay, worldState, lastWorldStateMessageNumber, characterStates, userPersonaState) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    const result = stmt.run(arcId, orderIndex, title, description || null, location || null, timeOfDay || null, '{}', 0, '{}', '{}');
-    return { id: result.lastInsertRowid, arcId, orderIndex, title, description, location, timeOfDay, worldState: {}, lastWorldStateMessageNumber: 0, characterStates: {}, userPersonaState: {} };
+    const stmt = db.prepare('INSERT INTO Scenes (arcId, orderIndex, title, description, authorNote, plot, goals, scenario, location, timeOfDay, worldState, lastWorldStateMessageNumber, characterStates, userPersonaState, activeCharacters) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const result = stmt.run(arcId, orderIndex, title, description || null, authorNote || null, plot || null, goals || null, scenario || null, location || null, timeOfDay || null, '{}', 0, '{}', '{}', '[]');
+    return {
+      id: result.lastInsertRowid,
+      arcId,
+      orderIndex,
+      title,
+      description,
+      authorNote,
+      plot,
+      goals,
+      scenario,
+      location,
+      timeOfDay,
+      worldState: {},
+      lastWorldStateMessageNumber: 0,
+      characterStates: {},
+      userPersonaState: {},
+      activeCharacters: []
+    };
   },
 
   listByArc(arcId: number) {
@@ -78,6 +95,10 @@ export const SceneService = {
     const existing = this.getById(id);
     const title = fields.title ?? existing.title;
     const description = fields.description ?? existing.description;
+    const authorNote = fields.authorNote ?? existing.authorNote;
+    const plot = fields.plot ?? existing.plot;
+    const goals = fields.goals ?? existing.goals;
+    const scenario = fields.scenario ?? existing.scenario;
     const location = fields.location ?? existing.location;
     const timeOfDay = fields.timeOfDay ?? existing.timeOfDay;
     const orderIndex = fields.orderIndex ?? existing.orderIndex;
@@ -86,8 +107,8 @@ export const SceneService = {
     const characterStates = fields.characterStates !== undefined ? JSON.stringify(fields.characterStates) : existing.characterStates;
     const userPersonaState = fields.userPersonaState !== undefined ? JSON.stringify(fields.userPersonaState) : existing.userPersonaState;
     const activeCharacters = fields.activeCharacters !== undefined ? JSON.stringify(fields.activeCharacters) : existing.activeCharacters;
-    const stmt = db.prepare('UPDATE Scenes SET title = ?, description = ?, location = ?, timeOfDay = ?, orderIndex = ?, worldState = ?, lastWorldStateMessageNumber = ?, characterStates = ?, userPersonaState = ?, activeCharacters = ? WHERE id = ?');
-    const result = stmt.run(title, description, location, timeOfDay, orderIndex, worldState, lastWorldStateMessageNumber, characterStates, userPersonaState, activeCharacters, id);
+    const stmt = db.prepare('UPDATE Scenes SET title = ?, description = ?, authorNote = ?, plot = ?, goals = ?, scenario = ?, location = ?, timeOfDay = ?, orderIndex = ?, worldState = ?, lastWorldStateMessageNumber = ?, characterStates = ?, userPersonaState = ?, activeCharacters = ? WHERE id = ?');
+    const result = stmt.run(title, description, authorNote, plot, goals, scenario, location, timeOfDay, orderIndex, worldState, lastWorldStateMessageNumber, characterStates, userPersonaState, activeCharacters, id);
     return { changes: result.changes };
   },
 
