@@ -6,11 +6,11 @@ Backend/front-end references: [DevDocumentation/AgentRestructure-backend.md](Dev
 
 > Critical: Only the user will handle all commits and pull requests. Mark each checkbox `[ ]` as tasks are completed.
 
-**Next focus:** Phase 7 — World/Tracker integration guardrails.
+**Next focus:** Testing & Telemetry (post-Phase 8 hardening).
 
 ## Phase 1 — Foundations & Contracts
 - [x] Define `AgentContextEnvelope` TypeScript interface with all fields (history raw/summarized, lore raw/formatted, memories, world/character state, director guidance, round metadata, request type, persona info, scenario/author notes).
-- [ ] Add defaults and required/optional notes in code comments and a short README entry in DevDocumentation pointing to this plan.
+- [x] Add defaults and required/optional notes in code comments and a short README entry in DevDocumentation pointing to this plan.
 - [x] Extend agent profile config typings with `expectsJson`, `jsonMode`, `jsonSchema`, `jsonExample`; add loader-time validation to reject invalid profiles.
 - [x] Implement helper to render JSON return template per profile (`object` vs `schema`), integrating schema/example as needed.
 - [x] Add no-op bypass path for non-JSON agents so prompt injection is skipped cleanly.
@@ -55,24 +55,24 @@ Backend/front-end references: [DevDocumentation/AgentRestructure-backend.md](Dev
 - [x] Ensure trackers/world state persist once per round after reconciliation to avoid double writes.
 
 ## Phase 8 — Persistence, Events, and UX
-- [ ] Standardize socket events: director start/complete (pass 1 & 2), character start/complete, world updates (if enabled), round completed.
-- [ ] Add structured logs per pass (actors, state deltas, activations/deactivations, validation results); include audit log format for per-round metadata.
-- [ ] Update persistence to record per-round metadata (actors, guidance, activations, deactivations, summaries).
-- [ ] Update documentation/quick references to reflect new flow.
+- [x] Standardize socket events: director start/complete (pass 1 & 2), character start/complete, world updates (if enabled), round completed.
+- [x] Add structured logs per pass (actors, state deltas, activations/deactivations, validation results); include audit log format for per-round metadata.
+- [x] Update persistence to record per-round metadata (actors, guidance, activations, deactivations, summaries).
+- [x] Update documentation/quick references to reflect new flow.
 
 ## Testing & Telemetry
-- [ ] Add unit tests: context builder, JSON template injection, Director schema validation, Character state update heuristics, activation/deactivation logic.
-- [ ] Add integration tests: end-to-end round flow (user input and continuation), two-pass Director loop, persistence of state/trackers.
-- [ ] Regression tests: legacy non-JSON agents, summarize thresholds, memory retrieval limits.
-- [ ] Add token-usage telemetry per section; maintain rolling window (last 500 messages) to cap storage.
+- [x] Add unit tests: context builder, JSON template injection, Director schema validation, Character state update heuristics, activation/deactivation logic.
+- [x] Add integration tests: end-to-end round flow (user input and continuation), two-pass Director loop, persistence of state/trackers.
+- [x] Regression tests: legacy non-JSON agents, summarize thresholds, memory retrieval limits.
+- [x] Add token-usage telemetry per section; maintain rolling window (last 500 messages) to cap storage.
 
 ## Token Budget & Retrieval Caps
 - [x] Implement percentage-to-count resolver based on `maxContextTokens`; apply round-down and proportional reallocation when sections are absent.
 - [x] Set per-section hard caps for history, lore, memories, and notes; document defaults and make configurable.
-- [ ] Add topK/maxChars limits for memories and lore to prevent prompt bloat; enforce in retrieval.
+- [x] Add topK/maxChars limits for memories and lore to prevent prompt bloat; enforce in retrieval.
 
 ## Operational Notes
 - [x] Ensure deterministic tie-breakers for action ordering (priority then name) are coded and tested.
-- [ ] Keep guidance non-persistent between director passes; rely on history + summaries + notes.
-- [ ] Always include last-round messages verbatim in context sent to Director.
+- [x] Keep guidance non-persistent between director passes; rely on history + summaries + notes.
+- [x] Always include last-round messages verbatim in context sent to Director.
 - [ ] Mark each task above when completed; user will handle commits/PRs.

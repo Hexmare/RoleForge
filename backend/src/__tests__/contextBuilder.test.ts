@@ -192,4 +192,25 @@ describe('buildAgentContextEnvelope caps', () => {
     expect(envelope.summarizedHistory).toEqual(summaries);
     db.close();
   });
+
+  it('keeps last round messages verbatim when provided', () => {
+    const db = createTestDatabase();
+    const { sceneId } = seedTestScene(db);
+
+    const envelope = buildAgentContextEnvelope({
+      db,
+      sceneId,
+      requestType: 'user',
+      lastRoundMessages: ['msg1', 'msg2'],
+      history: ['older'],
+      tokenBudget: {
+        maxContextTokens: 100,
+        allocations: { history: 0.2 }
+      }
+    });
+
+    expect(envelope.lastRoundMessages).toEqual(['msg1', 'msg2']);
+    expect(envelope.history).toEqual(['older']);
+    db.close();
+  });
 });

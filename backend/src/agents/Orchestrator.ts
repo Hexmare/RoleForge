@@ -25,8 +25,16 @@ import { matchLoreEntries } from '../utils/loreMatcher.js';
 import tryJsonRepair from '../utils/jsonRepair.js';
 import { getNestedField } from '../utils/memoryHelpers.js';
 import { buildAgentContextEnvelope, BuildAgentContextEnvelopeOptions } from './context/contextBuilder.js';
+import { AgentContextEnvelope } from './context/types.js';
+import { tokenTelemetry } from '../utils/tokenTelemetry.js';
 
 const orchestratorLog = createLogger(NAMESPACES.agents.orchestrator);
+
+export function buildReconciliationEnvelope(base?: AgentContextEnvelope, turnResponses?: Array<{ character: string; response: string }>) {
+  if (!base) return undefined;
+  const { directorGuidance, ...rest } = base;
+  return { ...rest, directorPass: 2, recentCharacterResponses: turnResponses } as AgentContextEnvelope & { directorPass: number; recentCharacterResponses?: Array<{ character: string; response: string }>; };
+}
 
 export class Orchestrator {
   private configManager: ConfigManager;
@@ -62,10 +70,19 @@ export class Orchestrator {
     this.agents.set('vectorization', new VectorizationAgent(configManager, env));
   }
 
+  private emitSceneEvent(eventName: string, payload: Record<string, unknown>, sceneId?: number): void {
+    if (!this.io || !sceneId) return;
+    this.io.to(`scene-${sceneId}`).emit(eventName, {
+      sceneId,
+      roundNumber: this.currentRoundNumber,
+      timestamp: new Date().toISOString(),
+      ...payload
+    });
+  }
+
   private emitAgentStatus(agentName: string, status: 'start' | 'complete', sceneId?: number) {
-    if (this.io && sceneId) {
-      this.io.to(`scene-${sceneId}`).emit('agentStatus', { agent: agentName, status });
-    }
+    if (!sceneId) return;
+    this.emitSceneEvent('agentStatus', { agent: agentName, status }, sceneId);
   }
 
   // Task 4.1: Initialize round state from database
@@ -105,15 +122,11 @@ export class Orchestrator {
       orchestratorLog('[ORCHESTRATOR] Round completed. Previous: %d, Next: %d', this.currentRoundNumber, nextRoundNumber);
 
       // Task 4.4: Emit Socket.io event for roundCompleted
-      if (this.io) {
-        this.io.to(`scene-${sceneId}`).emit('roundCompleted', {
-          sceneId,
-          roundNumber: this.currentRoundNumber,
-          nextRoundNumber: nextRoundNumber,
-          activeCharacters: charsToPass,
-          timestamp: new Date().toISOString()
-        });
-      }
+      this.emitSceneEvent('roundCompleted', {
+        roundNumber: this.currentRoundNumber,
+        nextRoundNumber: nextRoundNumber,
+        activeCharacters: charsToPass
+      }, sceneId);
 
       // 3. Trigger VectorizationAgent if available (fire and forget)
       if (this.agents.has('vectorization')) {
@@ -211,7 +224,7 @@ export class Orchestrator {
           // Emit to frontend immediately
           if (this.io) {
             orchestratorLog('[CONTINUE_ROUND] Emitting characterResponse for %s to scene-%d', response.sender, sceneId);
-            this.io.to(`scene-${sceneId}`).emit('characterResponse', response);
+            this.emitSceneEvent('characterResponse', response, sceneId);
           } else {
             orchestratorLog('[CONTINUE_ROUND] No Socket.io instance available to emit');
           }
@@ -556,6 +569,45 @@ export class Orchestrator {
     });
   }
 
+  private recordTokenTelemetry(envelope: any, sceneId?: number): void {
+    if (!envelope) return;
+    const sumArray = (arr?: string[]) => (arr || []).reduce((acc, v) => acc + (v?.length || 0), 0);
+    const sumMemories = (mem?: Record<string, any[]>) => {
+      if (!mem) return 0;
+      let total = 0;
+      for (const entries of Object.values(mem)) {
+        for (const entry of entries || []) {
+          if (typeof entry === 'string') {
+            total += entry.length;
+          } else if (entry && typeof entry === 'object') {
+            total += JSON.stringify(entry).length;
+          }
+        }
+      }
+      return total;
+    };
+    const sumNotes = (notes?: { world?: string; campaign?: string; arc?: string; scene?: string }) => {
+      if (!notes) return 0;
+      return Object.values(notes).reduce((acc, v) => acc + ((v || '').length), 0);
+    };
+
+    const sections: Record<string, number> = {
+      history: sumArray(envelope.history),
+      summaries: sumArray(envelope.summarizedHistory) + sumArray(envelope.perRoundSummaries as any),
+      lore: (envelope.formattedLore || '').length + sumArray(envelope.lore as any),
+      memories: sumMemories(envelope.memories),
+      scenarioNotes: sumNotes(envelope.scenarioNotes),
+      directorGuidance: envelope.directorGuidance ? JSON.stringify(envelope.directorGuidance).length : 0
+    };
+
+    tokenTelemetry.record({
+      sceneId,
+      roundNumber: this.currentRoundNumber,
+      timestamp: new Date().toISOString(),
+      sections
+    });
+  }
+
   private extractFirstJson(text: string): string | null {
     // First, try to extract from ```json code blocks
     const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/);
@@ -642,6 +694,8 @@ export class Orchestrator {
           })
         : undefined;
 
+      this.recordTokenTelemetry(contextEnvelope, sceneId);
+
       // Extract user persona state from characterStates if available
       const userPersonaState = sessionContext?.scene.characterStates?.['user'] || 
                                sessionContext?.scene.characterStates?.[personaName] || {};
@@ -710,11 +764,27 @@ export class Orchestrator {
     const maxDirectorPasses = this.configManager.getConfig().features?.maxDirectorPasses ?? 2;
     const roundTimeline: any = { roundNumber: this.currentRoundNumber };
 
+    const audit = (type: string, detail: Record<string, unknown> = {}) => {
+      roundTimeline.auditLog = roundTimeline.auditLog || [];
+      roundTimeline.auditLog.push({
+        type,
+        roundNumber: this.currentRoundNumber,
+        timestamp: new Date().toISOString(),
+        ...detail
+      });
+    };
+
+    const emitLifecycle = (eventName: string, payload: Record<string, unknown> = {}) => {
+      this.emitSceneEvent(eventName, payload, sceneId);
+    };
+
     if (sceneId) {
       const seedActiveCharacters = (sessionContext.activeCharacters || [])
         .map((c: any) => c?.id || c?.name)
         .filter((v: any) => !!v);
       SceneService.startRound(sceneId, seedActiveCharacters);
+      audit('roundStarted', { sceneId, roundNumber: this.currentRoundNumber, activeCharacters: seedActiveCharacters });
+      emitLifecycle('roundStarted', { activeCharacters: seedActiveCharacters });
     }
 
     const contextEnvelope = sceneId
@@ -728,6 +798,8 @@ export class Orchestrator {
           trackers: sessionContext.trackers
         })
       : undefined;
+
+    this.recordTokenTelemetry(contextEnvelope, sceneId);
 
     // Prepare base context
     let context: AgentContext = {
@@ -830,6 +902,8 @@ export class Orchestrator {
       activeCharacterNames: activeCharacterNamesStr,
       history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history
     };
+    audit('directorPassStarted', { pass: 1, activeCharacterNames: activeCharacterNamesStr });
+    emitLifecycle('directorPassStarted', { pass: 1, activeCharacterNames: activeCharacterNamesStr });
     orchestratorLog('Calling DirectorAgent');
     this.emitAgentStatus('Director', 'start', sceneId);
     const directorOutput = await directorAgent.run(directorContext);
@@ -892,6 +966,22 @@ export class Orchestrator {
     const directorApplication = applyDirectorPlan(directorPlan, sessionContext, characterStates);
     charactersToRespond = directorApplication.charactersToRespond;
     characterStates = directorApplication.updatedStates;
+
+    emitLifecycle('directorPassCompleted', {
+      pass: 1,
+      orderedActors: directorApplication.orderedActors,
+      activations: directorApplication.activations,
+      deactivations: directorApplication.deactivations
+    });
+    audit('directorPassCompleted', {
+      pass: 1,
+      orderedActors: directorApplication.orderedActors,
+      activations: directorApplication.activations,
+      deactivations: directorApplication.deactivations,
+      parsed: !!directorParsed,
+      retries: directorRetries,
+      lastError: directorLastError?.message
+    });
 
     roundTimeline.directorPass1 = {
       rawOutput: directorOutput,
@@ -1029,6 +1119,8 @@ export class Orchestrator {
           trackers: sessionContext.trackers
         };
         
+        audit('worldUpdateStarted', { enabled: true });
+        emitLifecycle('worldUpdateStarted', { enabled: true });
         orchestratorLog('Calling WorldAgent');
         this.emitAgentStatus('WorldAgent', 'start', sceneId);
         const worldUpdateStr = await worldAgent.run(worldContext);
@@ -1128,14 +1220,30 @@ export class Orchestrator {
           pendingTrackersUpdate = { campaignId: sessionContext.campaign.id };
         }
         
+        audit('worldUpdateCompleted', {
+          enabled: true,
+          worldStateChanged,
+          trackersChanged,
+          parsed: !!worldParsed,
+          retries: worldRetries,
+          lastError: worldLastError?.message
+        });
+        emitLifecycle('worldUpdateCompleted', {
+          enabled: true,
+          worldStateChanged,
+          trackersChanged
+        });
+
         // Emit updated state to frontend
-        this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { state: this.worldState, trackers: this.trackers, characterStates: characterStates });
+        this.emitSceneEvent('stateUpdated', { state: this.worldState, trackers: this.trackers, characterStates: characterStates }, sceneId);
         
         context.worldState = this.worldState;
         roundTimeline.worldAgent = { enabled: true, parsed: !!worldParsed };
       }
     } else {
       orchestratorLog('[WORLD] WorldAgent disabled via feature flag; skipping world update (Director owns trackers/world updates)');
+      audit('worldUpdateSkipped', { enabled: false });
+      emitLifecycle('worldUpdateCompleted', { enabled: false, reason: 'disabled' });
       roundTimeline.worldAgent = { enabled: false, reason: 'disabled' };
     }
 
@@ -1144,6 +1252,8 @@ export class Orchestrator {
 
     for (const charName of charactersToRespond) {
       orchestratorLog(`Processing character: ${charName}`);
+      emitLifecycle('characterRunStarted', { character: charName });
+      audit('characterRunStarted', { character: charName });
       
       // Ensure character state exists
       if (!characterStates[charName]) {
@@ -1325,8 +1435,26 @@ export class Orchestrator {
         SceneService.update(sceneId!, { characterStates });
         this.characterStates = characterStates;
         // Emit state update immediately for this character
-        this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates });
+        this.emitSceneEvent('stateUpdated', { characterStates }, sceneId);
       }
+      const characterSnapshot = characterStates[charName] || {};
+      emitLifecycle('characterRunCompleted', {
+        character: charName,
+        responsePreview: content?.substring(0, 120) || '',
+        state: {
+          hasActedThisRound: characterSnapshot.hasActedThisRound,
+          enteredThisRound: characterSnapshot.enteredThisRound,
+          exitedThisRound: characterSnapshot.exitedThisRound,
+          intentions: characterSnapshot.intentions
+        }
+      });
+      audit('characterRunCompleted', {
+        character: charName,
+        responseCaptured: !!content,
+        hasActedThisRound: characterSnapshot.hasActedThisRound,
+        enteredThisRound: characterSnapshot.enteredThisRound,
+        exitedThisRound: characterSnapshot.exitedThisRound
+      });
       const response = { sender: charName, content };
       responses.push(response);
       turnResponses.push({ character: charName, response: content }); // Add to turn responses for subsequent characters
@@ -1346,14 +1474,12 @@ export class Orchestrator {
       SceneService.update(sceneId!, { characterStates });
       this.characterStates = characterStates; // Update instance
       // Emit final character states update as safety measure
-      this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates: this.characterStates });
+      this.emitSceneEvent('stateUpdated', { characterStates: this.characterStates }, sceneId);
     }
 
     // Director reconciliation pass (post-character) when enabled
     if (sceneId && maxDirectorPasses > 1) {
-      const reconciliationEnvelope = context.contextEnvelope
-        ? { ...context.contextEnvelope, directorPass: 2, recentCharacterResponses: turnResponses }
-        : undefined;
+      const reconciliationEnvelope = buildReconciliationEnvelope(context.contextEnvelope, turnResponses);
 
       const reconciliationContext: AgentContext = {
         ...context,
@@ -1364,6 +1490,8 @@ export class Orchestrator {
         userInput
       };
 
+      audit('directorPassStarted', { pass: 2 });
+      emitLifecycle('directorPassStarted', { pass: 2 });
       orchestratorLog('Calling DirectorAgent (reconciliation pass)');
       this.emitAgentStatus('Director', 'start', sceneId);
       const directorReconOutput = await directorAgent.run(reconciliationContext);
@@ -1425,6 +1553,22 @@ export class Orchestrator {
       const directorReconApplication = applyDirectorPlan(directorReconPlan, sessionContext, characterStates);
       characterStates = directorReconApplication.updatedStates;
 
+      emitLifecycle('directorPassCompleted', {
+        pass: 2,
+        orderedActors: directorReconApplication.orderedActors,
+        activations: directorReconApplication.activations,
+        deactivations: directorReconApplication.deactivations
+      });
+      audit('directorPassCompleted', {
+        pass: 2,
+        orderedActors: directorReconApplication.orderedActors,
+        activations: directorReconApplication.activations,
+        deactivations: directorReconApplication.deactivations,
+        parsed: !!directorReconParsed,
+        retries: directorReconRetries,
+        lastError: directorReconLastError?.message
+      });
+
       roundTimeline.directorPass2 = {
         rawOutput: directorReconOutput,
         plan: directorReconPlan,
@@ -1445,7 +1589,7 @@ export class Orchestrator {
         }
       }
       this.characterStates = characterStates;
-      this.io?.to(`scene-${sceneId}`).emit('stateUpdated', { characterStates: this.characterStates });
+      this.emitSceneEvent('stateUpdated', { characterStates: this.characterStates }, sceneId);
 
       const nextActors = (directorReconPlan.remainingActors && directorReconPlan.remainingActors.length > 0)
         ? directorReconPlan.remainingActors
@@ -1457,17 +1601,33 @@ export class Orchestrator {
           this.pendingCharacterPass = nextActors;
           roundTimeline.followupCharacterPass = { queued: true, actors: nextActors };
           orchestratorLog('[DIRECTOR] Queued follow-up character pass for remaining actors (maxDirectorPasses=%d): %s', maxDirectorPasses, JSON.stringify(nextActors));
-          this.io?.to(`scene-${sceneId}`).emit('remainingActorsQueued', {
-            sceneId,
-            roundNumber: this.currentRoundNumber,
-            actors: nextActors
-          });
+          this.emitSceneEvent('remainingActorsQueued', { actors: nextActors }, sceneId);
         } else {
           roundTimeline.followupCharacterPass = { queued: false, actors: nextActors, reason: 'guardrail' };
           orchestratorLog('[DIRECTOR] Remaining actors requested but guardrail reached (maxDirectorPasses=%d): %s', maxDirectorPasses, JSON.stringify(nextActors));
         }
       }
     }
+
+    roundTimeline.roundMetadata = {
+      sceneId,
+      roundNumber: this.currentRoundNumber,
+      summary: this.sceneSummary,
+      directorGuidance: directorPlan?.openGuidance,
+      actingCharacters: directorApplication?.orderedActors || [],
+      activations: directorApplication?.activations || [],
+      deactivations: directorApplication?.deactivations || [],
+      reconciliation: roundTimeline.directorPass2
+        ? {
+            orderedActors: roundTimeline.directorPass2.orderedActors,
+            activations: roundTimeline.directorPass2.activations,
+            deactivations: roundTimeline.directorPass2.deactivations,
+            remainingActors: roundTimeline.directorPass2.remainingActors,
+            newActivations: roundTimeline.directorPass2.newActivations
+          }
+        : undefined
+    };
+    audit('roundMetadataRecorded', roundTimeline.roundMetadata);
 
     if (sceneId) {
       if (pendingWorldStateUpdate) {

@@ -23,11 +23,12 @@ Keep in sync with: [DevDocumentation/AgentRestructure-architecture.md](DevDocume
 - Render: chat/history, character/world state panels, round/agent status indicators, guidance summaries (if exposed), and error/validation messages when surfaced.
 - Provide controls: send user input, trigger continuation, display loading/status for agents.
 
-## Event Contracts (to confirm/standardize)
-- `agentStatus`: { agent, status }
-- `stateUpdated`: { state, trackers, characterStates }
-- `roundCompleted`: { roundNumber, activeCharacters }
-- Potential: `directorPass` (start/complete), `characterPass` (start/complete), validation error notifications (log-level vs UI).
+## Event Contracts (standardized, Phase 8)
+- All events include `sceneId`, `roundNumber`, and `timestamp`.
+- Lifecycle: `roundStarted`, `roundCompleted`, `remainingActorsQueued`.
+- Passes: `directorPassStarted`/`directorPassCompleted` (payload: pass, orderedActors, activations, deactivations), `characterRunStarted`/`characterRunCompleted` (character, responsePreview, flags), `worldUpdateStarted`/`worldUpdateCompleted` (enabled flags, state changes), `agentStatus` (compat).
+- State/outputs: `stateUpdated` (world/trackers/characterStates), `characterResponse` (sender, content).
+- UI should tolerate missing fields; prefer optional chaining.
 
 ## Data Shapes (consumed)
 - World/trackers/characterStates as emitted by backend (Orchestrator/world updates).

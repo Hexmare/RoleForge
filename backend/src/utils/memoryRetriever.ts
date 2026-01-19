@@ -35,6 +35,8 @@ export class MemoryRetriever {
   private vectorStore: VectorStoreInterface | null = null;
 
   private readonly memoryRetrieverLog = createLogger(NAMESPACES.utils.memory);
+  private readonly MAX_TOPK_DEFAULT = 12;
+  private readonly MAX_QUERY_CHARS_DEFAULT = 2000;
 
   /**
    * Initialize the memory retriever with a vector store instance
@@ -71,7 +73,13 @@ export class MemoryRetriever {
         return [];
       }
 
-      const topK = options.topK || 5;
+      const vectorCfg = new ConfigManager().getVectorConfig() || {};
+      const caps = vectorCfg.memoryCaps || {};
+      const maxTopK = Math.max(1, caps.maxTopK || this.MAX_TOPK_DEFAULT);
+      const maxQueryChars = Math.max(1, caps.maxQueryChars || this.MAX_QUERY_CHARS_DEFAULT);
+      const cappedQuery = (query || '').slice(0, maxQueryChars);
+      const requestedTopK = options.topK || 5;
+      const topK = Math.max(1, Math.min(requestedTopK, maxTopK));
       const minSimilarity = options.minSimilarity ?? 0.3;
       const memories: RetrievedMemory[] = [];
 
@@ -87,9 +95,9 @@ export class MemoryRetriever {
       
       if (options.worldId && charId) {
         const scope = `world_${options.worldId}_char_${charId}`;
-        this.memoryRetrieverLog('[MEMORY_RETRIEVER] Querying specific scope: %s, query length: %d, topK: %d, minSimilarity: %s', scope, query.length, topK, minSimilarity);
+        this.memoryRetrieverLog('[MEMORY_RETRIEVER] Querying specific scope: %s, query length: %d, topK: %d (requested %d), minSimilarity: %s', scope, cappedQuery.length, topK, requestedTopK, minSimilarity);
         try {
-          const results = await this.vectorStore.query(query, scope, topK, minSimilarity);
+          const results = await this.vectorStore.query(cappedQuery, scope, topK, minSimilarity);
           this.memoryRetrieverLog('[MEMORY_RETRIEVER] Query returned %d results for scope %s', results.length, scope);
           
           for (const entry of results) {
@@ -117,7 +125,7 @@ export class MemoryRetriever {
             const charIdVal = (typeof char === 'string') ? String(char) : (char && (char.id ? String(char.id) : (char.name ? String(char.name) : String(char))));
             const scope = `world_${options.worldId}_char_${charIdVal}`;
             try {
-              const results = await this.vectorStore.query(query, scope, topK, minSimilarity);
+              const results = await this.vectorStore.query(cappedQuery, scope, topK, minSimilarity);
               
               for (const entry of results) {
                 memories.push({
@@ -155,7 +163,7 @@ export class MemoryRetriever {
               const charIdVal = (typeof char === 'string') ? String(char) : (char && (char.id ? String(char.id) : (char.name ? String(char.name) : String(char))));
               const scope = `world_${world.id}_char_${charIdVal}`;
               try {
-                const results = await this.vectorStore.query(query, scope, topK, minSimilarity);
+                const results = await this.vectorStore.query(cappedQuery, scope, topK, minSimilarity);
                 
                 for (const entry of results) {
                   memories.push({
@@ -185,7 +193,7 @@ export class MemoryRetriever {
         if (options.worldId) {
           const multiScope = `world_${options.worldId}_multi`;
           try {
-            const results = await this.vectorStore.query(query, multiScope, 3, minSimilarity);
+            const results = await this.vectorStore.query(cappedQuery, multiScope, Math.min(topK, 3), minSimilarity);
             
             for (const entry of results) {
               memories.push({
@@ -210,7 +218,7 @@ export class MemoryRetriever {
             for (const world of allWorlds) {
               const multiScope = `world_${world.id}_multi`;
               try {
-                const results = await this.vectorStore.query(query, multiScope, 3, minSimilarity);
+                const results = await this.vectorStore.query(cappedQuery, multiScope, Math.min(topK, 3), minSimilarity);
                 
                 for (const entry of results) {
                   memories.push({

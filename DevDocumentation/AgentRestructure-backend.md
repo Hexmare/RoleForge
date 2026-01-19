@@ -61,11 +61,22 @@ Keep in sync with: [DevDocumentation/AgentRestructure-architecture.md](DevDocume
 - `memoryHelpers.ts`: nested field access, etc.
 - `logging`: namespaced logger factory.
 
-## Socket Events (expected)
-- `agentStatus` per agent start/complete; `stateUpdated` for world/trackers/character states; `roundCompleted`; director/character pass status events (to standardize in restructure). Confirm exact event names in `server.ts` and Orchestrator.
+## Socket Events (Phase 8, standardized)
+- All events include `sceneId`, `roundNumber`, and `timestamp`.
+- Round lifecycle: `roundStarted`, `roundCompleted`, `remainingActorsQueued` (when Director queues another pass).
+- Pass lifecycle: `directorPassStarted`/`directorPassCompleted` (pass: 1 or 2); `characterRunStarted`/`characterRunCompleted`; `worldUpdateStarted`/`worldUpdateCompleted`; `agentStatus` remains for compatibility.
+- State/events: `stateUpdated` (world/trackers/characterStates), `characterResponse` (per response emission).
+- Payloads carry ordered actors, activations/deactivations, and minimal state deltas for character/world updates.
 
 ## Validation & JSON Handling
 - Agent profiles: expectsJson/jsonMode/jsonSchema/jsonExample (inline schema). Prompt assembly injects return template; runtime validation via Ajv adapter; surface errors after retries. Non-JSON agents bypass.
+
+## Round Persistence & Audit (Phase 8)
+- `SceneService.updateRoundTimeline` now receives `roundTimeline` with:
+	- `roundMetadata` (acting characters, activations/deactivations, director guidance, scene summary, reconciliation snapshot).
+	- `auditLog` entries per lifecycle event (director/world/character passes, skips, validation results) with timestamps.
+	- Pass-specific blocks (`directorPass1`, `directorPass2`, `characterResponses`, `worldAgent`, `followupCharacterPass`).
+- Stored under `SceneRounds.timeline` for per-round audit and replay.
 
 ## File Pointers (quick)
 - Orchestrator: `src/agents/Orchestrator.ts`
