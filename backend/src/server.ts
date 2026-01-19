@@ -2735,21 +2735,22 @@ io.on('connection', (socket) => {
         }
       }
 
+      /* Disabled we don't need this */
       // Check for summarization trigger
-      if (sceneId) {
-        try {
-          const cfg = configManager.getConfig();
-          const interval = cfg.features?.summarizationInterval;
-          if (interval && typeof interval === 'number' && interval > 0) {
-            const messageCount = db.prepare('SELECT COUNT(*) as count FROM Messages WHERE sceneId = ?').get(sceneId) as any;
-            if (messageCount.count % interval === 0) {
-              await orchestrator.summarizeScene(sceneId, { emitStatus: true, reason: 'interval' });
-            }
-          }
-        } catch (e) {
-          console.warn('Summarization failed', e);
-        }
-      }
+      // if (sceneId) {
+      //   try {
+      //     const cfg = configManager.getConfig();
+      //     const interval = cfg.features?.summarizationInterval;
+      //     if (interval && typeof interval === 'number' && interval > 0) {
+      //       const messageCount = db.prepare('SELECT COUNT(*) as count FROM Messages WHERE sceneId = ?').get(sceneId) as any;
+      //       if (messageCount.count % interval === 0) {
+      //         await orchestrator.summarizeScene(sceneId, { emitStatus: true, reason: 'interval' });
+      //       }
+      //     }
+      //   } catch (e) {
+      //     console.warn('Summarization failed', e);
+      //   }
+      // }
 
       // Emit full response (streaming can be added later)
       socket.emit('aiResponse', { responses, lore });

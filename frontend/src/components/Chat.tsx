@@ -211,6 +211,30 @@ const Chat: React.FC<ChatProps> = ({
     }
   };
 
+  const handleResummarizeScene = async () => {
+    if (!selectedScene) return;
+    setCurrentAgent('Summarize');
+    try {
+      const response = await fetch(`/api/scenes/${selectedScene}/summarize`, { method: 'POST' });
+      let payload: any = null;
+      try { payload = await response.json(); } catch { /* ignore parse errors */ }
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to resummarize scene');
+      }
+      if (onSessionRefresh) {
+        onSessionRefresh();
+      }
+      onMessagesRefresh();
+      console.log('Scene resummarized', payload);
+    } catch (error: any) {
+      console.warn('Resummarize failed', error);
+      alert(error?.message || 'Failed to resummarize scene');
+    } finally {
+      setCurrentAgent(null);
+      setMenuOpen(false);
+    }
+  };
+
   // Listen for agent status updates
   useEffect(() => {
     if (!socket) return;
@@ -529,6 +553,13 @@ const Chat: React.FC<ChatProps> = ({
                     disabled={!selectedScene}
                   >
                     Regenerate
+                  </button>
+                  <button
+                    className="chat-menu-item"
+                    onClick={handleResummarizeScene}
+                    disabled={!selectedScene}
+                  >
+                    Re-summarize Scene
                   </button>
                 <button
                   className="chat-menu-item"

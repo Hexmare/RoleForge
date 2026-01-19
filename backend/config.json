@@ -4,7 +4,7 @@
     "visualAgentEnabled": true,
     "socketAckLogs": true,
     "summarizationInterval": 1000,
-    "maxSummaryTokens": 2000,
+    "maxSummaryTokens": 1000,
     "jsonValidationEnabled": true,
     "jsonValidationDevLog": false,
     "jsonValidationMaxRetries": 1
@@ -111,61 +111,138 @@
       "jsonSchema": {
         "type": "object",
         "properties": {
-          "openGuidance": { "type": "string" },
+          "openGuidance": {
+            "type": "string"
+          },
           "actingCharacters": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "string" },
-                "name": { "type": "string" },
-                "guidance": { "type": "string" },
-                "priority": { "type": "number" },
-                "order": { "type": "number" }
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "guidance": {
+                  "type": "string"
+                },
+                "priority": {
+                  "type": "number"
+                },
+                "order": {
+                  "type": "number"
+                }
               },
-              "required": ["name"],
+              "required": [
+                "name"
+              ],
               "additionalProperties": false
             }
           },
-          "activations": { "type": "array", "items": { "type": "string" } },
-          "deactivations": { "type": "array", "items": { "type": "string" } },
+          "activations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deactivations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "stateUpdates": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "string" },
-                "name": { "type": "string" },
-                "location": { "type": "string" },
-                "mood": { "type": "string" },
-                "clothing": { "type": "string" },
-                "activity": { "type": "string" },
-                "intentions": { "type": "string" }
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "location": {
+                  "type": "string"
+                },
+                "mood": {
+                  "type": "string"
+                },
+                "clothing": {
+                  "type": "string"
+                },
+                "activity": {
+                  "type": "string"
+                },
+                "intentions": {
+                  "type": "string"
+                }
               },
               "anyOf": [
-                { "required": ["name"] },
-                { "required": ["id"] }
+                {
+                  "required": [
+                    "name"
+                  ]
+                },
+                {
+                  "required": [
+                    "id"
+                  ]
+                }
               ],
               "additionalProperties": false
             }
           },
-          "remainingActors": { "type": "array", "items": { "type": "string" } },
-          "newActivations": { "type": "array", "items": { "type": "string" } },
-          "error": { "type": "string" }
+          "remainingActors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "newActivations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": "string"
+          }
         },
-        "required": ["openGuidance", "actingCharacters", "activations", "deactivations", "stateUpdates"],
+        "required": [
+          "openGuidance",
+          "actingCharacters",
+          "activations",
+          "deactivations",
+          "stateUpdates"
+        ],
         "additionalProperties": false
       },
       "jsonExample": {
         "openGuidance": "Keep the scene tight and reactive.",
         "actingCharacters": [
-          { "name": "Rin", "guidance": "Lead the exchange with a bold move.", "priority": 3 }
+          {
+            "name": "Rin",
+            "guidance": "Lead the exchange with a bold move.",
+            "priority": 3
+          }
         ],
-        "activations": ["Rin"],
+        "activations": [
+          "Rin"
+        ],
         "deactivations": [],
         "stateUpdates": [
-          { "name": "Rin", "mood": "focused", "intentions": "test boundaries" }
+          {
+            "name": "Rin",
+            "mood": "focused",
+            "intentions": "test boundaries"
+          }
         ]
+      },
+      "sampler": {
+        "max_completion_tokens": 1024
       }
     },
     "world": {
@@ -184,7 +261,7 @@
       "llmProfile": "default",
       "returnsJson": false,
       "sampler": {
-        "max_completion_tokens": 1024
+        "max_completion_tokens": 2048
       }
     },
     "visual": {

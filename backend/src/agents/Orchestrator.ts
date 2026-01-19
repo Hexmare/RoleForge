@@ -687,12 +687,25 @@ export class Orchestrator {
 
   private buildContextEnvelope(sceneId: number, requestType: 'user' | 'continuation', overrides?: Partial<BuildAgentContextEnvelopeOptions>) {
     const features = this.configManager.getConfig().features || {};
+    // Always fetch the latest summary from the database for this scene
+    let latestSummary: string | undefined = undefined;
+    try {
+      const sceneRow = this.db.prepare('SELECT summary FROM Scenes WHERE id = ?').get(sceneId) as any;
+      if (sceneRow && sceneRow.summary && typeof sceneRow.summary === 'string' && sceneRow.summary.trim().length > 0) {
+        latestSummary = sceneRow.summary;
+        this.sceneSummary = sceneRow.summary;
+      }
+    } catch (e) {
+      // If DB fails, fallback to current in-memory summary
+      latestSummary = this.sceneSummary;
+    }
     return buildAgentContextEnvelope({
       db: this.db,
       sceneId,
       requestType,
       historyWindow: features.historyWindowMessages,
       summarizationTrigger: features.summarizationTriggerMessages,
+      summarizedHistory: latestSummary ? [latestSummary] : undefined,
       ...overrides
     });
   }
