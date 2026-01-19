@@ -138,8 +138,28 @@ function App() {
     });
 
     socket.on('stateUpdated', (data: any) => {
-      // merge into sessionContext.worldState or set trackers
-      setSessionContext((prev: any) => ({ ...prev, scene: { ...prev?.scene, characterStates: data.characterStates || prev?.scene?.characterStates }, worldState: data.state || prev?.worldState, trackers: data.trackers || prev?.trackers }));
+      // merge into sessionContext and keep activeCharacters in sync when provided
+      const nextActive = Array.isArray(data.activeCharacters)
+        ? data.activeCharacters
+        : undefined;
+
+      if (nextActive && data.sceneId === selectedSceneRef.current) {
+        // normalize payload of objects or ids to ids
+        const normalized = nextActive.map((c: any) => (c && typeof c === 'object' ? c.id || c.name || c : c));
+        setActiveCharacters(normalized);
+      }
+
+      setSessionContext((prev: any) => ({
+        ...prev,
+        scene: {
+          ...prev?.scene,
+          characterStates: data.characterStates || prev?.scene?.characterStates,
+          worldState: data.sceneWorldState || prev?.scene?.worldState,
+          activeCharacters: nextActive || prev?.scene?.activeCharacters
+        },
+        worldState: data.state || prev?.worldState,
+        trackers: data.trackers || prev?.trackers
+      }));
     });
 
     socket.on('characterOverrideChanged', (data: any) => {
@@ -588,9 +608,17 @@ function App() {
       setIsStreaming(false);
     });
 
-    socket.on('activeCharactersUpdated', (data: { sceneId: number; activeCharacters: string[] }) => {
+    socket.on('activeCharactersUpdated', (data: { sceneId: number; activeCharacters: any[] }) => {
       if (data.sceneId === selectedScene) {
-        setActiveCharacters(data.activeCharacters);
+        const normalized = (data.activeCharacters || []).map((c: any) => (c && typeof c === 'object' ? c.id || c.name || c : c));
+        setActiveCharacters(normalized);
+        setSessionContext((prev: any) => ({
+          ...prev,
+          scene: {
+            ...prev?.scene,
+            activeCharacters: data.activeCharacters || normalized
+          }
+        }));
       }
     });
 

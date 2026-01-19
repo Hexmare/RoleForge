@@ -148,7 +148,10 @@
               ],
               "additionalProperties": false
             }
-          }
+          },
+          "remainingActors": { "type": "array", "items": { "type": "string" } },
+          "newActivations": { "type": "array", "items": { "type": "string" } },
+          "error": { "type": "string" }
         },
         "required": ["openGuidance", "actingCharacters", "activations", "deactivations", "stateUpdates"],
         "additionalProperties": false

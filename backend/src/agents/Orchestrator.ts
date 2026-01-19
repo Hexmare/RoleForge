@@ -1005,6 +1005,7 @@ export class Orchestrator {
     const activeCharacterIds = directorApplication.activeCharacterIds;
     if (sceneId && activeCharacterIds.length > 0) {
       SceneService.update(sceneId, { activeCharacters: activeCharacterIds, characterStates });
+      this.emitSceneEvent('activeCharactersUpdated', { sceneId, activeCharacters: activeCharacterIds }, sceneId);
     }
 
     // Refresh resolved active characters for downstream agents
@@ -1013,6 +1014,8 @@ export class Orchestrator {
       if (rehydrated.length > 0) {
         sessionContext.activeCharacters = rehydrated;
       }
+      // Emit resolved active characters for frontend panels
+      this.emitSceneEvent('activeCharactersUpdated', { sceneId, activeCharacters: sessionContext.activeCharacters }, sceneId);
     }
     sessionContext.scene.characterStates = characterStates;
     if (context.contextEnvelope) {
@@ -1575,6 +1578,7 @@ export class Orchestrator {
         if (rehydrated.length > 0) {
           sessionContext.activeCharacters = rehydrated;
         }
+        this.emitSceneEvent('activeCharactersUpdated', { sceneId, activeCharacters: sessionContext.activeCharacters }, sceneId);
       }
       this.characterStates = characterStates;
       this.emitSceneEvent('stateUpdated', { characterStates: this.characterStates }, sceneId);
