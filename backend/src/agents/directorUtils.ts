@@ -200,7 +200,12 @@ export function applyDirectorPlan(plan: DirectorPlan, sessionContext: SessionCon
     }
   }
 
-  const charactersToRespond = orderedActors.map((c) => c.name).filter((n): n is string => !!n);
+  let charactersToRespond = orderedActors.map((c) => c.name).filter((n): n is string => !!n);
+
+  // Fallback: if the Director provided activations but no actingCharacters, let activations act this turn
+  if (charactersToRespond.length === 0 && resolvedActivations.length > 0) {
+    charactersToRespond = resolvedActivations.map((a) => a.name).filter((n) => !!n);
+  }
   const activeCharacterIds = Array.from(activeSet);
 
   return {

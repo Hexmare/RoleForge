@@ -36,4 +36,16 @@ describe('director plan normalization and application', () => {
     expect(result.updatedStates.Alice?.location).toBe('town');
     expect(result.updatedStates.Alice?.mood).toBeUndefined();
   });
+
+  it('treats activations as actors when actingCharacters is empty', () => {
+    const raw = normalizeDirectorPlan({
+      actingCharacters: [],
+      activations: ['Zara']
+    });
+    const session = { world: { id: 1 }, campaign: { id: 1 }, activeCharacters: [] } as any;
+    const result = applyDirectorPlan(raw, session, {}, (ref: string) => ({ name: ref }));
+
+    expect(result.charactersToRespond).toEqual(['Zara']);
+    expect(result.activations[0]?.name).toBe('Zara');
+  });
 });

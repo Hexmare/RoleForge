@@ -8,6 +8,28 @@ import { createLogger, NAMESPACES } from '../logging';
 
 const sceneLog = createLogger(NAMESPACES.services.scene);
 
+// Cache for schema checks to avoid repeated PRAGMA calls
+let hasSceneRoundsTimelineColumn: boolean | null = null;
+
+const ensureSceneRoundsTimelineColumn = (): void => {
+  if (hasSceneRoundsTimelineColumn) {
+    return;
+  }
+
+  try {
+    const columns = db.prepare("PRAGMA table_info('SceneRounds')").all() as Array<{ name: string }>;
+    const hasColumn = columns.some((c) => c.name === 'timeline');
+    if (!hasColumn) {
+      sceneLog('[SCENE_SERVICE] Adding missing SceneRounds.timeline column');
+      db.prepare('ALTER TABLE SceneRounds ADD COLUMN timeline JSON').run();
+    }
+    hasSceneRoundsTimelineColumn = true;
+  } catch (error) {
+    sceneLog('[SCENE_SERVICE] Failed to ensure SceneRounds.timeline column: %o', error);
+    throw error;
+  }
+};
+
 export const SceneService = {
   create(arcId: number, title: string, description?: string, location?: string, timeOfDay?: string, orderIndex?: number) {
     // determine next orderIndex if not provided
@@ -392,6 +414,9 @@ export const SceneService = {
   },
 
   updateRoundTimeline(sceneId: number, roundNumber: number, timeline: any): void {
+    // Ensure the timeline column exists (handles older databases without migration 007 applied)
+    ensureSceneRoundsTimelineColumn();
+
     const payload = timeline === undefined ? null : JSON.stringify(timeline);
     const existing = db.prepare(
       'SELECT id FROM SceneRounds WHERE sceneId = ? AND roundNumber = ?'

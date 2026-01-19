@@ -1084,18 +1084,6 @@ export class Orchestrator {
     }
     orchestratorLog('Character states after initialization:', Object.keys(characterStates));
     
-    // Parse user actions for outfit updates
-    if (userInput.includes('takes off his shirt') || userInput.includes('takes his shirt off')) {
-      if (characterStates['Hex']) {
-        characterStates['Hex'].clothingWorn = 'pants, shoes, socks';
-      }
-    }
-    if (userInput.includes('takes off his pants') || userInput.includes('takes his pants off') || userInput.includes('leaving him in his underwear')) {
-      if (characterStates['Hex']) {
-        characterStates['Hex'].clothingWorn = 'underwear, shoes, socks';
-      }
-    }
-    
     // Step 3: World state update
     if (worldAgentEnabled) {
       const worldAgent = this.agents.get('world');

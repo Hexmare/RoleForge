@@ -4,5 +4,6 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true, // So we don't need to import describe, it, etc.
+    setupFiles: ['src/__tests__/setup-env.ts'],
   },
 });
