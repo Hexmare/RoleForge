@@ -22,9 +22,17 @@ if (!fs.existsSync(charactersDbDir)) {
 }
 const charactersDb = new Database(charactersDbPath) as any;
 
-// Enable WAL mode for better concurrency
-db.pragma('journal_mode = WAL');
-charactersDb.pragma('journal_mode = WAL');
+// Enable WAL mode for better concurrency; fall back quietly if unavailable (e.g., sandboxed test FS)
+try {
+  db.pragma('journal_mode = WAL');
+} catch (e) {
+  console.warn('Failed to enable WAL on primary db, continuing with default mode:', e instanceof Error ? e.message : String(e));
+}
+try {
+  charactersDb.pragma('journal_mode = WAL');
+} catch (e) {
+  console.warn('Failed to enable WAL on characters db, continuing with default mode:', e instanceof Error ? e.message : String(e));
+}
 
 // Create characters table in characters.db
 charactersDb.exec(`

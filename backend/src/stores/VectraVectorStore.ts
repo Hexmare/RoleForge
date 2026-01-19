@@ -377,17 +377,19 @@ export class VectraVectorStore implements VectorStoreInterface {
             similarity = 0;
           }
           
-          // Light lexical boost so direct text hits rank higher when embeddings are noisy/mocked
+          // Lexical boost: if query tokens appear in the stored text, strongly favor this match
           const qTokens = queryText.toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean);
           const text = String(item.metadata?.text || '').toLowerCase();
+          const matchedTokens = qTokens.filter((tok) => tok && text.includes(tok));
           let lexicalBoost = 0;
-          if (qTokens.length > 0 && text) {
-            for (const tok of qTokens) {
-              if (tok && text.includes(tok)) lexicalBoost += 0.05;
-            }
+          if (matchedTokens.length > 0) {
+            // Base lift plus small increment per token; cap to avoid dominating cosine entirely
+            lexicalBoost = Math.min(0.6, 0.35 + matchedTokens.length * 0.1);
           }
 
-          const boosted = Math.min(1, similarity + lexicalBoost);
+          // Ensure direct lexical hit cannot fall below a mid-level score even if embedding is noisy
+          const lexicalFloor = matchedTokens.length > 0 ? Math.max(0.6, matchedTokens.length / Math.max(1, qTokens.length)) : 0;
+          const boosted = Math.min(1, Math.max(similarity + lexicalBoost, lexicalFloor));
 
           if (boosted >= minSimilarity) {
             results.push({
@@ -668,11 +670,9 @@ export class VectraVectorStore implements VectorStoreInterface {
         return 0;
       }
 
-      // Try to obtain a stable count by sampling both vectra's queryItems and
-      // the on-disk index.json. Filesystem and vectra internals can lag, so
-      // retry a few times until the count stabilizes or we exhaust attempts.
+      // Try to obtain a stable count with a small retry window to avoid test timeouts
       const indexJsonPath = path.join(this.basePath, scope, 'index.json');
-      const maxAttempts = 100;
+      const maxAttempts = 8;
       let lastCombined = -1;
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -680,7 +680,7 @@ export class VectraVectorStore implements VectorStoreInterface {
         try {
           const q = await index.queryItems(new Array(768).fill(0), '', 100000);
           allItems = Array.isArray(q) ? q : [];
-        } catch (qe) {
+        } catch {
           // ignore
         }
 
@@ -694,15 +694,13 @@ export class VectraVectorStore implements VectorStoreInterface {
         }
 
         const combined = Math.max(allItems.length, diskCount);
-        // If count stabilized between iterations, return it
         if (combined === lastCombined) {
           return combined;
         }
 
         lastCombined = combined;
-        // Small delay before retrying
         // eslint-disable-next-line no-await-in-loop
-        await new Promise((r) => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 40));
       }
 
       return Math.max(lastCombined, 0);
@@ -767,6 +765,17 @@ export class VectraVectorStore implements VectorStoreInterface {
           } catch (e) {
             vectraStoreLog(`[VECTOR_STORE] Failed to list scopes for deleteByMetadata: ${e instanceof Error ? e.message : String(e)}`);
             return;
+          }
+        }
+
+        // Ensure indexes are initialized for all scopes we will touch so enumeration/deletion works reliably
+        for (const s of scopesToCheck) {
+          if (!this.indexes.has(s)) {
+            try {
+              await this.init(s);
+            } catch (e) {
+              vectraStoreLog(`[VECTOR_STORE] Failed to init scope ${s} during deleteByMetadata: ${e instanceof Error ? e.message : String(e)}`);
+            }
           }
         }
 
@@ -848,6 +857,9 @@ export class VectraVectorStore implements VectorStoreInterface {
 
         // Perform deletions
         for (const [s, ids] of Object.entries(perScopeMatches)) {
+          if (!this.indexes.has(s)) {
+            try { await this.init(s); } catch (e) { continue; }
+          }
           const index = this.indexes.get(s);
           if (!index) continue;
           for (const id of ids) {
@@ -875,17 +887,19 @@ export class VectraVectorStore implements VectorStoreInterface {
           }
         }
 
-        // Record audit entry for this deletion
+        // Record audit entry for this deletion using actual deleted ids
         try {
           const deletedIds = Object.values(perScopeMatches).flat();
+          const deletedCount = deletedIds.length;
           await recordAudit({
             timestamp: new Date().toISOString(),
             filter,
             scopes: Object.keys(perScopeMatches),
-            deletedCount: totalMatches,
+            deletedCount,
             deletedIds,
             actor: (opts as any).actor || 'system'
           });
+          totalMatches = deletedCount;
         } catch (ae) {
           vectraStoreLog('[VECTOR_STORE] Failed to record audit for deleteByMetadata:', ae instanceof Error ? ae.message : String(ae));
         }

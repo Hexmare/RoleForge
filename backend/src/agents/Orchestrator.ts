@@ -27,6 +27,7 @@ import { getNestedField } from '../utils/memoryHelpers.js';
 import { buildAgentContextEnvelope, BuildAgentContextEnvelopeOptions } from './context/contextBuilder.js';
 import { AgentContextEnvelope } from './context/types.js';
 import { tokenTelemetry } from '../utils/tokenTelemetry.js';
+import { countTokens } from '../utils/tokenCounter.js';
 
 const orchestratorLog = createLogger(NAMESPACES.agents.orchestrator);
 
@@ -124,6 +125,74 @@ export class Orchestrator {
     }
   }
 
+  // Generate and persist a scene summary using the SummarizeAgent
+  public async summarizeScene(sceneId: number, options?: { emitStatus?: boolean; force?: boolean; reason?: string }): Promise<{ summary: string; tokenCount: number } | null> {
+    try {
+      const summarizeAgent = this.agents.get('summarize');
+      if (!summarizeAgent) return null;
+
+      const cfg = this.configManager.getConfig();
+      const maxSummaryTokens = cfg.features?.maxSummaryTokens || 500;
+
+      const sceneRow = this.db.prepare('SELECT summary, lastSummarizedMessageId FROM Scenes WHERE id = ?').get(sceneId) as any;
+      const existingSummary = sceneRow?.summary || '';
+      const lastSummarizedId = sceneRow?.lastSummarizedMessageId || 0;
+
+      const messages = MessageService.getMessages(sceneId, 1000, 0) || [];
+      if (messages.length === 0) return null;
+
+      const newMessages = options?.force ? messages : messages.filter((m: any) => (m.id || 0) > lastSummarizedId);
+      if (!options?.force && newMessages.length === 0) {
+        return null;
+      }
+
+      const chronological = [...newMessages].sort((a: any, b: any) => {
+        const aNum = typeof a.messageNumber === 'number' ? a.messageNumber : a.id || 0;
+        const bNum = typeof b.messageNumber === 'number' ? b.messageNumber : b.id || 0;
+        return aNum - bNum;
+      });
+
+      const historyText = chronological.map((m: any) => `${m.sender}: ${m.message}`).join('\n');
+      if (!historyText && !options?.force) {
+        return null;
+      }
+
+      if (options?.emitStatus) this.emitAgentStatus('Summarize', 'start', sceneId);
+
+      const context: AgentContext = {
+        userInput: '',
+        history: [historyText],
+        worldState: {},
+        existingSummary: existingSummary || undefined,
+        maxSummaryTokens
+      } as AgentContext;
+
+      const summary = await summarizeAgent.run(context);
+      if (!summary) {
+        if (options?.emitStatus) this.emitAgentStatus('Summarize', 'complete', sceneId);
+        return null;
+      }
+
+      const tokenCount = countTokens(summary as string);
+      const targetMessages = newMessages.length > 0 ? newMessages : messages;
+      const latestId = targetMessages.reduce((max: number, m: any) => Math.max(max, Number(m.id) || 0), lastSummarizedId);
+
+      this.db.prepare('UPDATE Scenes SET summary = ?, summaryTokenCount = ?, lastSummarizedMessageId = ? WHERE id = ?')
+        .run(summary, tokenCount, latestId, sceneId);
+
+      this.sceneSummary = summary as string;
+
+      this.emitSceneEvent('sceneUpdated', { sceneId, summary, summaryTokenCount: tokenCount, reason: options?.reason || 'auto' }, sceneId);
+      if (options?.emitStatus) this.emitAgentStatus('Summarize', 'complete', sceneId);
+
+      return { summary: summary as string, tokenCount };
+    } catch (error) {
+      orchestratorLog('[ORCHESTRATOR] summarizeScene failed for scene %d: %o', sceneId, error);
+      if (options?.emitStatus) this.emitAgentStatus('Summarize', 'complete', sceneId);
+      return null;
+    }
+  }
+
   // Task 4.2: Complete the current round
   // Completes previous round, advances round number, creates new round record
   async completeRound(sceneId: number, activeCharacters?: string[]): Promise<number> {
@@ -165,6 +234,12 @@ export class Orchestrator {
             orchestratorLog('[ORCHESTRATOR] VectorizationAgent failed for round %d: %o', this.currentRoundNumber, err);
           });
         }
+      }
+
+      try {
+        await this.summarizeScene(sceneId, { emitStatus: true, reason: 'round-complete' });
+      } catch (summaryErr) {
+        orchestratorLog('[ORCHESTRATOR] Summarization after round %d failed: %o', this.currentRoundNumber, summaryErr);
       }
 
       // 4. Increment round for next cycle in Orchestrator state (database already done)

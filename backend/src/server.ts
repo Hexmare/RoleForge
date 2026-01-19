@@ -26,7 +26,6 @@ import { tryParse, unwrapPrompt } from './utils/unpackPrompt';
 import axios from 'axios';
 import debug from 'debug';
 import { randomBytes, randomUUID } from 'crypto';
-import { countTokens } from './utils/tokenCounter.js';
 import * as jobStore from './jobs/jobStore.js';
 import * as auditLog from './jobs/auditLog.js';
 import { getNestedField } from './utils/memoryHelpers.js';
@@ -491,58 +490,18 @@ app.get('/api/lorebooks/:uuid/export', (req, res) => {
 app.post('/api/scenes/:sceneId/summarize', async (req, res) => {
   const { sceneId } = req.params;
   try {
-    const cfg = configManager.getConfig();
-    const sceneData = db.prepare('SELECT summary, lastSummarizedMessageId FROM Scenes WHERE id = ?').get(sceneId) as any;
-    if (!sceneData) return res.status(404).json({ error: 'Scene not found' });
+    const sceneRow = db.prepare('SELECT id FROM Scenes WHERE id = ?').get(sceneId) as any;
+    if (!sceneRow) return res.status(404).json({ error: 'Scene not found' });
 
-    const existingSummary = sceneData?.summary || '';
-    const lastSummarizedId = sceneData?.lastSummarizedMessageId || 0;
-    
-    // Get new messages since last summarization
-    const newMessages = MessageService.getMessages(Number(sceneId), 1000, 0).filter((m: any) => m.id > lastSummarizedId);
-    const history = newMessages.map((m: any) => `${m.sender}: ${m.message}`).join('\n');
-    
-    const context = {
-      userInput: '', // Not needed for summarization
-      history: [history],
-      worldState: {},
-      existingSummary: existingSummary || undefined,
-      maxSummaryTokens: cfg.features?.maxSummaryTokens || 500
-    };
+    const result = await orchestrator.summarizeScene(Number(sceneId), { emitStatus: true, force: true, reason: 'manual-endpoint' });
 
-    // Emit agent status start
-    io.to(`scene-${sceneId}`).emit('agentStatus', { agent: 'Summarize', status: 'start' });
-    
-    const summary = await orchestrator.getAgent('summarize')?.run(context);
-    
-    if (summary) {
-      // Calculate token count using proper GPT tokenization
-      const tokenCount = countTokens(summary);
-      
-      // Get the latest message ID
-      const latestMessage = db.prepare('SELECT id FROM Messages WHERE sceneId = ? ORDER BY id DESC LIMIT 1').get(sceneId) as any;
-      
-      // Update scene with new summary
-      db.prepare('UPDATE Scenes SET summary = ?, summaryTokenCount = ?, lastSummarizedMessageId = ? WHERE id = ?').run(
-        summary, tokenCount, latestMessage?.id || 0, sceneId
-      );
-      
-      // Emit agent status complete
-      io.to(`scene-${sceneId}`).emit('agentStatus', { agent: 'Summarize', status: 'complete' });
-      
-      // Emit scene update to clients
-      io.to(`scene-${sceneId}`).emit('sceneUpdated', { sceneId: Number(sceneId), summary, summaryTokenCount: tokenCount });
-      
-      res.json({ success: true, summary, tokenCount });
+    if (result) {
+      res.json({ success: true, summary: result.summary, tokenCount: result.tokenCount });
     } else {
-      // Emit agent status complete on failure too
-      io.to(`scene-${sceneId}`).emit('agentStatus', { agent: 'Summarize', status: 'complete' });
       res.status(500).json({ error: 'Failed to generate summary' });
     }
   } catch (e) {
     console.error('Manual summarization failed:', e);
-    // Emit agent status complete on error
-    io.to(`scene-${sceneId}`).emit('agentStatus', { agent: 'Summarize', status: 'complete' });
     res.status(500).json({ error: 'Summarization failed' });
   }
 });
@@ -698,6 +657,12 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
     } catch (e) {
       console.warn('[REGENERATE] Failed to re-vectorize round:', e);
       // Non-blocking - don't fail the regenerate if vectorization fails
+    }
+
+    try {
+      await orchestrator.summarizeScene(sceneIdNum, { emitStatus: true, force: true, reason: 'regenerate-round' });
+    } catch (e) {
+      regenLog('[REGENERATE] Summarization after regeneration failed: %o', e);
     }
     
     return res.json({ regenerated });
@@ -1682,56 +1647,15 @@ app.put('/api/characters/:id', (req, res) => {
 app.post('/api/characters/import', async (req, res) => {
   const { card, directions } = req.body;
   try {
-    // Call CreatorAgent
-    const orchestrator = new Orchestrator(configManager, env, db, io);
-    const context: AgentContext = {
-      userInput: '',
-      history: [],
-      worldState: {},
-      character: card,
-      creationRequest: directions,
-      maxCompletionTokens: 2000
-    };
-    const result = await orchestrator.createCharacter(context);
-    const generatedChar = JSON.parse(result);
-    // Save to charactersDb
-    const id = generatedChar.id || `char-${Date.now()}`;
-    CharacterService.saveBaseCharacter(id, generatedChar);
-    res.json({ id });
-  } catch (error) {
-    console.error('Import error:', error);
-    res.status(500).json({ error: 'Failed to import character' });
-  }
-});
+    const result = await orchestrator.summarizeScene(Number(sceneId), { emitStatus: true, force: true, reason: 'manual-endpoint' });
 
-app.post('/api/characters/generate', async (req, res) => {
-  const { name, description, instructions } = req.body;
-  try {
-    const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'Character_Schema.json'), 'utf8'));
-    const orchestrator = new Orchestrator(configManager, env, db, io);
-    const context = {
-      mode: 'create',
-      name,
-      description,
-      instructions,
-      schema: JSON.stringify(schema),
-      maxCompletionTokens: 2000,
-      userInput: '',
-      history: [],
-      worldState: {}
-    };
-    const result = await orchestrator.createCharacter(context);
-    const generatedChar = JSON.parse(result);
-    // Generate UUID for new character
-    const charWithId = { ...generatedChar, id: randomUUID() };
-    const id = CharacterService.saveBaseCharacter(charWithId.id, charWithId, charWithId.avatarUrl || charWithId.avatar);
-    res.json({ id });
-  } catch (error) {
-    console.error('Generate error:', error);
+    if (result) {
+      res.json({ success: true, summary: result.summary, tokenCount: result.tokenCount });
+    } else {
+      res.status(500).json({ error: 'Failed to generate summary' });
+    }
     res.status(500).json({ error: 'Failed to generate character' });
   }
-});
-
 app.post('/api/characters/import', async (req, res) => {
   const { card, directions } = req.body;
   try {
@@ -2831,44 +2755,7 @@ io.on('connection', (socket) => {
           if (interval && typeof interval === 'number' && interval > 0) {
             const messageCount = db.prepare('SELECT COUNT(*) as count FROM Messages WHERE sceneId = ?').get(sceneId) as any;
             if (messageCount.count % interval === 0) {
-              // Get scene data for existing summary
-              const sceneData = db.prepare('SELECT summary, lastSummarizedMessageId FROM Scenes WHERE id = ?').get(sceneId) as any;
-              const existingSummary = sceneData?.summary || '';
-              const lastSummarizedId = sceneData?.lastSummarizedMessageId || 0;
-              
-              // Get new messages since last summarization
-              const newMessages = MessageService.getMessages(sceneId, 1000, 0).filter((m: any) => m.id > lastSummarizedId);
-              const history = newMessages.map((m: any) => `${m.sender}: ${m.message}`).join('\n');
-              
-              const context = {
-                userInput: '', // Not needed for summarization
-                history: [history],
-                worldState: {},
-                existingSummary: existingSummary || undefined,
-                maxSummaryTokens: cfg.features?.maxSummaryTokens || 500
-              };
-              
-              // Emit agent status start
-              io.to(`scene-${sceneId}`).emit('agentStatus', { agent: 'Summarize', status: 'start' });
-              
-              const summary = await orchestrator.getAgent('summarize')?.run(context);
-              
-              if (summary) {
-                // Calculate token count using proper GPT tokenization
-                const tokenCount = countTokens(summary);
-                
-                // Get the latest message ID
-                const latestMessage = db.prepare('SELECT id FROM Messages WHERE sceneId = ? ORDER BY id DESC LIMIT 1').get(sceneId) as any;
-                
-                // Update scene with new summary
-                db.prepare('UPDATE Scenes SET summary = ?, summaryTokenCount = ?, lastSummarizedMessageId = ? WHERE id = ?').run(
-                  summary, tokenCount, latestMessage?.id || 0, sceneId
-                );
-                serverLog(`Summarized scene ${sceneId} after ${messageCount.count} messages (${tokenCount} tokens)`);
-              }
-              
-              // Emit agent status complete
-              io.to(`scene-${sceneId}`).emit('agentStatus', { agent: 'Summarize', status: 'complete' });
+              await orchestrator.summarizeScene(sceneId, { emitStatus: true, reason: 'interval' });
             }
           }
         } catch (e) {
