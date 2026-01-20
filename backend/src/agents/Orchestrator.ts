@@ -1616,8 +1616,10 @@ export class Orchestrator {
       this.emitSceneEvent('stateUpdated', { characterStates: this.characterStates }, sceneId);
     }
 
-    // Director reconciliation pass (post-character) always runs when a scene is active
-    if (sceneId) {
+    // Director reconciliation pass (post-character) runs only after characters have acted/responded
+    const anyCharacterActed = Object.values(characterStates || {}).some((state: any) => !!state?.hasActedThisRound);
+    const anyResponses = (responses?.length || 0) > 0;
+    if (sceneId && (anyCharacterActed || anyResponses)) {
       const actedThisRound = Object.entries(characterStates)
         .filter(([, state]) => (state as any)?.hasActedThisRound)
         .map(([name]) => name);

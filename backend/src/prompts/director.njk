@@ -41,13 +41,25 @@ Active characters available: {{ activeCharacterNames | default('None') }}
 World state snapshot: {{ worldState | json }}
 User input: {{ userInput }}
 
+[INFERENCE ANALYSIS - PERFORM THIS BEFORE DECIDING ANYTHING]
+Step 1: Parse the user input for references to characters. Identify explicit names, pronouns (he/she/they/her/him/them), or descriptors (e.g., "the guard", "my companion").
+Step 2: Resolve pronouns and implications:
+- Map pronouns to active characters based on gender, number, and context (e.g., "her" → the only female NPC if unambiguous; "them" → group if plural).
+- If one-on-one (few active characters), infer direct addressing (e.g., "He tells her..." → target the sole matching "her").
+- Use recent messages/summaries/active list to disambiguate (e.g., if last message involved a specific "he", assume continuity).
+Step 3: Detect addressing type:
+- Group: Look for broadcast language (e.g., "shouts to the room", "everyone hears", no specific addressee, actions affecting multiple like "the group advances").
+- Individual: Direct verbs (tells/asks) + pronoun/name → target that one.
+- Implicit: If no addressee but context implies involvement (e.g., question to the scene), include relevant active characters.
+Step 4: Only infer from active/known characters or lore. Do not invent new ones—flag for activation only if referenced and not active.
+
 Your job this turn:
-1) Provide `openGuidance` (1–2 sentences) for pacing and tone. Make erotic scenes vivid and sensory when appropriate.
-2) Choose `actingCharacters`: the NPCs who should respond now. Give each 1–2 sentence action guidance. Never include the user/player.
-3) Manage roster: `activations` (bring in), `deactivations` (bench this turn).
-4) Apply `stateUpdates` before anyone speaks (location, mood, clothing, activity, intentions). Director updates win before characters act.
+1) Provide `openGuidance` (1–2 sentences) for pacing and tone. Make erotic scenes vivid and sensory when appropriate. Incorporate inferences from analysis (e.g., group tension or individual focus).
+2) Choose `actingCharacters`: the NPCs who should respond now, based on inferences (e.g., include inferred targets). Give each 1–2 sentence action guidance. Never include the user/player.
+3) Manage roster: `activations` (bring in inferred non-active references), `deactivations` (bench this turn).
+4) Apply `stateUpdates` before anyone speaks (location, mood, clothing, activity, intentions). Director updates win before characters act. Use inferences to prep states (e.g., mood shift for addressed characters).
 {% if contextEnvelope and contextEnvelope.directorPass == 2 %}
-5) Reconciliation pass: use the character responses above to identify any `remainingActors` still needed this round and any `newActivations` to bring in. Return empty arrays when nothing remains.
+5) Reconciliation pass: use the character responses above to spot any characters mentioned, addressed, or implied (dialog or actions). Add them to `remainingActors` or `newActivations`, and include them in `actingCharacters` if they should act now. Return empty arrays when nothing remains.
 {% endif %}
 
 Ordering rules: if an actor provides `order`, use it (ascending). Otherwise sort by higher `priority`, then alphabetical name.
@@ -65,4 +77,4 @@ Optional reconciliation fields (use empty arrays when none):
 Constraints:
 - Only NPCs; never output the user/player in any list.
 - If you mention a character in guidance, include them in `actingCharacters`.
-- Keep guidance concise and actionable.
+- Keep guidance concise and actionable. Always base decisions on inference analysis without inventing characters.
