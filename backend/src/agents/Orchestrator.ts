@@ -1089,6 +1089,10 @@ export class Orchestrator {
     }
 
     let directorPlan = directorParsed ? normalizeDirectorPlan(directorParsed) : normalizeDirectorPlan({ openGuidance: directorOutput });
+    orchestratorLog('[DIRECTOR PASS1] mentions -> acting:%s activations:%s deactivations:%s',
+      JSON.stringify((directorPlan.actingCharacters || []).map((a: any) => a.name || a.id)),
+      JSON.stringify(directorPlan.activations || []),
+      JSON.stringify(directorPlan.deactivations || []));
     if (!directorParsed) {
       orchestratorLog('DirectorAgent failed to parse/repair JSON after', directorRetries, 'attempts:', directorLastError);
       const guidanceMatch = directorOutput.match(/Guidance:\s*(.+?)(?:\n|$)/i);
@@ -1680,6 +1684,12 @@ export class Orchestrator {
       }
 
       let directorReconPlan = directorReconParsed ? normalizeDirectorPlan(directorReconParsed) : normalizeDirectorPlan({ openGuidance: directorReconOutput });
+      orchestratorLog('[DIRECTOR PASS2] mentions -> acting:%s activations:%s deactivations:%s remaining:%s newActivations:%s',
+        JSON.stringify((directorReconPlan.actingCharacters || []).map((a: any) => a.name || a.id)),
+        JSON.stringify(directorReconPlan.activations || []),
+        JSON.stringify(directorReconPlan.deactivations || []),
+        JSON.stringify(directorReconPlan.remainingActors || []),
+        JSON.stringify(directorReconPlan.newActivations || []));
       if (!directorReconParsed) {
         orchestratorLog('DirectorAgent reconciliation failed to parse/repair JSON after', directorReconRetries, 'attempts:', directorReconLastError);
         const guidanceMatch = directorReconOutput.match(/Guidance:\s*(.+?)(?:\n|$)/i);
