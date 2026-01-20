@@ -1242,6 +1242,7 @@ function App() {
                 onUpdateMessage={updateMessageContent}
                 onMessagesRefresh={() => selectedScene && loadMessages(selectedScene)}
                 onSessionRefresh={refreshSessionContext}
+                summarizationEnabled={Boolean(debugConfig?.features?.summarizationEnabled)}
                 socket={socket}
               />
             )}

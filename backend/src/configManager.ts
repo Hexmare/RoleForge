@@ -61,7 +61,9 @@ export interface Config {
     visualAgentEnabled?: boolean;
     worldAgentEnabled?: boolean;
     socketAckLogs?: boolean;
+    summarizationEnabled?: boolean;
     summarizationInterval?: number;
+    summarizationRoundInterval?: number;
     maxSummaryTokens?: number;
     historyWindowMessages?: number;
     summarizationTriggerMessages?: number;

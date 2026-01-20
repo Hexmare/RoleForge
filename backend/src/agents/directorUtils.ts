@@ -58,7 +58,8 @@ function defaultResolver(sessionContext: SessionContext): CharacterResolver {
   return (ref: string) => {
     if (!ref) return null;
     const normalized = String(ref).trim();
-    const activeMatch = (sessionContext.activeCharacters || []).find((c) => c && (c.id === normalized || (c.name || '').toLowerCase() === normalized.toLowerCase()));
+    const lower = normalized.toLowerCase();
+    const activeMatch = (sessionContext.activeCharacters || []).find((c) => c && ((c.id && String(c.id) === normalized) || (c.name || '').toLowerCase() === lower));
     if (activeMatch) {
       return { id: activeMatch.id, name: activeMatch.name || normalized };
     }
@@ -128,7 +129,8 @@ export function orderActingCharacters(plan: DirectorPlan, resolver?: CharacterRe
     .map(({ _index, ...rest }) => rest);
 }
 
-export function applyDirectorPlan(plan: DirectorPlan, sessionContext: SessionContext, existingStates: Record<string, any>, resolveCharacter?: CharacterResolver): DirectorApplicationResult {
+export function applyDirectorPlan(plan: DirectorPlan, sessionContext: SessionContext, existingStates: Record<string, any>, resolveCharacter?: CharacterResolver): DirectorApplicationResult 
+{
   const resolver = resolveCharacter || defaultResolver(sessionContext);
   const orderedActors = orderActingCharacters(plan, resolver);
 
@@ -161,14 +163,51 @@ export function applyDirectorPlan(plan: DirectorPlan, sessionContext: SessionCon
     }
   }
 
-  for (const nameOrId of plan.deactivations) {
-    const resolved = resolver(String(nameOrId));
+  const removeActiveByRef = (raw: string): { id?: string; name: string } | null => {
+    const lower = raw.toLowerCase();
+    // Try resolver first
+    const resolved = resolver(raw);
     if (resolved) {
-      const key = resolved.id || resolved.name;
-      if (key) {
-        activeSet.delete(key);
-        resolvedDeactivations.push(resolved);
-      }
+      const keys = [resolved.id, resolved.name].filter(Boolean) as string[];
+      for (const k of keys) activeSet.delete(k);
+      if (keys.length > 0) return resolved;
+    } else {
+      // If resolver fails, try to remove by raw string as name/id
+      console.log(`[applyDirectorPlan] Resolver could not find character for deactivation ref: ${raw}`);
+    }
+
+    // Try matching against sessionContext.activeCharacters by name/id case-insensitive
+    const activeMatch = (sessionContext.activeCharacters || []).find((c) => {
+      const cId = c?.id ? String(c.id) : '';
+      const cName = (c?.name || '').toLowerCase();
+      return (cId && cId.toLowerCase() === lower) || (cName && cName === lower);
+    });
+    if (activeMatch) {
+      const keys = [activeMatch.id, activeMatch.name].filter(Boolean) as string[];
+      for (const k of keys) activeSet.delete(k);
+      return { id: activeMatch.id, name: activeMatch.name || raw };
+    } else {
+      console.log(`[applyDirectorPlan] Could not find active character matching deactivation ref: ${raw}`);
+    }
+
+    // Fallback: case-insensitive match against whatever is currently in activeSet
+    const fallback = Array.from(activeSet).find((k) => String(k).toLowerCase() === lower);
+    if (fallback) {
+      activeSet.delete(fallback);
+      return { name: fallback }; 
+    } else {
+      console.log(`[applyDirectorPlan] Could not find active character in activeSet matching deactivation ref: ${raw}`);
+    }
+
+    return null;
+  };
+
+  for (const nameOrId of plan.deactivations) {
+    const raw = String(nameOrId);
+    console.log(`[applyDirectorPlan] Processing deactivation for ref: ${raw}`);
+    const removed = removeActiveByRef(raw);
+    if (removed) {
+      resolvedDeactivations.push(removed);
     }
   }
 
@@ -206,7 +245,7 @@ export function applyDirectorPlan(plan: DirectorPlan, sessionContext: SessionCon
   if (charactersToRespond.length === 0 && resolvedActivations.length > 0) {
     charactersToRespond = resolvedActivations.map((a) => a.name).filter((n) => !!n);
   }
-  const activeCharacterIds = Array.from(activeSet);
+  const activeCharacterIds = Array.from(new Set(activeSet));
 
   return {
     charactersToRespond,

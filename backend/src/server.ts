@@ -490,6 +490,11 @@ app.get('/api/lorebooks/:uuid/export', (req, res) => {
 app.post('/api/scenes/:sceneId/summarize', async (req, res) => {
   const { sceneId } = req.params;
   try {
+    const cfg = configManager.getConfig();
+    if (!cfg.features?.summarizationEnabled) {
+      return res.status(403).json({ error: 'Summarization is disabled via config' });
+    }
+
     const sceneRow = db.prepare('SELECT id FROM Scenes WHERE id = ?').get(sceneId) as any;
     if (!sceneRow) return res.status(404).json({ error: 'Scene not found' });
 
@@ -534,8 +539,9 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
       return res.json({ regenerated: [], message: 'No messages to regenerate in current round.' });
     }
     
-    // Find the user message in the current round (if any) - check source column instead of sender format
-    const userMessageInRound = currentRoundMessages.find((m: any) => m.source === 'user');
+    // Find the user message in the current round (if any) - normalize source casing
+    const isUserMessage = (m: any) => typeof m?.source === 'string' && m.source.toLowerCase() === 'user';
+    const userMessageInRound = currentRoundMessages.find((m: any) => isUserMessage(m));
     
     let triggerMessage: string;
     let persona: string;
@@ -591,7 +597,7 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
     (orchestrator as any).currentRoundNumber = previousOrchRound;
     
     // Delete all AI messages from current round (keep user messages)
-    const aiMessagesInRound = currentRoundMessages.filter((m: any) => m.source !== 'user');
+    const aiMessagesInRound = currentRoundMessages.filter((m: any) => !isUserMessage(m));
     for (const msg of aiMessagesInRound) {
       MessageService.deleteMessage(msg.id);
     }
@@ -660,7 +666,12 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
     }
 
     try {
-      await orchestrator.summarizeScene(sceneIdNum, { emitStatus: true, force: true, reason: 'regenerate-round' });
+      const cfg = configManager.getConfig();
+      if (cfg.features?.summarizationEnabled) {
+        await orchestrator.summarizeScene(sceneIdNum, { emitStatus: true, force: true, reason: 'regenerate-round' });
+      } else {
+        regenLog('[REGENERATE] Summarization disabled; skipping summarize after regeneration');
+      }
     } catch (e) {
       regenLog('[REGENERATE] Summarization after regeneration failed: %o', e);
     }

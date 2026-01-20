@@ -132,60 +132,116 @@ export class Orchestrator {
       if (!summarizeAgent) return null;
 
       const cfg = this.configManager.getConfig();
-      const maxSummaryTokens = cfg.features?.maxSummaryTokens || 500;
+      const features = cfg.features || {};
+      const summarizationEnabled = features.summarizationEnabled ?? false;
+      if (!summarizationEnabled) {
+        orchestratorLog('[ORCHESTRATOR] summarizeScene skipped: summarization disabled via config');
+        return null;
+      }
+      const maxSummaryTokens = features.maxSummaryTokens || 500;
+
+      // Determine summarizer context token budget
+      const summarizeAgentCfg = cfg.agents?.summarize || {};
+      const requestedProfile = summarizeAgentCfg.llmProfile || cfg.defaultProfile;
+      const profileName = requestedProfile === 'default' ? cfg.defaultProfile : requestedProfile;
+      const profile = this.configManager.getProfile(profileName);
+      const maxContextTokens = summarizeAgentCfg.sampler?.maxContextTokens || profile?.sampler?.maxContextTokens || 4096;
+      const inputBudgetTokens = Math.max(512, Math.floor(maxContextTokens * 0.8));
 
       const sceneRow = this.db.prepare('SELECT summary, lastSummarizedMessageId FROM Scenes WHERE id = ?').get(sceneId) as any;
-      const existingSummary = sceneRow?.summary || '';
-      const lastSummarizedId = sceneRow?.lastSummarizedMessageId || 0;
+      const existingSummary = options?.force ? '' : (sceneRow?.summary || '');
+      const lastSummarizedId = options?.force ? 0 : (sceneRow?.lastSummarizedMessageId || 0);
 
-      const messages = MessageService.getMessages(sceneId, 1000, 0) || [];
+      const messages = MessageService.getMessages(sceneId, 5000, 0) || [];
       if (messages.length === 0) return null;
 
-      const newMessages = options?.force ? messages : messages.filter((m: any) => (m.id || 0) > lastSummarizedId);
-      if (!options?.force && newMessages.length === 0) {
+      // Select target messages based on last summarized
+      const pendingMessages = options?.force ? messages : messages.filter((m: any) => (m.id || 0) > lastSummarizedId);
+      if (!options?.force && pendingMessages.length === 0) {
         return null;
       }
 
-      const chronological = [...newMessages].sort((a: any, b: any) => {
+      // Sort chronological
+      const chronological = [...pendingMessages].sort((a: any, b: any) => {
         const aNum = typeof a.messageNumber === 'number' ? a.messageNumber : a.id || 0;
         const bNum = typeof b.messageNumber === 'number' ? b.messageNumber : b.id || 0;
         return aNum - bNum;
       });
 
-      const historyText = chronological.map((m: any) => `${m.sender}: ${m.message}`).join('\n');
-      if (!historyText && !options?.force) {
-        return null;
+      // Chunk messages by token budget (~80% of context)
+      const chunks: Array<{ history: string[]; latestId: number }> = [];
+      let currentChunk: string[] = [];
+      let currentTokens = 0;
+      let chunkLatestId = 0;
+      const pushChunk = () => {
+        if (currentChunk.length > 0) {
+          chunks.push({ history: currentChunk.slice(), latestId: chunkLatestId });
+          currentChunk = [];
+          currentTokens = 0;
+          chunkLatestId = 0;
+        }
+      };
+
+      for (const msg of chronological) {
+        const text = `${msg.sender}: ${msg.message}`;
+        const tokens = countTokens(text);
+        if (currentTokens + tokens > inputBudgetTokens && currentChunk.length > 0) {
+          pushChunk();
+        }
+        currentChunk.push(text);
+        currentTokens += tokens;
+        chunkLatestId = Math.max(chunkLatestId, Number(msg.id) || 0);
       }
+      pushChunk();
+
+      if (chunks.length === 0) return null;
 
       if (options?.emitStatus) this.emitAgentStatus('Summarize', 'start', sceneId);
 
-      const context: AgentContext = {
-        userInput: '',
-        history: [historyText],
-        worldState: {},
-        existingSummary: existingSummary || undefined,
-        maxSummaryTokens
-      } as AgentContext;
+      let runningSummary = existingSummary;
+      let latestProcessedId = lastSummarizedId;
 
-      const summary = await summarizeAgent.run(context);
-      if (!summary) {
+      for (const chunk of chunks) {
+        const context: AgentContext = {
+          userInput: '',
+          history: chunk.history,
+          worldState: {},
+          existingSummary: runningSummary || undefined,
+          maxSummaryTokens
+        } as AgentContext;
+
+        const summary = await summarizeAgent.run(context);
+        if (!summary) {
+          continue;
+        }
+
+        // Append to preserve older details (unless starting fresh)
+        if (runningSummary && !options?.force) {
+          runningSummary = `${runningSummary}\n\n${summary}`;
+        } else {
+          runningSummary = summary as string;
+        }
+
+        latestProcessedId = Math.max(latestProcessedId, chunk.latestId);
+      }
+
+      if (!runningSummary) {
         if (options?.emitStatus) this.emitAgentStatus('Summarize', 'complete', sceneId);
         return null;
       }
 
-      const tokenCount = countTokens(summary as string);
-      const targetMessages = newMessages.length > 0 ? newMessages : messages;
-      const latestId = targetMessages.reduce((max: number, m: any) => Math.max(max, Number(m.id) || 0), lastSummarizedId);
+      const tokenCount = countTokens(runningSummary as string);
+      const latestId = latestProcessedId || lastSummarizedId;
 
       this.db.prepare('UPDATE Scenes SET summary = ?, summaryTokenCount = ?, lastSummarizedMessageId = ? WHERE id = ?')
-        .run(summary, tokenCount, latestId, sceneId);
+        .run(runningSummary, tokenCount, latestId, sceneId);
 
-      this.sceneSummary = summary as string;
+      this.sceneSummary = runningSummary as string;
 
-      this.emitSceneEvent('sceneUpdated', { sceneId, summary, summaryTokenCount: tokenCount, reason: options?.reason || 'auto' }, sceneId);
+      this.emitSceneEvent('sceneUpdated', { sceneId, summary: runningSummary, summaryTokenCount: tokenCount, reason: options?.reason || 'auto' }, sceneId);
       if (options?.emitStatus) this.emitAgentStatus('Summarize', 'complete', sceneId);
 
-      return { summary: summary as string, tokenCount };
+      return { summary: runningSummary as string, tokenCount };
     } catch (error) {
       orchestratorLog('[ORCHESTRATOR] summarizeScene failed for scene %d: %o', sceneId, error);
       if (options?.emitStatus) this.emitAgentStatus('Summarize', 'complete', sceneId);
@@ -237,7 +293,16 @@ export class Orchestrator {
       }
 
       try {
-        await this.summarizeScene(sceneId, { emitStatus: true, reason: 'round-complete' });
+        const features = this.configManager.getConfig().features || {};
+        const summarizationEnabled = features.summarizationEnabled ?? false;
+        const interval = features.summarizationRoundInterval ?? 4;
+        if (!summarizationEnabled) {
+          orchestratorLog('[ORCHESTRATOR] Summarization disabled; skipping auto-summarize for round %d', this.currentRoundNumber);
+        } else if (interval <= 1 || (this.currentRoundNumber % interval === 0)) {
+          await this.summarizeScene(sceneId, { emitStatus: true, reason: 'round-complete' });
+        } else {
+          orchestratorLog('[ORCHESTRATOR] Skipping auto-summarize this round (interval=%d, current=%d)', interval, this.currentRoundNumber);
+        }
       } catch (summaryErr) {
         orchestratorLog('[ORCHESTRATOR] Summarization after round %d failed: %o', this.currentRoundNumber, summaryErr);
       }
@@ -1089,6 +1154,23 @@ export class Orchestrator {
     }
 
     let directorPlan = directorParsed ? normalizeDirectorPlan(directorParsed) : normalizeDirectorPlan({ openGuidance: directorOutput });
+    // Never allow the user persona to appear in director lists
+    if (personaName) {
+      const normalizeRef = (ref?: string) => {
+        if (!ref) return '';
+        const base = String(ref).trim().toLowerCase();
+        return base.endsWith('_implied') ? base.slice(0, -8) : base;
+      };
+      const userRef = normalizeRef(personaName);
+      const isUserRef = (ref?: string) => normalizeRef(ref) === userRef;
+
+      directorPlan.actingCharacters = (directorPlan.actingCharacters || []).filter((c) => !isUserRef(c.name) && !isUserRef(c.id));
+      directorPlan.activations = (directorPlan.activations || []).filter((a) => !isUserRef(String(a)));
+      directorPlan.deactivations = (directorPlan.deactivations || []).filter((d) => !isUserRef(String(d)));
+      directorPlan.stateUpdates = (directorPlan.stateUpdates || []).filter((s) => !isUserRef(s.name) && !isUserRef(s.id));
+      directorPlan.remainingActors = (directorPlan.remainingActors || []).filter((r) => !isUserRef(r));
+      directorPlan.newActivations = (directorPlan.newActivations || []).filter((r) => !isUserRef(r));
+    }
     orchestratorLog('[DIRECTOR PASS1] mentions -> acting:%s activations:%s deactivations:%s',
       JSON.stringify((directorPlan.actingCharacters || []).map((a: any) => a.name || a.id)),
       JSON.stringify(directorPlan.activations || []),

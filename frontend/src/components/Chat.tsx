@@ -72,6 +72,7 @@ interface ChatProps {
   onUpdateMessage: (id: number, content: string) => void;
   onMessagesRefresh: () => void;
   onSessionRefresh?: () => void;
+  summarizationEnabled?: boolean;
   socket: Socket;
 }
 
@@ -89,6 +90,7 @@ const Chat: React.FC<ChatProps> = ({
   onUpdateMessage,
   onMessagesRefresh,
   onSessionRefresh,
+  summarizationEnabled,
   socket,
 }) => {
   const chatWindowRef = useRef<HTMLDivElement>(null);
@@ -212,6 +214,7 @@ const Chat: React.FC<ChatProps> = ({
   };
 
   const handleResummarizeScene = async () => {
+    if (!summarizationEnabled) return;
     if (!selectedScene) return;
     setCurrentAgent('Summarize');
     try {
@@ -554,13 +557,15 @@ const Chat: React.FC<ChatProps> = ({
                   >
                     Regenerate
                   </button>
-                  <button
-                    className="chat-menu-item"
-                    onClick={handleResummarizeScene}
-                    disabled={!selectedScene}
-                  >
-                    Re-summarize Scene
-                  </button>
+                    {summarizationEnabled ? (
+                      <button
+                        className="chat-menu-item"
+                        onClick={handleResummarizeScene}
+                        disabled={!selectedScene}
+                      >
+                        Re-summarize Scene
+                      </button>
+                    ) : null}
                 <button
                   className="chat-menu-item"
                   onClick={async () => {

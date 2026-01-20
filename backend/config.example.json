@@ -256,6 +256,7 @@
     "worldAgentEnabled": false,
     "visualAgentEnabled": false,
     "socketAckLogs": false,
+    "summarizationEnabled": false,
     "summarizationInterval": 300000,
     "maxSummaryTokens": 500,
     "historyWindowMessages": 60,
