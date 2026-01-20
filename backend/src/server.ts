@@ -2735,7 +2735,7 @@ io.on('connection', (socket) => {
         }
       }
 
-      /* Disabled we don't need this */
+      /* we don't need this */
       // Check for summarization trigger
       // if (sceneId) {
       //   try {
