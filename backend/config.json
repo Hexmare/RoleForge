@@ -48,7 +48,7 @@
   "profiles": {
     "openai": {
       "type": "openai",
-      "baseURL": "http://192.168.88.135:5001/v1",
+      "baseURL": "http://192.168.88.88:5001/v1",
       "model": "koboldcpp/mistralai_Ministral-3-14B-Reasoning-2512-Q5_K_M",
       "template": "chatml",
       "sampler": {
