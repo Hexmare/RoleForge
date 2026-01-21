@@ -160,7 +160,7 @@ Commit after each sub-phase for version control.
 ```json
 {
   "embeddingProvider": "transformers",
-  "embeddingModel": "Xenova/all-mpnet-base-v2",
+  "embeddingModel": "nomic-ai/nomic-embed-text-v1.5",
   "apiKeys": {},
   "chunkStrategy": "perMessage",
   "chunkSize": 512,
@@ -202,7 +202,7 @@ Location: `backend/config/vectorConfig.json`
 Brief: centralizes vectorization settings. The backend loads this file via `ConfigManager.getVectorConfig()`; `getEmbeddingManager()` and `EmbeddingManager` read `embeddingModel` and `chunkSize` respectively.
 
 - `embeddingProvider` (string): Provider to use for embeddings. Examples: `transformers` (default, local Xenova), `openai`, `ollama`.
-- `embeddingModel` (string): Model identifier used by the provider (e.g., `Xenova/all-mpnet-base-v2`). `getEmbeddingManager()` uses this to instantiate the `EmbeddingManager`.
+- `embeddingModel` (string): Model identifier used by the provider (e.g., `nomic-ai/nomic-embed-text-v1.5`). `getEmbeddingManager()` uses this to instantiate the `EmbeddingManager`.
 - `apiKeys` (object): Provider API keys when using remote providers (e.g., `{ "openai": "sk-..." }`). Kept empty for local `transformers`.
 - `chunkStrategy` (string): One of `perMessage` | `perRound` | `perScene`. Controls how text is chunked prior to embedding. Default in examples: `perRound`.
 - `chunkSize` (number): Size used by `EmbeddingManager.chunkText()` (units: characters by default in current impl; treat as configurable chunk unit). `EmbeddingManager.getDefaultChunkSize()` reads this value.

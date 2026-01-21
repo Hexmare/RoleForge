@@ -46,7 +46,7 @@ The Vector Storage feature specification has been comprehensively updated to add
 **2. Embedding Generation**
 - ✅ Use local `@xenova/transformers` (free, offline, no API keys)
 - ✅ Optional LLM profile configuration
-- ✅ Defaults to Xenova/all-mpnet-base-v2 model
+- ✅ Defaults to nomic-ai/nomic-embed-text-v1.5 model
 
 ### 🟠 High Priority Issues - RESOLVED
 

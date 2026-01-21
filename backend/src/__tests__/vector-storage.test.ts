@@ -380,7 +380,7 @@ describe('Embedding Manager', () => {
     const manager = EmbeddingManager.getInstance();
     const info = manager.getModelInfo();
 
-    expect(info.modelName).toBe('Xenova/all-mpnet-base-v2');
+    expect(info.modelName).toBe('nomic-ai/nomic-embed-text-v1.5');
     // Don't force initialization in tests - it's slow
   });
 

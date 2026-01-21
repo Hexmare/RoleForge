@@ -7,6 +7,15 @@ interface ScopeInfo {
   lastUpdated?: string;
 }
 
+const scrollableBoxStyle: React.CSSProperties = {
+  maxHeight: '50vh',
+  overflowY: 'auto',
+  border: '1px solid var(--border-color)',
+  borderRadius: 6,
+  padding: 8,
+  backgroundColor: 'var(--panel-bg)',
+};
+
 export const VectorDiagnostics: React.FC = () => {
   const [scopes, setScopes] = useState<ScopeInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -331,97 +340,101 @@ export const VectorDiagnostics: React.FC = () => {
               {deleteLoading && <div>Processing…</div>}
               {deleteResult && <pre style={{ whiteSpace: 'pre-wrap' }}>{deleteResult}</pre>}
 
-              {totalMatches > 0 && (
-                <div style={{ marginTop: 12 }}>
-                  <div><strong>Matching Items: {totalMatches}</strong></div>
-                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {matchedItems.map((it: any) => (
-                      <div key={`${it.scope}-${it.id || it._id || Math.random()}`} style={{ border: '1px solid #ddd', padding: 8, borderRadius: 4 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                          <div><strong>{it.scope}</strong> <small style={{ color: '#666' }}>{it.id}</small></div>
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                            <button onClick={async () => {
-                              if (!window.confirm('Delete this single item?')) return;
-                              try {
-                                const r = await fetch('/api/debug/vector-item-delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: it.scope, id: it.id }) });
-                                if (r.ok) {
-                                  setMatchedItems((prev) => prev.filter((p) => p.id !== it.id));
-                                  setTotalMatches((t) => Math.max(0, t - 1));
-                                } else {
-                                  const txt = await r.text().catch(() => null);
-                                  setDeleteResult(`Item delete failed: ${r.status} ${txt || ''}`);
-                                }
-                              } catch (e: any) { setDeleteResult(String(e)); }
-                            }}>Delete Item</button>
+                  {totalMatches > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div><strong>Matching Items: {totalMatches}</strong></div>
+                      <div style={{ marginTop: 8 }}>
+                        <div style={scrollableBoxStyle}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {matchedItems.map((it: any) => (
+                              <div key={`${it.scope}-${it.id || it._id || Math.random()}`} style={{ border: '1px solid #ddd', padding: 8, borderRadius: 4 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                                  <div><strong>{it.scope}</strong> <small style={{ color: '#666' }}>{it.id}</small></div>
+                                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                    <button onClick={async () => {
+                                      if (!window.confirm('Delete this single item?')) return;
+                                      try {
+                                        const r = await fetch('/api/debug/vector-item-delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: it.scope, id: it.id }) });
+                                        if (r.ok) {
+                                          setMatchedItems((prev) => prev.filter((p) => p.id !== it.id));
+                                          setTotalMatches((t) => Math.max(0, t - 1));
+                                        } else {
+                                          const txt = await r.text().catch(() => null);
+                                          setDeleteResult(`Item delete failed: ${r.status} ${txt || ''}`);
+                                        }
+                                      } catch (e: any) { setDeleteResult(String(e)); }
+                                    }}>Delete Item</button>
 
-                            <button onClick={() => {
-                              // switch to inline edit mode
-                              setEditingItemId(String(it.id));
-                              setEditingText(it.text || '');
-                              setEditingMetaStr(JSON.stringify(it.metadata || {}, null, 2));
-                            }}>Edit Item</button>
-                          </div>
-                        </div>
-                        <div style={{ marginTop: 6 }}>
-                          <div style={{ color: '#333' }}>
-                            {it.scope} {(() => {
-                              const m = (it.scope || '').match(/_char_(.+)$/);
-                              const charId = m ? m[1] : null;
-                              const charName = charId ? (charactersList.find((c) => String(c.id) === String(charId))?.name || charId) : null;
-                              return charName ? `: ${charName}` : '';
-                            })()}
-                          </div>
+                                    <button onClick={() => {
+                                      // switch to inline edit mode
+                                      setEditingItemId(String(it.id));
+                                      setEditingText(it.text || '');
+                                      setEditingMetaStr(JSON.stringify(it.metadata || {}, null, 2));
+                                    }}>Edit Item</button>
+                                  </div>
+                                </div>
+                                <div style={{ marginTop: 6 }}>
+                                  <div style={{ color: '#333' }}>
+                                    {it.scope} {(() => {
+                                      const m = (it.scope || '').match(/_char_(.+)$/);
+                                      const charId = m ? m[1] : null;
+                                      const charName = charId ? (charactersList.find((c) => String(c.id) === String(charId))?.name || charId) : null;
+                                      return charName ? `: ${charName}` : '';
+                                    })()}
+                                  </div>
 
-                          {editingItemId === String(it.id) ? (
-                            <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                              <textarea value={editingText} onChange={(e) => setEditingText(e.target.value)} style={{ width: '100%', minHeight: 80 }} />
-                              <div>
-                                <label style={{ display: 'block', marginBottom: 6 }}>Metadata (JSON)</label>
-                                <textarea value={editingMetaStr} onChange={(e) => setEditingMetaStr(e.target.value)} style={{ width: '100%', minHeight: 80 }} />
+                                  {editingItemId === String(it.id) ? (
+                                    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                      <textarea value={editingText} onChange={(e) => setEditingText(e.target.value)} style={{ width: '100%', minHeight: 80 }} />
+                                      <div>
+                                        <label style={{ display: 'block', marginBottom: 6 }}>Metadata (JSON)</label>
+                                        <textarea value={editingMetaStr} onChange={(e) => setEditingMetaStr(e.target.value)} style={{ width: '100%', minHeight: 80 }} />
+                                      </div>
+                                      <div style={{ display: 'flex', gap: 8 }}>
+                                        <button onClick={async () => {
+                                          try {
+                                            const parsed = editingMetaStr ? JSON.parse(editingMetaStr) : {};
+                                            const r = await fetch('/api/debug/vector-item-update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: it.scope, id: it.id, text: editingText, metadata: parsed }) });
+                                            if (r.ok) {
+                                              const body = await r.json().catch(() => null);
+                                              setMatchedItems((prev) => prev.map((p) => p.id === it.id ? (body && body.item ? body.item : { ...p, text: editingText, metadata: parsed }) : p));
+                                              setDeleteResult('Item updated');
+                                              setEditingItemId(null);
+                                              setEditingText('');
+                                              setEditingMetaStr('');
+                                            } else {
+                                              const txt = await r.text().catch(() => null);
+                                              setDeleteResult(`Update failed: ${r.status} ${txt || ''}`);
+                                            }
+                                          } catch (e: any) {
+                                            setDeleteResult(String(e));
+                                          }
+                                        }} style={{ background: 'green', color: '#fff' }}>✓</button>
+
+                                        <button onClick={() => {
+                                          setEditingItemId(null);
+                                          setEditingText('');
+                                          setEditingMetaStr('');
+                                        }} style={{ background: 'red', color: '#fff' }}>✕</button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{it.text || JSON.stringify(it.metadata || {})}</div>
+                                  )}
+                                </div>
                               </div>
-                              <div style={{ display: 'flex', gap: 8 }}>
-                                <button onClick={async () => {
-                                  try {
-                                    const parsed = editingMetaStr ? JSON.parse(editingMetaStr) : {};
-                                    const r = await fetch('/api/debug/vector-item-update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: it.scope, id: it.id, text: editingText, metadata: parsed }) });
-                                    if (r.ok) {
-                                      const body = await r.json().catch(() => null);
-                                      setMatchedItems((prev) => prev.map((p) => p.id === it.id ? (body && body.item ? body.item : { ...p, text: editingText, metadata: parsed }) : p));
-                                      setDeleteResult('Item updated');
-                                      setEditingItemId(null);
-                                      setEditingText('');
-                                      setEditingMetaStr('');
-                                    } else {
-                                      const txt = await r.text().catch(() => null);
-                                      setDeleteResult(`Update failed: ${r.status} ${txt || ''}`);
-                                    }
-                                  } catch (e: any) {
-                                    setDeleteResult(String(e));
-                                  }
-                                }} style={{ background: 'green', color: '#fff' }}>✓</button>
-
-                                <button onClick={() => {
-                                  setEditingItemId(null);
-                                  setEditingText('');
-                                  setEditingMetaStr('');
-                                }} style={{ background: 'red', color: '#fff' }}>✕</button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{it.text || JSON.stringify(it.metadata || {})}</div>
-                          )}
+                            ))}
+                          </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
 
-                  <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>Prev</button>
-                    <div>Page {page + 1} / {Math.max(1, Math.ceil(totalMatches / pageSize))}</div>
-                    <button onClick={() => setPage((p) => p + 1)} disabled={page >= Math.ceil(totalMatches / pageSize) - 1}>Next</button>
-                  </div>
-                </div>
-              )}
+                      <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>Prev</button>
+                        <div>Page {page + 1} / {Math.max(1, Math.ceil(totalMatches / pageSize))}</div>
+                        <button onClick={() => setPage((p) => p + 1)} disabled={page >= Math.ceil(totalMatches / pageSize) - 1}>Next</button>
+                      </div>
+                    </div>
+                  )}
             </div>
           </div>
         </div>
@@ -452,16 +465,20 @@ export const VectorDiagnostics: React.FC = () => {
             {searchResults.length > 0 && (
               <div>
                 <div>Results ({searchResults.length})</div>
-                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {searchResults.map((r, i) => (
-                    <div key={i} style={{ border: '1px solid #ddd', padding: 8, borderRadius: 4 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                        <div><strong>{r.characterName || 'unknown'}</strong></div>
-                        <div style={{ color: '#666' }}>{typeof r.similarity === 'number' ? `${(r.similarity * 100).toFixed(2)}%` : '-'}</div>
-                      </div>
-                      <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{r.text}</div>
+                <div style={{ marginTop: 8 }}>
+                  <div style={scrollableBoxStyle}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {searchResults.map((r, i) => (
+                        <div key={i} style={{ border: '1px solid #ddd', padding: 8, borderRadius: 4 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                            <div><strong>{r.characterName || 'unknown'}</strong></div>
+                            <div style={{ color: '#666' }}>{typeof r.similarity === 'number' ? `${(r.similarity * 100).toFixed(2)}%` : '-'}</div>
+                          </div>
+                          <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{r.text}</div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
                 </div>
               </div>
             )}

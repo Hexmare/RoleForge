@@ -106,7 +106,7 @@ class VectraVectorStore implements VectorStoreInterface {
 
 - **Embedding Generation**: RoleForge uses **local (offline) sentence embeddings** via `@xenova/transformers` library — a pure JavaScript/ONNX runtime port of Hugging Face transformers. This allows fully server-side, no-API-key vectorization without Docker or external services.
   - **Process Overview**:
-    1. Load ONNX-exported sentence-transformer model (recommended: `Xenova/all-mpnet-base-v2`, `mixedbread-ai/mxbai-embed-large-v1`, or `jinaai/jina-embeddings-v2-base-en`)
+    1. Load ONNX-exported sentence-transformer model (recommended: `nomic-ai/nomic-embed-text-v1.5`, `mixedbread-ai/mxbai-embed-large-v1`, or `jinaai/jina-embeddings-v2-base-en`)
     2. Split roleplay events/messages into fixed-size chunks (~300–600 tokens / ~800–2000 chars)
     3. Tokenize with model's AutoTokenizer (respects special tokens)
     4. Extract features through transformer backbone

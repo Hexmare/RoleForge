@@ -15,7 +15,7 @@ describe('EmbeddingManager config integration', () => {
 
     const testCfg = {
       embeddingProvider: 'transformers',
-      embeddingModel: 'Xenova/all-mpnet-base-v2',
+      embeddingModel: 'nomic-ai/nomic-embed-text-v1.5',
       chunkStrategy: 'perRound',
       chunkSize: testChunk
     };

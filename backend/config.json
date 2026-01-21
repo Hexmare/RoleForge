@@ -263,7 +263,7 @@
       "llmProfile": "default",
       "returnsJson": false,
       "sampler": {
-        "max_completion_tokens": 2048
+        "max_completion_tokens": 1024
       }
     },
     "visual": {

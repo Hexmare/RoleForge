@@ -128,7 +128,7 @@ export class VectorizationAgent extends BaseAgent {
       // Build base chunks for this round (may be reused per-character)
       let baseChunks: string[] = [];
       if (chunkStrategy === 'perMessage') {
-        baseChunks = (messages || []).map((m: any) => (m && (m.content || m.message || ''))).filter((t: string) => t && t.trim().length > 0);
+        baseChunks = this.buildPerMessageChunks(messages || []);
       } else {
         // perRound and perScene default to summarization + chunking
         baseChunks = EmbeddingManager.chunkText(memorySnippet, chunkSize);
@@ -324,6 +324,50 @@ export class VectorizationAgent extends BaseAgent {
   }
 
   /**
+   * Build per-message chunks with explicit speaker attribution and the previous speaker for context.
+   */
+  private buildPerMessageChunks(messages: any[]): string[] {
+    const chunks: string[] = [];
+    let prevSpeaker = 'start';
+
+    for (const msg of messages || []) {
+      if (!msg) continue;
+      const speaker = this.getSpeakerName(msg) || 'unknown';
+      const content = this.getMessageContent(msg);
+      if (!content) continue;
+
+      const parts = [
+        `PrevSpeaker: ${prevSpeaker}`,
+        `Speaker: ${speaker}`,
+        String(content).trim()
+      ];
+
+      chunks.push(parts.join('\n'));
+      prevSpeaker = speaker;
+    }
+
+    return chunks.filter(c => c && c.trim().length > 0);
+  }
+
+  private getSpeakerName(msg: any): string | undefined {
+    if (!msg) return undefined;
+    return (
+      msg.characterName ||
+      msg.sender ||
+      msg.speaker ||
+      msg.role ||
+      msg.senderName ||
+      msg.character ||
+      msg.from
+    ) as string | undefined;
+  }
+
+  private getMessageContent(msg: any): string | undefined {
+    if (!msg) return undefined;
+    return (msg.content || msg.message || msg.text || msg.body) as string | undefined;
+  }
+
+  /**
    * Get vectorization statistics
    * Useful for monitoring memory storage health
    */
@@ -405,6 +449,10 @@ export class VectorizationAgent extends BaseAgent {
 
           const scope = `world_${worldId}_char_${characterId}`;
           try {
+            // Ensure scope exists to avoid slow create-on-delete during revectorization
+            if ((this.vectorStore as any).init) {
+              await (this.vectorStore as any).init(scope);
+            }
             // Prefer scoped deletion by metadata (safer than full clear)
             const filter = { sceneId: String(sceneId) };
             await (this.vectorStore as any).deleteByMetadata(filter, scope, { dryRun: false, confirm: true });
@@ -470,7 +518,7 @@ export class VectorizationAgent extends BaseAgent {
 
           let baseChunks: string[] = [];
           if (chunkStrategy === 'perMessage') {
-            baseChunks = (roundMessages || []).map((m: any) => (m && (m.content || m.message || ''))).filter((t: string) => t && t.trim().length > 0);
+            baseChunks = this.buildPerMessageChunks(roundMessages || []);
           } else {
             baseChunks = EmbeddingManager.chunkText(memorySnippet, chunkSize);
           }
@@ -506,6 +554,15 @@ export class VectorizationAgent extends BaseAgent {
               }
 
               const scope = `world_${worldId}_char_${characterId}`;
+              // Ensure scope is initialized before writing to avoid slow first-write penalties
+              try {
+                if ((this.vectorStore as any).init) {
+                  await (this.vectorStore as any).init(scope);
+                }
+              } catch (initErr) {
+                this.vectorizationLog(`[VECTORIZATION] Failed to init scope ${scope}:`, initErr);
+                continue;
+              }
               for (let ci = 0; ci < baseChunks.length; ci++) {
                 const chunkText = String(baseChunks[ci] || '').trim();
                 if (!chunkText) continue;

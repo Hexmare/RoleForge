@@ -47,7 +47,7 @@ Memory capture will hook into the **Rounds** system (prerequisite feature):
 **Local Embedding Generation** (Inspired by SillyTavern's approach):
 - Uses `@xenova/transformers` library (pure JavaScript/ONNX runtime)
 - Recommended models:
-  - `Xenova/all-mpnet-base-v2` (768 dimensions, good quality)
+  - `nomic-ai/nomic-embed-text-v1.5` (768 dimensions, good quality)
   - `mixedbread-ai/mxbai-embed-large-v1` (1024 dimensions, high quality)
   - `jinaai/jina-embeddings-v2-base-en` (768 dimensions, specialized)
 
@@ -603,7 +603,7 @@ test('Scene memories improve consistency across rounds', async () => {
    - (Recommend: Archive with per-character limits)
 
 3. **Model Selection** - Which embedding model to default to?
-   - `Xenova/all-mpnet-base-v2` (768 dims, balanced)
+   - `nomic-ai/nomic-embed-text-v1.5` (768 dims, balanced)
    - `mixedbread-ai/mxbai-embed-large-v1` (1024 dims, high quality)
    - `jinaai/jina-embeddings-v2-base-en` (768 dims, specialized for text)
    - (Recommend: all-mpnet-base-v2 for balance)

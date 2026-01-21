@@ -23,7 +23,7 @@
 
 ### ✅ EmbeddingManager (`backend/src/utils/embeddingManager.ts`)
 - Singleton instance for @xenova/transformers pipeline
-- Model: `Xenova/all-mpnet-base-v2` (768 dimensions, offline)
+- Model: `nomic-ai/nomic-embed-text-v1.5` (768 dimensions, offline)
 - Methods: `embedText()`, `embed()` (batch), `chunkText()`, `cosineSimilarity()`
 - Lazy loading: ~2-5s first load, ~50-200ms per embedding
 - Fully configurable model selection

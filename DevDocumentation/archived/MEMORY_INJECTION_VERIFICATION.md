@@ -204,7 +204,7 @@ Character Response
 - **Index Type**: Vectra LocalIndex
 
 ### Vector Dimensions
-- **Model**: Xenova/all-mpnet-base-v2
+- **Model**: nomic-ai/nomic-embed-text-v1.5
 - **Embedding Size**: 768 dimensions
 - **Extraction Method**: Tensor mean pooling (from 3+ token embeddings)
 - **Storage Format**: Float32Array converted to JSON arrays

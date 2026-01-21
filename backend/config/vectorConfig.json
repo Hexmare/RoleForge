@@ -1,9 +1,9 @@
 {
   "embeddingProvider": "transformers",
-  "embeddingModel": "Xenova/all-mpnet-base-v2",
+  "embeddingModel": "nomic-ai/nomic-embed-text-v1.5",
   "apiKeys": {},
-  "chunkStrategy": "perRound",
-  "chunkSize": 512,
+  "chunkStrategy": "perMessage",
+  "chunkSize": 1024,
   "slidingWindowOverlap": 0.2,
   "temporalDecay": {
     "enabled": false,

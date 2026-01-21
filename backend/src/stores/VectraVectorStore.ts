@@ -795,11 +795,32 @@ export class VectraVectorStore implements VectorStoreInterface {
           vectraStoreLog('[VECTOR_STORE] listByMetadata failed during deleteByMetadata:', e instanceof Error ? e.message : String(e));
         }
 
+        // Fallback enumeration if initial listByMetadata returned nothing (e.g., index.json read issues)
+        if (totalMatches === 0 || Object.keys(perScopeMatches).length === 0) {
+          for (const s of scopesToCheck) {
+            try {
+              const idxJson = path.join(this.basePath, s, 'index.json');
+              const content = await fs.readFile(idxJson, 'utf-8');
+              const parsed = JSON.parse(content);
+              const items = normalizeIndexItems(Array.isArray(parsed.items) ? parsed.items : []);
+              for (const it of items) {
+                if (matchesFilter(it.metadata || {}, filter || {})) {
+                  if (!perScopeMatches[s]) perScopeMatches[s] = [];
+                  perScopeMatches[s].push(it.id);
+                  totalMatches += 1;
+                }
+              }
+            } catch (_) {
+              // If a scope cannot be read, skip; initial listByMetadata already attempted broader coverage.
+            }
+          }
+        }
+
         const confirmThreshold = opts.confirmThreshold ?? 50;
 
-        // If no matches were counted (or counts seem low), attempt a fallback match count via listByMetadata
-        // to guard against under-counting when index.json parsing fails.
-        if (totalMatches < confirmThreshold) {
+        // If matches are still zero but scopes exist, try a lightweight recount to avoid false negatives
+        // before applying safety thresholds. This protects global deletes when listByMetadata under-counts.
+        if (totalMatches === 0 && scopesToCheck.length > 0) {
           try {
             let fallbackMatches = 0;
             for (const s of scopesToCheck) {

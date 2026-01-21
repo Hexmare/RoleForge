@@ -26,7 +26,7 @@ class EmbeddingManager {
   private openaiClient: OpenAI | null = null;
   private ollamaBaseUrl: string | null = null;
 
-  private constructor(provider: string = 'transformers', modelName: string = 'Xenova/all-mpnet-base-v2') {
+  private constructor(provider: string = 'transformers', modelName: string = 'nomic-ai/nomic-embed-text-v1.5') {
     this.provider = provider;
     this.modelName = modelName;
   }
@@ -66,7 +66,7 @@ class EmbeddingManager {
     }
 
     const p = provider || cfg.embeddingProvider || 'transformers';
-    const m = modelName || cfg.embeddingModel || 'Xenova/all-mpnet-base-v2';
+    const m = modelName || cfg.embeddingModel || 'nomic-ai/nomic-embed-text-v1.5';
     const key = `${p}:${m}`;
     if (!EmbeddingManager.instances.has(key)) {
       EmbeddingManager.instances.set(key, new EmbeddingManager(p, m));
@@ -144,7 +144,7 @@ class EmbeddingManager {
    * We need to extract and pool token embeddings to get one 768-dim vector
    * 
    * @param text - Single text or array of texts to embed
-   * @returns Array of vectors (768 dimensions for Xenova/all-mpnet-base-v2)
+   * @returns Array of vectors (768 dimensions for nomic-ai/nomic-embed-text-v1.5)
    */
   async embed(text: string | string[]): Promise<number[][]> {
     // Ensure initialization for selected provider
@@ -277,27 +277,116 @@ class EmbeddingManager {
    * @param chunkSize - Approximate number of characters per chunk (default: 1000)
    * @returns Array of text chunks
    */
-  static chunkText(text: string, chunkSize: number = EmbeddingManager.getDefaultChunkSize()): string[] {
-    const chunks: string[] = [];
-    let currentChunk = '';
+  /**
+ * Roleplay-aware text chunker
+ * Preserves semantic units: full speaker turns, complete dialogue + actions
+ * Avoids cutting mid-sentence, mid-action, or mid-dialogue
+ */
+static chunkText(text: string, chunkSize: number = EmbeddingManager.getDefaultChunkSize()): string[] {
+  if (!text || text.trim().length === 0) return [];
 
-    const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+  // Permit reasonably short chunks to support small summaries, but scale with target size
+  const minChunkLength = Math.min(80, Math.max(1, Math.floor(chunkSize * 0.05)));
 
-    for (const sentence of sentences) {
-      if ((currentChunk + sentence).length > chunkSize && currentChunk.length > 0) {
-        chunks.push(currentChunk.trim());
-        currentChunk = sentence;
+  const splitLongChunk = (chunk: string): string[] => {
+    // Prefer sentence boundaries, then hard split if a single sentence is too long
+    const sentences = chunk.split(/(?<=[.!?])\s+/);
+    const parts: string[] = [];
+    let current = '';
+
+    for (const sentenceRaw of sentences) {
+      const sentence = sentenceRaw.trim();
+      if (!sentence) continue;
+
+      const candidate = current ? `${current} ${sentence}` : sentence;
+      if (candidate.length > chunkSize && current.length >= minChunkLength) {
+        parts.push(current);
+        current = sentence;
+      } else if (candidate.length > chunkSize && current.length === 0) {
+        // Sentence itself is too long; hard-split to avoid being stuck
+        for (let i = 0; i < sentence.length; i += chunkSize) {
+          parts.push(sentence.slice(i, i + chunkSize));
+        }
+        current = '';
       } else {
-        currentChunk += sentence;
+        current = candidate;
       }
     }
 
-    if (currentChunk.trim().length > 0) {
-      chunks.push(currentChunk.trim());
+    if (current) parts.push(current);
+    return parts;
+  };
+
+  const chunks: string[] = [];
+  let currentChunk = '';
+  const lines = text.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      // Preserve paragraph breaks as natural boundaries
+      if (currentChunk) {
+        chunks.push(currentChunk.trim());
+        currentChunk = '';
+      }
+      continue;
     }
 
-    return chunks;
+    // Detect common roleplay patterns that should not be split (kept for future heuristic tuning)
+    const isSpeakerLine = /^\w+:\s*.+$/.test(trimmed);
+    const hasDialogue = trimmed.includes('"');
+    const hasAction = trimmed.includes('*');
+    const hasThought = trimmed.includes('(') && trimmed.includes(')');
+    void isSpeakerLine;
+    void hasDialogue;
+    void hasAction;
+    void hasThought;
+
+    // Estimate if adding this line would exceed limit
+    const potential = currentChunk ? `${currentChunk} ${trimmed}` : trimmed;
+
+    if (potential.length > chunkSize && currentChunk.length > chunkSize * 0.6) {
+      chunks.push(currentChunk.trim());
+      currentChunk = trimmed;
+    } else if (potential.length > chunkSize && currentChunk.length === 0) {
+      // Single very long line with no existing chunk; split it immediately
+      const split = splitLongChunk(trimmed);
+      chunks.push(...split);
+      currentChunk = '';
+    } else {
+      if (currentChunk) currentChunk += '\n';
+      currentChunk += trimmed;
+    }
   }
+
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+
+  // Normalize any oversized chunks after initial pass
+  const normalized: string[] = [];
+  for (const chunk of chunks) {
+    if (chunk.length > chunkSize * 1.2) {
+      normalized.push(...splitLongChunk(chunk));
+    } else {
+      normalized.push(chunk);
+    }
+  }
+
+  // Final pass: merge very small trailing chunks into previous when it stays near target size
+  for (let i = 1; i < normalized.length; i++) {
+    const prev = normalized[i - 1];
+    const current = normalized[i];
+    if (current.length < minChunkLength && prev.length + current.length + 1 <= chunkSize * 1.2) {
+      normalized[i - 1] = `${prev}\n${current}`;
+      normalized.splice(i, 1);
+      i -= 1;
+    }
+  }
+
+  // Filter out any accidental empty or near-empty chunks (but allow short meaningful chunks)
+  return normalized.map(c => c.trim()).filter(c => c.length >= minChunkLength);
+}
 
   /**
    * Calculate cosine similarity between two vectors

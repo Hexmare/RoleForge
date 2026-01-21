@@ -7,7 +7,7 @@ env.allowLocalModels = true;
 async function test() {
   try {
     console.log('[TEST] Initializing embedding pipeline...');
-    const embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-mpnet-base-v2');
+    const embeddingPipeline = await pipeline('feature-extraction', 'nomic-ai/nomic-embed-text-v1.5');
     
     console.log('[TEST] Pipeline initialized, running test embedding...');
     const result = await embeddingPipeline('hello world');
