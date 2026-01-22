@@ -1641,6 +1641,34 @@ app.post('/api/characters', (req, res) => {
   res.json({ id });
 });
 
+app.post('/api/characters/generate', async (req, res) => {
+  const { name, description, instructions } = req.body || {};
+  try {
+    const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'Character_Schema.json'), 'utf8'));
+    const orchestrator = new Orchestrator(configManager, env, db, io);
+    const context = {
+      mode: 'create',
+      name: name || 'New Character',
+      description: description || '',
+      instructions: instructions || '',
+      schema: JSON.stringify(schema),
+      maxCompletionTokens: 2000,
+      userInput: '',
+      history: [],
+      worldState: {}
+    } as AgentContext;
+
+    const result = await orchestrator.createCharacter(context);
+    const generatedChar = JSON.parse(result);
+    const charWithId = { ...generatedChar, id: generatedChar.id || randomUUID() };
+    const id = CharacterService.saveBaseCharacter(charWithId.id, charWithId, charWithId.avatarUrl || charWithId.avatar);
+    res.json({ id });
+  } catch (error) {
+    console.error('Generate character error:', error);
+    res.status(500).json({ error: 'Failed to generate character' });
+  }
+});
+
 app.put('/api/characters/:id', (req, res) => {
   const id = req.params.id;
   const data = req.body;

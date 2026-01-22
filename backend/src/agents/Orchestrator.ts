@@ -1019,9 +1019,9 @@ export class Orchestrator {
     };
 
     let characterStates = { ...(sessionContext.scene.characterStates || {}) };
-
+    const summarizationEnabled = this.configManager.getConfig().features?.summarizationEnabled ?? false
     // Step 1: Summarize if history too long (simple check: > 10 messages)
-    if (this.history.length > 10) {
+    if (summarizationEnabled && this.history.length > 10) {
       const summarizeAgent = this.agents.get('summarize')!;
       orchestratorLog('Calling SummarizeAgent');
       this.emitAgentStatus('Summarize', 'start', sceneId);
