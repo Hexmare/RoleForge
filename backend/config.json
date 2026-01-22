@@ -57,7 +57,7 @@
         "max_completion_tokens": 512,
         "frequencyPenalty": 1.1,
         "presencePenalty": 1.1,
-        "maxContextTokens": 2048,
+        "maxContextTokens": 20000,
         "forceJson": true,
         "n": 1
       },
