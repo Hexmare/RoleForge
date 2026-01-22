@@ -1417,7 +1417,7 @@ app.get('/api/settings/comfyui', (req, res) => {
 
 app.put('/api/settings/comfyui', (req, res) => {
   try {
-    const configPath = path.join(__dirname, '..', 'config.json');
+    const configPath = path.join(__dirname, '..', '..', 'localconfig', 'config.json');
     const cfg = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf-8')) : {};
     cfg.comfyui = req.body || {};
     fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2));
@@ -1497,7 +1497,7 @@ app.post('/api/llm/config', express.json(), (req, res) => {
     }
     
     // Read current config
-    const configPath = path.join(__dirname, '..', 'config.json');
+    const configPath = path.join(__dirname, '..', '..', 'localconfig', 'config.json');
     const currentConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     
     // Update with new values
@@ -1539,7 +1539,7 @@ app.post('/api/llm/profiles', express.json(), (req, res) => {
       return res.status(400).json({ error: 'Name and profile data required' });
     }
     
-    const configPath = path.join(__dirname, '..', 'config.json');
+    const configPath = path.join(__dirname, '..', '..', 'localconfig', 'config.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     
     config.profiles[name] = profile;
@@ -1561,7 +1561,7 @@ app.put('/api/llm/profiles/:name', express.json(), (req, res) => {
     const { name } = req.params;
     const profileData = req.body;
     
-    const configPath = path.join(__dirname, '..', 'config.json');
+    const configPath = path.join(__dirname, '..', '..', 'localconfig', 'config.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     
     if (!config.profiles[name]) {
@@ -1584,7 +1584,7 @@ app.delete('/api/llm/profiles/:name', (req, res) => {
   try {
     const { name } = req.params;
     
-    const configPath = path.join(__dirname, '..', 'config.json');
+    const configPath = path.join(__dirname, '..', '..', 'localconfig', 'config.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     
     if (!config.profiles[name]) {

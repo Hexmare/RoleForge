@@ -1,0 +1,286 @@
+{
+  "defaultProfile": "openai",
+  "features": {
+    "visualAgentEnabled": true,
+    "socketAckLogs": true,
+    "summarizationEnabled": false,
+    "summarizationInterval": 1000,
+    "summarizationRoundInterval": 4,
+    "maxSummaryTokens": 1000,
+    "jsonValidationEnabled": true,
+    "jsonValidationDevLog": false,
+    "jsonValidationMaxRetries": 1
+  },
+  "debug": {
+    "enabledNamespaces": "roleforge:llm:*,roleforge:image:gen,roleforge:agents:*",
+    "colors": true,
+    "whitelist": [
+      "roleforge:server:*",
+      "roleforge:services:*",
+      "roleforge:agents:*",
+      "roleforge:vectorstore:*",
+      "roleforge:utils:*",
+      "roleforge:llm:*",
+      "roleforge:image:*",
+      "roleforge:ui:*",
+      "roleforge:story:*",
+      "roleforge:frontend:*",
+      "roleforge:backend:*"
+    ]
+  },
+  "comfyui": {
+    "endpoint": "http://localhost:8188",
+    "workflow": "z_image_turbo.json",
+    "model": "pornCraftByStableYogi_v30FP16.safetensors",
+    "vae": "qwen_image_vae.safetensors",
+    "sampler": "dpmpp_sde_gpu",
+    "scheduler": "simple",
+    "steps": 4,
+    "height": 720,
+    "width": 1280,
+    "clip_skip": 1,
+    "denoise": 7,
+    "cfg_scale": 1,
+    "seed": -1,
+    "negative_prompt": "",
+    "positive_prompt": "best quality, absurdres, masterpiece, precise anatomy details , dynamic tension, visceral textures, hyper-detailed, ultra-realistic,<lora:QwenSnofs13h:1>"
+  },
+  "profiles": {
+    "openai": {
+      "type": "openai",
+      "baseURL": "http://192.168.88.88:5001/v1",
+      "model": "koboldcpp/mistralai_Ministral-3-14B-Reasoning-2512-Q5_K_M",
+      "template": "chatml",
+      "sampler": {
+        "temperature": 0.8,
+        "topP": 0.9,
+        "max_completion_tokens": 512,
+        "frequencyPenalty": 1.1,
+        "presencePenalty": 1.1,
+        "maxContextTokens": 20000,
+        "forceJson": true,
+        "n": 1
+      },
+      "stream": true
+    },
+    "kobold": {
+      "type": "custom",
+      "baseURL": "http://192.168.88.135:5001",
+      "model": "koboldcpp/mistralai_Ministral-3-14B-Reasoning-2512-Q5_K_M",
+      "template": "mistralv7tekken",
+      "sampler": {
+        "temperature": 0.8,
+        "topP": 0.9,
+        "max_completion_tokens": 512,
+        "frequencyPenalty": 1.1,
+        "presencePenalty": 1.1,
+        "maxContextTokens": 2048,
+        "forceJson": true,
+        "n": 1
+      },
+      "stream": true
+    }
+  },
+  "agents": {
+    "narrator": {
+      "llmProfile": "default",
+      "returnsJson": false
+    },
+    "character": {
+      "llmProfile": "default",
+      "returnsJson": true,
+      "expectsJson": true,
+      "jsonMode": "object",
+      "jsonExample": {
+        "response": "\"Hello there.\" *I nod once.*",
+        "characterState": {
+          "clothing": "casual attire",
+          "mood": "neutral",
+          "activity": "listening",
+          "location": "common room",
+          "position": "standing"
+        }
+      },
+      "sampler": {
+        "max_completion_tokens": 400
+      }
+    },
+    "director": {
+      "llmProfile": "default",
+      "returnsJson": true,
+      "expectsJson": true,
+      "jsonMode": "schema",
+      "jsonSchema": {
+        "type": "object",
+        "properties": {
+          "openGuidance": {
+            "type": "string"
+          },
+          "actingCharacters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "guidance": {
+                  "type": "string"
+                },
+                "priority": {
+                  "type": "number"
+                },
+                "order": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "activations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deactivations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "stateUpdates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "location": {
+                  "type": "string"
+                },
+                "mood": {
+                  "type": "string"
+                },
+                "clothing": {
+                  "type": "string"
+                },
+                "activity": {
+                  "type": "string"
+                },
+                "intentions": {
+                  "type": "string"
+                }
+              },
+              "anyOf": [
+                {
+                  "required": [
+                    "name"
+                  ]
+                },
+                {
+                  "required": [
+                    "id"
+                  ]
+                }
+              ],
+              "additionalProperties": false
+            }
+          },
+          "remainingActors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "newActivations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "openGuidance",
+          "actingCharacters",
+          "activations",
+          "deactivations",
+          "stateUpdates"
+        ],
+        "additionalProperties": false
+      },
+      "jsonExample": {
+        "openGuidance": "Keep the scene tight and reactive.",
+        "actingCharacters": [
+          {
+            "name": "Rin",
+            "guidance": "Lead the exchange with a bold move.",
+            "priority": 3
+          }
+        ],
+        "activations": [
+          "Rin"
+        ],
+        "deactivations": [],
+        "stateUpdates": [
+          {
+            "name": "Rin",
+            "mood": "focused",
+            "intentions": "test boundaries"
+          }
+        ]
+      },
+      "sampler": {
+        "max_completion_tokens": 1024
+      }
+    },
+    "world": {
+      "llmProfile": "default",
+      "returnsJson": true,
+      "expectsJson": true,
+      "jsonMode": "object",
+      "jsonExample": {
+        "updates": []
+      },
+      "sampler": {
+        "max_completion_tokens": 2048
+      }
+    },
+    "summarize": {
+      "llmProfile": "default",
+      "returnsJson": false,
+      "sampler": {
+        "max_completion_tokens": 1024
+      }
+    },
+    "visual": {
+      "llmProfile": "default",
+      "returnsJson": false
+    },
+    "creator": {
+      "llmProfile": "default",
+      "returnsJson": true,
+      "expectsJson": true,
+      "jsonMode": "object",
+      "jsonExample": {
+        "result": "..."
+      },
+      "sampler": {
+        "max_completion_tokens": 4096
+      }
+    }
+  }
+}

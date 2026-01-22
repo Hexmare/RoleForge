@@ -471,6 +471,7 @@ export class Orchestrator {
 
   // Build a rich SessionContext for a given sceneId
   async buildSessionContext(sceneId: number) {
+    orchestratorLog(`\n========== [ORCHESTRATOR] Building SessionContext for Scene ${sceneId} ==========`);
     orchestratorLog(`\n========== [LORE ENGINE] Building SessionContext for Scene ${sceneId} ==========`);
     const sceneRow = this.db.prepare('SELECT * FROM Scenes WHERE id = ?').get(sceneId) as any;
     if (!sceneRow) return null;
@@ -1102,10 +1103,25 @@ export class Orchestrator {
       .filter((n: any) => !!n);
 
     const activeCharacterNamesStr = paramResolvedNames.length ? paramResolvedNames.join(', ') : (safeActiveNames.length ? safeActiveNames.join(', ') : 'None');
+    
+    // Get all available characters for potential activation
+    const allAvailableChars = CharacterService.getAllCharacters();
+    const availableCharNames = allAvailableChars
+      .map((c: any) => {
+        const merged = CharacterService.getMergedCharacter({
+          characterId: c.id,
+          worldId: sessionContext.world.id,
+          campaignId: sessionContext.campaign.id
+        });
+        return merged ? (merged.name || merged.displayName || merged.id) : null;
+      })
+      .filter((n: any) => !!n);
+    
     const directorContext = { 
       ...context, 
       activeCharacters: activeCharacters || [],
       activeCharacterNames: activeCharacterNamesStr,
+      availableCharacterNames: availableCharNames.join(', '),
       history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history
     };
     audit('directorPassStarted', { pass: 1, activeCharacterNames: activeCharacterNamesStr });
