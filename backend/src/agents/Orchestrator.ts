@@ -753,6 +753,10 @@ export class Orchestrator {
 
   private buildContextEnvelope(sceneId: number, requestType: 'user' | 'continuation', overrides?: Partial<BuildAgentContextEnvelopeOptions>) {
     const features = this.configManager.getConfig().features || {};
+    const config = this.configManager.getConfig();
+    const defaultProfile = config.profiles[config.defaultProfile];
+    const maxContextTokens = defaultProfile?.sampler?.maxContextTokens;
+    
     // Always fetch the latest summary from the database for this scene
     let latestSummary: string | undefined = undefined;
     try {
@@ -765,6 +769,7 @@ export class Orchestrator {
       // If DB fails, fallback to current in-memory summary
       latestSummary = this.sceneSummary;
     }
+    console.log(`[ORCHESTRATOR] buildContextEnvelope: Window message size ${features.historyWindowMessages}`);
     return buildAgentContextEnvelope({
       db: this.db,
       sceneId,
@@ -772,6 +777,7 @@ export class Orchestrator {
       historyWindow: features.historyWindowMessages,
       summarizationTrigger: features.summarizationTriggerMessages,
       summarizedHistory: latestSummary ? [latestSummary] : undefined,
+      tokenBudget: maxContextTokens ? { maxContextTokens } : undefined,
       ...overrides
     });
   }
@@ -874,6 +880,38 @@ export class Orchestrator {
       if (sceneRow?.summary) {
         this.sceneSummary = sceneRow.summary;
       }
+    }
+
+    // Load recent message history from database for this scene
+    if (sceneId) {
+      const maxHistoryTokens = 10000;
+      const maxMessagesToScan = 200; // Safety limit to avoid scanning entire scene
+      
+      // Get recent messages from database with token counts (ordered newest first)
+      const allRecentMessages = this.db.prepare(
+        'SELECT sender, message, tokenCount FROM Messages WHERE sceneId = ? ORDER BY messageNumber DESC LIMIT ?'
+      ).all(sceneId, maxMessagesToScan) as Array<{ sender: string; message: string; tokenCount: number }>;
+      
+      // Accumulate messages until we hit token limit
+      const selectedMessages: Array<{ sender: string; message: string }> = [];
+      let cumulativeTokens = 0;
+      
+      for (const msg of allRecentMessages) {
+        const msgTokens = msg.tokenCount || 0;
+        if (cumulativeTokens + msgTokens > maxHistoryTokens && selectedMessages.length > 0) {
+          break; // Stop if adding this message would exceed limit
+        }
+        selectedMessages.push({ sender: msg.sender, message: msg.message });
+        cumulativeTokens += msgTokens;
+      }
+      
+      // Reverse to get chronological order (oldest to newest)
+      selectedMessages.reverse();
+      
+      // Replace in-memory history with database messages
+      this.history = selectedMessages.map(m => `${m.sender}: ${m.message}`);
+      
+      orchestratorLog(`[ORCHESTRATOR] Loaded ${this.history.length} messages (${cumulativeTokens} tokens) from database for scene ${sceneId}`);
     }
 
     const slashCmd = this.parseSlashCommand(userInput);

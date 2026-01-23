@@ -9,7 +9,8 @@
     "maxSummaryTokens": 1000,
     "jsonValidationEnabled": true,
     "jsonValidationDevLog": false,
-    "jsonValidationMaxRetries": 1
+    "jsonValidationMaxRetries": 1,
+    "historyWindowMessages": 200
   },
   "debug": {
     "enabledNamespaces": "roleforge:llm:*,roleforge:image:gen,roleforge:agents:*",
@@ -48,7 +49,7 @@
   "profiles": {
     "openai": {
       "type": "openai",
-      "baseURL": "http://192.168.88.88:5001/v1",
+      "baseURL": "http://192.168.88.135:5001/v1",
       "model": "koboldcpp/mistralai_Ministral-3-14B-Reasoning-2512-Q5_K_M",
       "template": "chatml",
       "sampler": {
@@ -74,7 +75,7 @@
         "max_completion_tokens": 512,
         "frequencyPenalty": 1.1,
         "presencePenalty": 1.1,
-        "maxContextTokens": 2048,
+        "maxContextTokens": 20000,
         "forceJson": true,
         "n": 1
       },

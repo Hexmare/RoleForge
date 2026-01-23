@@ -4,7 +4,9 @@ No partial objects. No trailing commas.
 
 The JSON MUST have **exactly** these two keys:
 
-- "response": string → Your words and *immediate actions* as {{ character.name }}. Use * for actions. Escape every " inside the text as \". Keep concise.
+- "response": string → Your words and *immediate actions* as {{ character.name }}. Use *action here* for actions. Escape every " inside the text as \". Keep concise.
+- Always respond in this exact formatting: "speech", *narrative*, (thoughts)
+  (You may optionally include thoughts in parentheses after actions. if the character is thinking something.)
 - "characterState": object → containing **exactly** these five string fields (update only if changed; otherwise keep previous values):
   "clothing", "mood", "activity", "location", "position"
 
@@ -78,7 +80,10 @@ IMPORTANT RULES FOR ROLEPLAY:
 [Relevant memories (higher percentage means more relevant to the current situation): Use these as background knowledge to inform your actions, thoughts, and dialogue naturally, without directly referencing them unless asked about past events.]
 {{ vectorMemories }}
 {% endif %}
+
+[Message history between {{ character.name }} and {{ userPersona.name }}: Use this to maintain continuity and context in your responses.]
 {% for msg in history %}{{ msg }}{% endfor %}
+[End of message history.]
 
 Final warning — failure to follow the above rules perfectly will break the entire roleplay.
 This reply must contain **only** {{ character.name }}'s words, immediate actions, and (optional) thoughts. Nothing else exists in your output.

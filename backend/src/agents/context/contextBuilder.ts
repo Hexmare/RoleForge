@@ -36,7 +36,7 @@ const SECTION_KEYS: Array<keyof TokenAllocation> = [
 ];
 
 const DEFAULT_ALLOCATIONS: TokenAllocation = {
-  history: 0.3,
+  history: 0.5,
   summaries: 0.1,
   lore: 0.15,
   memories: 0.2,
@@ -184,7 +184,7 @@ export function buildAgentContextEnvelope(options: BuildAgentContextEnvelopeOpti
   const windowedHistory = options.historyWindow && options.history?.length
     ? options.history.slice(Math.max(options.history.length - options.historyWindow, 0))
     : options.history || [];
-
+console.log(`[contextBuilder] *************** windowedHistory: historyWindow=${options.historyWindow}, original history length=${options.history?.length ?? 0}, windowed length=${windowedHistory.length}`);
   const sceneRow = db.prepare('SELECT * FROM Scenes WHERE id = ?').get(sceneId) as any;
   const arcRow = sceneRow ? db.prepare('SELECT * FROM Arcs WHERE id = ?').get(sceneRow.arcId) as any : null;
   const campaignRow = arcRow ? db.prepare('SELECT * FROM Campaigns WHERE id = ?').get(arcRow.campaignId) as any : null;

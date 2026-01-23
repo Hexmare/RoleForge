@@ -51,7 +51,6 @@ function estimateTokens(text: string): number {
 
 function trimMessages(messages: ChatMessage[], maxTokens: number): ChatMessage[] {
   if (!maxTokens || messages.length <= 2) return messages; // Keep at least system + current user
-
   // Find system message and current user message (last user message)
   const systemMessage = messages.find(msg => msg.role === 'system');
   const userMessages = messages.filter(msg => msg.role === 'user');
@@ -164,11 +163,8 @@ async function attemptChatCompletion(
 
   const model = profile.model || 'gpt-3.5-turbo';
 
-  // Trim messages based on max context tokens
-  const trimmedMessages = trimMessages(messages, profile.sampler?.maxContextTokens || 0);
-  
   // Clean up backslashes in all messages
-  const cleanedMessages = trimmedMessages.map(msg => ({
+  const cleanedMessages = messages.map(msg => ({
     ...msg,
     content: cleanPromptBackslashes(msg.content)
   }));
