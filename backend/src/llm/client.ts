@@ -2,11 +2,8 @@ import OpenAI from 'openai';
 import axios from 'axios';
 import { LLMProfile } from '../configManager';
 import { countTokens } from '../utils/tokenCounter.js';
-
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
+import { MessageContext, ChatMessage } from './types.js';
+import { buildOpenAIMessages } from './messageBuilder.js';
 
 // Retry configuration
 const MAX_RETRIES = 3;
@@ -90,6 +87,22 @@ function trimMessages(messages: ChatMessage[], maxTokens: number): ChatMessage[]
   trimmed.push(currentUserMessage);
 
   return trimmed;
+}
+
+/**
+ * New chat completion function that accepts structured MessageContext.
+ * Automatically builds the appropriate message format for OpenAI.
+ */
+export async function chatCompletionFromContext(
+  profile: LLMProfile,
+  context: MessageContext,
+  options: { stream?: boolean; fallbackProfiles?: LLMProfile[] } = {}
+): Promise<string | AsyncIterable<string>> {
+  // Build OpenAI messages from the structured context
+  const messages = buildOpenAIMessages(context);
+  
+  // Use the existing chatCompletion function
+  return chatCompletion(profile, messages, options);
 }
 
 export async function chatCompletion(

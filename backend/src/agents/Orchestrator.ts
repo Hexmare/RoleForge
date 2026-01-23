@@ -1565,20 +1565,11 @@ export class Orchestrator {
 
       const characterAgent = new CharacterAgent(charName, this.configManager, this.env);
       
-      // Build history with all messages from this round (user message + any previous character responses)
-      let historyToPass = this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history;
-      if (turnResponses.length > 0) {
-        const previousResponses = '\n\n[Other Characters in this turn:]\n' + turnResponses.map(r => `${r.character}: ${r.response}`).join('\n');
-        if (Array.isArray(historyToPass)) {
-          historyToPass = [...historyToPass, previousResponses];
-        } else {
-          historyToPass = [historyToPass, previousResponses];
-        }
-      }
+      // Build current round messages (all responses so far in this round)
+      const currentRoundMessages = turnResponses.map(r => `${r.character}: ${r.response}`);
       
       const characterContext: AgentContext = {
         ...context,
-        history: historyToPass,
         character: characterData,
         characterState: characterStates[charName],
         characterDirective: directiveMap[charName],
@@ -1591,6 +1582,11 @@ export class Orchestrator {
         },
         maxCompletionTokens: (characterAgent as any).getProfile().sampler?.max_completion_tokens || 400,
       };
+      
+      // Update context envelope with current round messages if envelope exists
+      if (characterContext.contextEnvelope) {
+        characterContext.contextEnvelope.lastRoundMessages = currentRoundMessages;
+      }
 
       // Query memories for character (Phase 3)
       if (sceneId && characterData?.id) {

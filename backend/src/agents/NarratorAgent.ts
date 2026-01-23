@@ -9,7 +9,8 @@ export class NarratorAgent extends BaseAgent {
     // Choose template based on narration mode
     const templateName = context.narrationMode === 'scene-picture' ? 'narrator-scene-picture' : 'narrator';
     const systemPrompt = this.renderTemplate(templateName, context);
-    const response = await this.callLLM(systemPrompt, context.userInput);
+    const messageContext = this.buildMessageContext(context, systemPrompt);
+    const response = await this.callLLMWithContext(messageContext);
     return this.cleanResponse(response as string);
   }
 }

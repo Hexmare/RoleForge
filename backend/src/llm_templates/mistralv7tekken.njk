@@ -1,1 +1,32 @@
-<s>[SYSTEM_PROMPT]{{system_prompt}}[/SYSTEM_PROMPT][INST]{{user_message}}[/INST]{{assistant_message}}</s>[INST]{{user_message}}[/INST]
+{# Mistral v7 Tekken format for MessageContext #}
+<s>[SYSTEM_PROMPT]{% if preSystemPrompt %}{{ preSystemPrompt }}
+
+{% endif %}
+{% if summary %}## SCENE SUMMARY
+{{ summary }}
+
+{% endif %}
+{% if lore and lore.length > 0 %}## LORE
+{% for entry in lore %}{{ entry }}
+
+{% endfor %}
+{% endif %}
+{% if memories and memories.length > 0 %}## MEMORIES
+{% for memory in memories %}{{ memory }}
+
+{% endfor %}
+{% endif %}
+{% if finalSystemPrompt %}{{ finalSystemPrompt }}
+
+{% endif %}
+{% if jsonSpec %}## OUTPUT FORMAT
+{% if jsonSpec.mode == 'schema' and jsonSpec.schema %}Respond with JSON matching this schema:
+```json
+{{ jsonSpec.schema if jsonSpec.schema is string else (jsonSpec.schema | dump(2)) }}
+```
+{% elif jsonSpec.mode == 'object' and jsonSpec.example %}Respond with JSON matching this structure:
+```json
+{{ jsonSpec.example | dump(2) }}
+```
+{% endif %}
+{% endif %}[/SYSTEM_PROMPT]{% if chatHistory and chatHistory.length > 0 %}{% for msg in chatHistory %}{% if loop.index0 % 2 == 0 %}[INST]{{ msg }}[/INST]{% else %}{{ msg }}</s><s>{% endif %}{% endfor %}{% endif %}{% if currentRoundMessages and currentRoundMessages.length > 0 %}{% for msg in currentRoundMessages %}{{ msg }}</s><s>{% endfor %}{% endif %}{% if userInput %}[INST]{{ userInput }}[/INST]{% endif %}

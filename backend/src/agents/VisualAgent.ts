@@ -46,7 +46,9 @@ export class VisualAgent extends BaseAgent {
     // For /image command: use dedicated visual-image template with matched entities
     if ((context as any).matchedEntities && (context as any).matchedEntities.length > 0) {
       const systemPrompt = this.renderTemplate('visual-image', context);
-      const response = await this.callLLM(systemPrompt, '');
+      const messageContext = this.buildMessageContext(context, systemPrompt);
+      messageContext.userInput = '';
+      const response = await this.callLLMWithContext(messageContext);
       const sdPrompt = this.cleanResponse(response as string).trim();
       
       // Validate the prompt
@@ -68,7 +70,9 @@ export class VisualAgent extends BaseAgent {
     // For scene-picture mode, generate an optimized SD prompt directly
     if (context.narrationMode === 'scene-picture') {
       const systemPrompt = this.renderTemplate('visual-scene-picture', context);
-      const response = await this.callLLM(systemPrompt, 'Generate optimized Stable Diffusion prompt');
+      const messageContext = this.buildMessageContext(context, systemPrompt);
+      messageContext.userInput = 'Generate optimized Stable Diffusion prompt';
+      const response = await this.callLLMWithContext(messageContext);
       const sdPrompt = this.cleanResponse(response as string).trim();
       return sdPrompt;
     }
@@ -76,7 +80,9 @@ export class VisualAgent extends BaseAgent {
     // For /image command: narration is provided, generate image directly (legacy path)
     if (context.narration && typeof context.narration === 'string' && context.narration.length > 10) {
       const systemPrompt = this.renderTemplate('visual', context);
-      const response = await this.callLLM(systemPrompt, '');
+      const messageContext = this.buildMessageContext(context, systemPrompt);
+      messageContext.userInput = '';
+      const response = await this.callLLMWithContext(messageContext);
       const sdPrompt = this.cleanResponse(response as string).trim();
       
       // If the prompt is too short or generic, it failed
@@ -96,8 +102,8 @@ export class VisualAgent extends BaseAgent {
     }
 
     // For regular visual requests with userInput, check for [GEN_IMAGE:] tags
-    const systemPrompt = this.renderTemplate('visual', context);
-    const response = await this.callLLM(systemPrompt, context.userInput);
+    const messageContext = this.buildMessageContext(context);
+    const response = await this.callLLMWithContext(messageContext);
     const cleaned = this.cleanResponse(response as string);
 
     // Check for image generation trigger

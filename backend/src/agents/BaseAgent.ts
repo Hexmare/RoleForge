@@ -3,14 +3,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { chatCompletion, ChatMessage } from '../llm/client';
-import { customLLMRequest } from '../llm/customClient';
-import { ConfigManager, LLMProfile, Config } from '../configManager';
+import { chatCompletion, chatCompletionFromContext } from '../llm/client.js';
+import { customLLMRequest } from '../llm/customClient.js';
+import { ConfigManager, LLMProfile, Config } from '../configManager.js';
 import { estimateWordsFromTokens } from '../utils/tokenCounter.js';
-import { createLogger, NAMESPACES } from '../logging';
+import { createLogger, NAMESPACES } from '../logging.js';
 import { buildJsonReturnTemplate } from './context/jsonTemplates.js';
 import { AgentContextEnvelope } from './context/types.js';
 import { validateAgentJson } from './context/jsonValidation.js';
+import { MessageContext, ChatMessage } from '../llm/types.js';
+import { buildCustomTemplate } from '../llm/messageBuilder.js';
 
 export interface AgentContext {
   userInput: string;
@@ -121,6 +123,146 @@ export abstract class BaseAgent {
     if (agentConfig?.template !== undefined) mergedProfile.template = agentConfig.template;
 
     return mergedProfile as LLMProfile;
+  }
+
+  /**
+   * Helper method to build MessageContext from AgentContext.
+   * Converts the old context structure to the new MessageContext format.
+   */
+  protected buildMessageContext(agentContext: AgentContext, systemPrompt?: string): MessageContext {
+    const envelope = agentContext.contextEnvelope;
+    
+    return {
+      preSystemPrompt: systemPrompt || this.renderTemplate(this.agentName, agentContext),
+      memories: envelope ? this.formatMemories(envelope.memories) : undefined,
+      lore: envelope?.lore || agentContext.lore,
+      summary: envelope?.summarizedHistory?.[0] || agentContext.sceneSummary,
+      chatHistory: envelope?.history || agentContext.history,
+      currentRoundMessages: envelope?.lastRoundMessages,
+      userInput: agentContext.userInput,
+      metadata: {
+        agentName: this.agentName,
+        sceneId: envelope?.sceneId,
+        roundNumber: envelope?.roundNumber
+      }
+    };
+  }
+
+  /**
+   * Format memories from envelope structure into string array
+   */
+  private formatMemories(memories?: Record<string, any[]>): string[] | undefined {
+    if (!memories) return undefined;
+    
+    const formatted: string[] = [];
+    for (const [key, entries] of Object.entries(memories)) {
+      if (key === '__loreOverride') continue;
+      if (entries && entries.length > 0) {
+        for (const entry of entries) {
+          const text = typeof entry === 'string' ? entry : JSON.stringify(entry);
+          formatted.push(text);
+        }
+      }
+    }
+    
+    return formatted.length > 0 ? formatted : undefined;
+  }
+
+  /**
+   * New method: Call LLM with structured MessageContext.
+   * This is the preferred method going forward - it separates content from formatting.
+   */
+  protected async callLLMWithContext(context: MessageContext): Promise<string> {
+    try {
+      const profile = this.getProfile();
+      const fullConfig = this.configManager.getConfig();
+      const agentConfig = fullConfig.agents?.[this.agentName];
+      const features = fullConfig.features || {};
+      const maxValidationRetries = Math.max(0, features.jsonValidationMaxRetries ?? 1);
+
+      // Add JSON spec from agent config if not already in context
+      if (!context.jsonSpec && agentConfig && (agentConfig.expectsJson || agentConfig.jsonMode)) {
+        context.jsonSpec = {
+          mode: agentConfig.jsonMode,
+          schema: agentConfig.jsonSchema,
+          example: agentConfig.jsonExample
+        };
+      }
+
+      // Add metadata if not present
+      if (!context.metadata) {
+        context.metadata = { agentName: this.agentName };
+      }
+
+      let attempt = 0;
+      let lastValidation: { output: string; valid: boolean; errors?: string[] } | null = null;
+      let lastRaw = '';
+
+      while (attempt <= maxValidationRetries) {
+        // On retry, add error info to the context
+        const contextForAttempt = attempt === 0
+          ? context
+          : {
+              ...context,
+              userInput: context.userInput + `\n\n[VALIDATION RETRY]\nPrevious response was invalid (${lastValidation?.errors?.join('; ') || 'invalid JSON'}). Return valid JSON only.`
+            };
+
+        let raw = '';
+        if (profile.type === 'custom') {
+          // Use custom template rendering
+          const templateName = profile.template || 'chatml';
+          raw = await customLLMRequest(
+            profile,
+            buildCustomTemplate(contextForAttempt, templateName, this.env),
+            {}
+          );
+        } else {
+          // Use OpenAI message builder
+          const result = await chatCompletionFromContext(profile, contextForAttempt, { stream: false });
+          raw = result as string;
+        }
+
+        lastRaw = raw;
+        const validation = this.validateAndMaybeCoerceJson(raw, agentConfig, features);
+        lastValidation = validation;
+
+        if (validation.valid) {
+          return validation.output;
+        }
+
+        attempt += 1;
+      }
+
+      this.baseAgentLog('[JSON VALIDATION] agent=%s failed after %d attempts errors=%o', this.agentName, maxValidationRetries + 1, lastValidation?.errors);
+
+      if (agentConfig && (agentConfig.expectsJson || agentConfig.jsonMode || agentConfig.returnsJson)) {
+        return JSON.stringify({ error: 'failed_json_validation', errors: lastValidation?.errors || ['unknown_error'] });
+      }
+
+      return lastRaw;
+    } catch (error: any) {
+      this.baseAgentLog('[LLM] Call failed for agent %s: %o', this.agentName, error);
+      
+      // Provide a fallback response based on agent type
+      switch (this.agentName) {
+        case 'character':
+          return "I apologize, but I'm having trouble responding right now. Could you try rephrasing your message?";
+        case 'narrator':
+          return "The scene remains as it was. The environment is quiet and unchanged.";
+        case 'director':
+          return '{"guidance": "Continue the conversation naturally.", "characters": []}';
+        case 'world':
+          return '{"updates": []}';
+        case 'summarize':
+          return "Unable to generate summary at this time.";
+        case 'visual':
+          return "Unable to generate visual content at this time.";
+        case 'creator':
+          return "Unable to create content at this time.";
+        default:
+          return "I apologize, but I'm experiencing technical difficulties.";
+      }
+    }
   }
 
   protected async callLLM(systemPrompt: string, userMessage: string, assistantMessage: string = ''): Promise<string> {

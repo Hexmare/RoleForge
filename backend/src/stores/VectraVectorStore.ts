@@ -216,9 +216,22 @@ export class VectraVectorStore implements VectorStoreInterface {
               try {
                 const indexJsonPath2 = path.join(indexPath, 'index.json');
                 const content = await fs.readFile(indexJsonPath2, 'utf-8');
-                const parsed = JSON.parse(content);
-                const items = Array.isArray(parsed.items) ? parsed.items : [];
-                return items.find((it: any) => it.id === id) !== undefined;
+                
+                // Check if file is too large (> 500KB) - vectra has issues with large files
+                if (content.length > 500000) {
+                  vectraStoreLog(`[VECTOR_STORE] Warning: index.json for scope ${scope} is very large (${content.length} bytes) - may cause parsing issues`);
+                }
+                
+                // Try to parse, catch corruption errors
+                try {
+                  const parsed = JSON.parse(content);
+                  const items = Array.isArray(parsed.items) ? parsed.items : [];
+                  return items.find((it: any) => it.id === id) !== undefined;
+                } catch (parseError) {
+                  vectraStoreLog(`[VECTOR_STORE] Failed to parse index.json for scope ${scope}: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+                  // Index is corrupted, return false to trigger recovery
+                  return false;
+                }
               } catch {
                 return false;
               }
@@ -302,8 +315,39 @@ export class VectraVectorStore implements VectorStoreInterface {
 
       vectraStoreLog(`[VECTOR_STORE] Added memory ${id} to scope ${scope}`);
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
       vectraStoreLog(`[VECTOR_STORE] Failed to add memory ${id}:`, error);
-      throw new Error(`Failed to add memory: ${error instanceof Error ? error.message : String(error)}`);
+      
+      // If JSON parsing error, the index is likely corrupted
+      if (errorMsg.includes('Unexpected non-whitespace character after JSON') || 
+          errorMsg.includes('Unexpected token') ||
+          errorMsg.includes('JSON')) {
+        vectraStoreLog(`[VECTOR_STORE] Detected corrupted index for scope ${scope}, attempting recovery`);
+        
+        try {
+          // Remove the corrupted index from memory cache
+          this.indexes.delete(scope);
+          
+          // Try to recreate the index
+          const index = new LocalIndex(path.join(this.basePath, scope));
+          try {
+            await index.createIndex();
+          } catch (createErr) {
+            // Index might already exist, ignore
+          }
+          
+          this.indexes.set(scope, index);
+          vectraStoreLog(`[VECTOR_STORE] Successfully recovered index for scope ${scope}`);
+          
+          // Don't re-throw - treat as non-fatal since vectorization shouldn't block the app
+          return;
+        } catch (recoveryError) {
+          vectraStoreLog(`[VECTOR_STORE] Failed to recover index for scope ${scope}:`, recoveryError);
+        }
+      }
+      
+      // Don't throw - vectorization failures should be non-fatal
+      vectraStoreLog(`[VECTOR_STORE] Memory storage failed but continuing (non-fatal): ${errorMsg}`);
     }
   }
 

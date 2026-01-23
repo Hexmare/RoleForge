@@ -1,4 +1,5 @@
-import { chatCompletion, ChatMessage } from '../llm/client';
+import { chatCompletion } from '../llm/client';
+import { ChatMessage } from '../llm/types.js';
 import { LLMProfile } from '../configManager';
 import { countTokens } from '../utils/tokenCounter';
 import { SummarizeAgent } from '../agents/SummarizeAgent';
