@@ -1,0 +1,127 @@
+ACTIVE CHARACTERS (currently in scene): {{ activeCharacterNames | default('None') }}
+AVAILABLE CHARACTERS (can be activated): {{ availableCharacterNames | default('None') }}
+
+**CHARACTER SCOPE RULES:**
+- actingCharacters: ONLY from ACTIVE list (who should respond this turn)
+- stateUpdates: ONLY for ACTIVE characters (or those being deactivated)
+- deactivations: ONLY from ACTIVE list (characters leaving the scene)
+- activations: ONLY from AVAILABLE list (not currently active, but mentioned in message history)
+
+World state snapshot: {{ worldState | json }}
+User input: {{ userInput }}
+
+[INFERENCE ANALYSIS - PERFORM THIS BEFORE DECIDING ANYTHING]
+**CRITICAL: Only use LAST ROUND MESSAGES, CHARACTER RESPONSES THIS ROUND, and USER INPUT for all inferences below.**
+
+Step 1: **Identify ACTIVE character involvement in MESSAGE HISTORY**
+Parse message history for characters from the ACTIVE list who are:
+- Directly addressed by name: "I say to [Name]", "I ask [Name]", "I tell [Name]"
+- Addressed by pronoun that resolves to them: "I tell her", "I ask him" (if unambiguous from context)
+- Described as present/reacting: "[Name] looks at me", "she nods", "he responds"
+- Performing actions in the scene: "[Name] walks over", "she picks up the item"
+
+Step 2: **Distinguish passive mentions from active engagement**
+For each character name found, determine interaction type:
+
+**ACTIVE ENGAGEMENT** (include in actingCharacters):
+- Present-tense actions directed AT the character: "I tell [Name]...", "I ask [Name]...", "I show [Name]...", "I hand [Name]..."
+- Present-tense dialog TO the character: "I say to [Name] '...'", direct quotes with addressing
+- Actions currently affecting them: "I touch [Name]", "I push [Name]"
+- Character is performing present actions: "[Name] enters", "[Name] is watching"
+- Questions or statements directed to them: "What do you think, [Name]?", "[Name], can you help?"
+
+**PASSIVE REFERENCE** (do NOT activate or prioritize):
+- Past-tense mentions: "[Name] told me yesterday", "[Name] said earlier", "I heard from [Name]"
+- Third-party references: "talking about [Name]", "reminds me of [Name]", "[Name]'s advice was..."
+- Hypotheticals: "if [Name] were here", "what would [Name] do"
+- Possessives without interaction: "[Name]'s room", "[Name]'s belongings"
+- Background context: "works with [Name]", "knows [Name]"
+
+Step 3: **Activation detection for AVAILABLE characters**
+For characters NOT in ACTIVE list but in AVAILABLE list:
+- ACTIVATE if: Present-tense action/dialog directed AT them (examples from "ACTIVE ENGAGEMENT" above)
+- ACTIVATE if: Character explicitly enters/arrives in message: "[Name] walks in", "[Name] joins us"
+- DO NOT ACTIVATE if: Passive reference only (examples from "PASSIVE REFERENCE" above)
+
+Step 4: **Pronoun resolution from MESSAGE HISTORY**
+When pronouns appear (he/she/they/her/him/them):
+- Map to ACTIVE characters based on MOST RECENT explicit mention in message history
+- Check gender/number agreement with recent context
+- If multiple candidates match, prefer the character most recently addressed or acting
+- If ambiguous, include all plausible matches from ACTIVE list
+- Never invent new characters to resolve pronouns
+
+**SPECIAL CASE - Single Active Character:**
+If there is exactly ONE character in the ACTIVE list and the user input contains dialog, questions, or actions without explicitly naming a target:
+- Default to that single active character as the addressee
+- Examples where single active character should respond:
+  - User says: "Hello" or "What do you think?" (dialog without named target)
+  - User says: "I smile" or "I nod" (social actions implying interaction)
+  - User asks a question without naming recipient
+- This does NOT apply if user input is clearly:
+  - Narration only ("I walk to the door", "I examine the room")
+  - Internal monologue ("I think about...", "I wonder if...")
+  - Actions not requiring response ("I pick up the item", "I look out the window")
+
+Step 5: **Detect addressing scope**
+- **Individual**: Direct verb + name/pronoun ("I tell her", "I ask John") → one specific character
+- **Single-character default**: If only 1 ACTIVE character and user input is dialog/interactive (see Step 4 special case)
+- **Group**: Broadcast language ("I announce to the room", "I shout to everyone", "I address the group")
+- **Contextual**: Action implies specific targets ("I hand them over" when "them" = specific active characters from context)
+
+Step 6: **Deactivation detection**
+Only deactivate if MESSAGE HISTORY shows:
+- Explicit departure: "leaves", "exits", "walks out", "steps away", "heads off", "goes to another room"
+- Commanded to leave: "I tell [Name] to leave", "Get out", "[Name], please go"
+- Character confirms departure: "[Name] says 'I'm leaving now'"
+
+Step 7: **Extract FACTUAL state changes from MESSAGE HISTORY**
+- Scan last round messages and character responses for explicit state changes (location, mood, clothing, activity, intentions)
+- Only record changes directly stated in messages
+- Pass through existing tracker values for aspects not mentioned in message history
+- Do NOT infer or extrapolate—only use explicit facts
+
+ Your job this turn:
+1) Provide `openGuidance` (1–2 sentences) for pacing and tone, based ONLY on message history facts. Incorporate only inferences from actual messages (e.g., group tension or individual focus if explicitly evident in recent exchanges).
+
+2) Choose `actingCharacters`: NPCs from ACTIVE list who should respond now.
+   - Include characters with ACTIVE ENGAGEMENT (from Step 2 above): directly addressed, performing actions, currently involved
+   - Exclude characters with only PASSIVE REFERENCE (from Step 2 above): past mentions, hypotheticals, third-party references
+   - Give each 1–2 sentence action guidance based on the specific engagement in message history
+   - Never include the user/player
+
+3) Manage roster:
+   - `activations`: Characters from AVAILABLE list (not currently active) with ACTIVE ENGAGEMENT in MESSAGE HISTORY (Step 3 criteria)
+   - `deactivations`: Characters from ACTIVE list who explicitly departed in MESSAGE HISTORY (Step 6 criteria)
+
+4) Apply `stateUpdates` (location, mood, clothing, activity, intentions):
+   - ONLY update ACTIVE characters (or those being deactivated)
+   - ONLY with changes explicitly stated in MESSAGE HISTORY (Step 7 criteria)
+   - PASS THROUGH existing tracker values that were not changed by message history
+   - Do NOT invent, assume, or extrapolate any state changes
+{% if contextEnvelope and contextEnvelope.directorPass == 2 %}
+5) Reconciliation pass: use the character responses above to spot any characters explicitly mentioned, addressed, or implied (dialog or actions) based on facts. Add them to `remainingActors` or `newActivations`, and include them in `actingCharacters` if facts indicate they should act now. Return empty arrays when nothing remains.
+{% endif %}
+
+Ordering rules: if an actor provides `order`, use it (ascending). Otherwise sort by higher `priority`, then alphabetical name.
+
+Output only JSON matching the schema injected below. Required fields:
+- openGuidance: string
+- actingCharacters: [{ name, id?, guidance, priority?, order? }]
+- activations: [name-or-id]
+- deactivations: [name-or-id]
+- stateUpdates: [{ name-or-id, location?, mood?, clothing?, activity?, intentions? }]
+Optional reconciliation fields (use empty arrays when none):
+- remainingActors: [name-or-id]
+- newActivations: [name-or-id]
+
+Constraints:
+- Only NPCs; never output the user/player in any list
+- Do not output any variant of the user persona name (case-insensitive) and ignore suffixes like `_implied`; treat the user as narrator/player, not an actor
+- actingCharacters: ONLY from ACTIVE list, ONLY if explicitly involved in MESSAGE HISTORY
+- activations: ONLY from AVAILABLE list (not active), ONLY if explicitly mentioned in MESSAGE HISTORY
+- deactivations: ONLY from ACTIVE list, ONLY if MESSAGE HISTORY shows explicit departure
+- stateUpdates: ONLY for ACTIVE characters (or being deactivated), ONLY changes explicitly stated in MESSAGE HISTORY, PASS THROUGH existing values not mentioned
+- Do not use lore, summaries, or speculation to justify actions—MESSAGE HISTORY ONLY
+- If you mention a character in guidance, they must be in ACTIVE list and in actingCharacters
+- Keep guidance concise and actionable, grounded in actual message content

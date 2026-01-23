@@ -993,6 +993,9 @@ export class Orchestrator {
     }
 
     // Normal interaction flow
+    // Track current round start position before adding user input
+    const currentRoundStartIndex = this.history.length;
+    
     // Add user input to history
     this.history.push(`User: ${userInput}`);
 
@@ -1035,7 +1038,7 @@ export class Orchestrator {
     const contextEnvelope = sceneId
       ? this.buildContextEnvelope(sceneId, 'user', {
           roundNumber: this.currentRoundNumber,
-          history: this.history,
+          history: this.history.slice(0, currentRoundStartIndex), // Exclude current round
           summarizedHistory: this.sceneSummary ? [this.sceneSummary] : undefined,
           characterSummaries: sessionContext.activeCharacters,
           characterStates: sessionContext.scene.characterStates,

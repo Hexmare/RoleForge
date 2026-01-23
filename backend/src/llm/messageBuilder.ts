@@ -69,16 +69,16 @@ export function buildOpenAIMessages(context: MessageContext): ChatMessage[] {
   }
   
   // Build current round interactions (user input + all character responses so far)
-  let currentRoundContent = '[CURRENT ROUND INTERACTIONS]\n';
+  let currentRoundContent = '[CURRENT ROUND INTERACTIONS]\nThe following messages have occurred in the current round. React to these events naturally - do NOT repeat or quote them.\n\n';
   const roundParts: string[] = [];
   
   if (context.userInput) {
-    roundParts.push(`[USER MESSAGE]\n${context.userInput}`);
+    roundParts.push(context.userInput);
   }
   
   if (context.currentRoundMessages && context.currentRoundMessages.length > 0) {
     for (let i = 0; i < context.currentRoundMessages.length; i++) {
-      roundParts.push(`[CHARACTER RESPONSE ${i + 1}]\n${context.currentRoundMessages[i]}`);
+      roundParts.push(context.currentRoundMessages[i]);
     }
   }
   
