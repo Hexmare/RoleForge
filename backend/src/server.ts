@@ -587,19 +587,20 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
     // Get active characters from context
     const activeCharacters = sessionContext?.activeCharacters?.map(c => c.id || c.name) || [];
     
-    // Set the orchestrator's current round for proper tracking
-    const previousOrchRound = (orchestrator as any).currentRoundNumber;
-    (orchestrator as any).currentRoundNumber = roundToRegenerate;
-    
-    // Call orchestrator.processUserInput to regenerate responses
-    const result = await orchestrator.processUserInput(triggerMessage, persona, activeCharacters, sceneIdNum);
-    
-    // Restore previous round state
-    (orchestrator as any).currentRoundNumber = previousOrchRound;
-    
-    // Delete all AI messages from current round (keep user messages)
+    // CRITICAL: Delete AI messages BEFORE generating new ones to avoid messageNumber conflicts
+    // Only delete messages that are STRICTLY in the round being regenerated
+    regenLog(`[REGENERATE] Round ${roundToRegenerate}: Found ${currentRoundMessages.length} total messages in round`);
     const aiMessagesInRound = currentRoundMessages.filter((m: any) => !isUserMessage(m));
-    for (const msg of aiMessagesInRound) {
+    regenLog(`[REGENERATE] Round ${roundToRegenerate}: Deleting ${aiMessagesInRound.length} AI messages (keeping ${currentRoundMessages.length - aiMessagesInRound.length} user messages)`);
+    
+    // Double-check each message belongs to the round being regenerated
+    const messagesToDelete = aiMessagesInRound.filter((m: any) => m.roundNumber === roundToRegenerate);
+    if (messagesToDelete.length !== aiMessagesInRound.length) {
+      regenLog(`[REGENERATE] WARNING: Message round mismatch detected! Expected all ${aiMessagesInRound.length} messages to be in round ${roundToRegenerate}, but only ${messagesToDelete.length} matched`);
+    }
+    
+    for (const msg of messagesToDelete) {
+      regenLog(`[REGENERATE] Deleting message id=${msg.id} msgNum=${msg.messageNumber} round=${msg.roundNumber} sender=${msg.sender}`);
       MessageService.deleteMessage(msg.id);
     }
     
@@ -614,23 +615,38 @@ app.post('/api/scenes/:sceneId/messages/regenerate', async (req, res) => {
       nextMsgNum = lastPreviousMessage ? lastPreviousMessage.messageNumber + 1 : 1;
     }
     
+    regenLog(`[REGENERATE] Starting new messages at messageNumber ${nextMsgNum}`);
+    
+    // Set the orchestrator's current round for proper tracking
+    const previousOrchRound = (orchestrator as any).currentRoundNumber;
+    (orchestrator as any).currentRoundNumber = roundToRegenerate;
+    
+    // Call orchestrator.processUserInput to regenerate responses
+    const result = await orchestrator.processUserInput(triggerMessage, persona, activeCharacters, sceneIdNum);
+    
+    // Restore previous round state
+    (orchestrator as any).currentRoundNumber = previousOrchRound;
+    
     const regenerated = [];
     
-    // Insert new messages from orchestrator response
+    // Insert new messages with explicit messageNumbers to avoid UNIQUE constraint violations
     for (const r of result.responses) {
-      const saved = MessageService.logMessage(
+      regenLog(`[REGENERATE] Inserting message msgNum=${nextMsgNum} round=${roundToRegenerate} sender=${r.sender}`);
+      const saved = MessageService.logMessageWithNumber(
         sceneIdNum,
+        nextMsgNum,
         r.sender,
         r.content,
         {},
         r.sender === 'Narrator' ? 'narrator' : 'character',
-        roundToRegenerate // Ensure messages are logged to the round being regenerated
+        roundToRegenerate,
+        null
       );
-      // Update messageNumber to keep sequence
-      db.prepare('UPDATE Messages SET messageNumber = ? WHERE id = ?').run(nextMsgNum, saved.id);
       regenerated.push({ id: saved.id, newContent: r.content });
       nextMsgNum++;
     }
+    
+    regenLog(`[REGENERATE] Successfully regenerated ${regenerated.length} messages for round ${roundToRegenerate}`);
     
     // Emit socket event to update clients
     try { io.to(`scene-${sceneIdNum}`).emit('messagesRegenerated', { sceneId: sceneIdNum, regenerated }); } catch (e) { console.warn('Failed to emit messagesRegenerated', e); }

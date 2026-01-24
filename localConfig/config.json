@@ -179,6 +179,9 @@
                 "activity": {
                   "type": "string"
                 },
+                "position": {
+                  "type": "string"
+                },
                 "intentions": {
                   "type": "string"
                 }

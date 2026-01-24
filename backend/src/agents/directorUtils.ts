@@ -15,6 +15,7 @@ export interface DirectorStateUpdate {
   mood?: string;
   clothing?: string;
   activity?: string;
+  position?: string;
   intentions?: string;
 }
 
@@ -231,6 +232,7 @@ export function applyDirectorPlan(plan: DirectorPlan, sessionContext: SessionCon
     applyField('mood');
     applyField('clothing');
     applyField('activity');
+    applyField('position');
     applyField('intentions');
 
     if (Object.keys(changes).length > 0) {

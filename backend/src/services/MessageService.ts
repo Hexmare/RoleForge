@@ -67,6 +67,64 @@ export const MessageService = {
     return inserted || { id: result.lastInsertRowid, sceneId, messageNumber: next, message, sender: normalizedSender, tokenCount, source: canonicalSource, sourceId: resolvedSourceId, roundNumber };
   },
 
+  // Insert message with explicit messageNumber (for regeneration/reordering)
+  logMessageWithNumber(sceneId: number, messageNumber: number, sender: string, message: string, metadata: any = {}, source: string = '', roundNumber: number = 1, sourceId: string | null = null) {
+    // Normalize sender
+    let normalizedSender = String(sender || '');
+    if (/^user:/i.test(normalizedSender)) {
+      normalizedSender = normalizedSender.replace(/^user:/i, '').trim();
+    }
+
+    // Canonicalize source
+    const srcRaw = (String(source || '') || (metadata && metadata.source ? String(metadata.source) : '')).toLowerCase();
+    let canonicalSource = '';
+    if (srcRaw === 'user' || srcRaw === 'user-input' || srcRaw === 'user_input' || srcRaw === 'userinput') {
+      canonicalSource = 'User';
+    } else if (srcRaw === 'character' || srcRaw === 'continue-round' || srcRaw === 'continue_round' || srcRaw === 'ai' || srcRaw === 'ai-response') {
+      canonicalSource = 'CharacterAgent';
+    } else if (srcRaw === 'narrator' || srcRaw === 'narration') {
+      canonicalSource = 'Narrator';
+    } else if (srcRaw === 'system') {
+      canonicalSource = 'System';
+    } else if (srcRaw === 'image') {
+      canonicalSource = 'Image';
+    } else if (srcRaw && srcRaw.length > 0) {
+      canonicalSource = srcRaw.charAt(0).toUpperCase() + srcRaw.slice(1);
+    } else {
+      canonicalSource = '';
+    }
+
+    // Resolve sourceId
+    let resolvedSourceId: string | null = sourceId || null;
+    if (!resolvedSourceId && metadata) {
+      if (metadata.sourceId) resolvedSourceId = String(metadata.sourceId);
+      else if (metadata.personaId) resolvedSourceId = String(metadata.personaId);
+      else if (metadata.characterId) resolvedSourceId = String(metadata.characterId);
+    }
+
+    const tokenCount = countTokens(message);
+    let result: any;
+    try {
+      const stmt = db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, tokenCount, metadata, source, sourceId, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      result = stmt.run(sceneId, messageNumber, message, normalizedSender, tokenCount, JSON.stringify(metadata || {}), canonicalSource, resolvedSourceId, roundNumber);
+    } catch (e: any) {
+      const msg = String(e && e.message ? e.message : e);
+      if (msg.includes('no column named sourceId') || msg.includes('has no column named sourceId')) {
+        const stmt2 = db.prepare('INSERT INTO Messages (sceneId, messageNumber, message, sender, tokenCount, metadata, source, roundNumber) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        result = stmt2.run(sceneId, messageNumber, message, normalizedSender, tokenCount, JSON.stringify(metadata || {}), canonicalSource, roundNumber);
+      } else {
+        throw e;
+      }
+    }
+    const inserted = db.prepare('SELECT m.*, sr.activeCharacters FROM Messages m LEFT JOIN SceneRounds sr ON m.sceneId = sr.sceneId AND m.roundNumber = sr.roundNumber WHERE m.id = ?').get(result.lastInsertRowid) as any;
+    if (inserted) {
+      inserted.charactersPresent = JSON.parse(inserted.activeCharacters || '[]');
+      try { inserted.metadata = JSON.parse(inserted.metadata || '{}'); } catch { inserted.metadata = inserted.metadata || {}; }
+      delete inserted.activeCharacters;
+    }
+    return inserted || { id: result.lastInsertRowid, sceneId, messageNumber, message, sender: normalizedSender, tokenCount, source: canonicalSource, sourceId: resolvedSourceId, roundNumber };
+  },
+
   getMessages(sceneId: number, limit = 100, offset = 0) {
     return db.prepare('SELECT m.*, sr.activeCharacters FROM Messages m LEFT JOIN SceneRounds sr ON m.sceneId = sr.sceneId AND m.roundNumber = sr.roundNumber WHERE m.sceneId = ? ORDER BY m.messageNumber DESC LIMIT ? OFFSET ?').all(sceneId, limit, offset).map((r: any) => {
       r.charactersPresent = JSON.parse(r.activeCharacters || '[]');

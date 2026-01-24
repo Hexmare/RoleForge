@@ -52,8 +52,40 @@ export function validateAgentJson(agentConfig: AgentConfig | undefined, raw: str
       const validator = compileSchema(agentConfig.jsonSchema);
       const ok = validator(parsed);
       if (ok) return { valid: true, parsed, repaired };
+      
       const errors = (validator.errors || []).map(err => `${err.instancePath || '(root)'} ${err.message || ''}`.trim());
       const errorDetails = (validator.errors || []).map(err => ({ path: err.instancePath || '(root)', message: err.message || '' }));
+      
+      // Try to auto-fix by stripping additional properties from stateUpdates if that's the issue
+      const hasAdditionalPropsError = (validator.errors || []).some(err => 
+        err.keyword === 'additionalProperties' && err.instancePath?.includes('/stateUpdates/')
+      );
+      
+      if (hasAdditionalPropsError && parsed && Array.isArray(parsed.stateUpdates)) {
+        // Get the allowed properties from schema
+        const schema = typeof agentConfig.jsonSchema === 'string' ? JSON.parse(agentConfig.jsonSchema) : agentConfig.jsonSchema;
+        const stateUpdateProps = schema?.properties?.stateUpdates?.items?.properties;
+        const allowedProps = stateUpdateProps ? Object.keys(stateUpdateProps) : ['id', 'name', 'location', 'mood', 'clothing', 'activity', 'position', 'intentions'];
+        
+        // Filter stateUpdates to only include allowed properties
+        const filtered = { ...parsed };
+        filtered.stateUpdates = parsed.stateUpdates.map((update: any) => {
+          const cleaned: any = {};
+          for (const key of allowedProps) {
+            if (key in update) {
+              cleaned[key] = update[key];
+            }
+          }
+          return cleaned;
+        });
+        
+        // Re-validate
+        const okFiltered = validator(filtered);
+        if (okFiltered) {
+          return { valid: true, parsed: filtered, repaired: true };
+        }
+      }
+      
       return { valid: false, parsed, errors, errorDetails, repaired };
     } catch (e: any) {
       return { valid: false, parsed, errors: [e?.message || 'schema_compile_failed'], repaired };

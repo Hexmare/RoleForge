@@ -1173,12 +1173,29 @@ export class Orchestrator {
     orchestratorLog('DirectorAgent completed, output length:', directorOutput.length);
     orchestratorLog('DirectorAgent raw output preview:', directorOutput.substring(0, 200) + (directorOutput.length > 200 ? '...' : ''));
     this.emitAgentStatus('Director', 'complete', sceneId);
+    
+    // Check if the director returned a validation error
+    let isValidationError = false;
+    try {
+      const quickParse = JSON.parse(directorOutput.trim());
+      if (quickParse && quickParse.error === 'failed_json_validation') {
+        isValidationError = true;
+        orchestratorLog('[DIRECTOR ERROR] Director returned validation error:', quickParse.errors);
+        // Continue with fallback parsing rather than treating this as valid director output
+      }
+    } catch (e) {
+      // Not JSON or not an error object, continue normal parsing
+    }
+    
     // Parse Director output using schema (actingCharacters, activations, stateUpdates, openGuidance)
     let charactersToRespond: string[] = [];
     let directorParsed: any = null;
     let directorRetries = 0;
     let directorLastError: any = null;
-    while (directorRetries < 3) {
+    
+    // Skip parsing attempts if we already know it's a validation error
+    if (!isValidationError) {
+      while (directorRetries < 3) {
       let cleanedOutput = directorOutput.trim();
       if (cleanedOutput.startsWith('```json') && cleanedOutput.endsWith('```')) {
         cleanedOutput = cleanedOutput.slice(7, -3).trim();
@@ -1208,6 +1225,7 @@ export class Orchestrator {
         }
       }
       directorRetries++;
+    }
     }
 
     let directorPlan = directorParsed ? normalizeDirectorPlan(directorParsed) : normalizeDirectorPlan({ openGuidance: directorOutput });

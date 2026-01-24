@@ -189,6 +189,7 @@
                 "mood": { "type": "string" },
                 "clothing": { "type": "string" },
                 "activity": { "type": "string" },
+                "position": { "type": "string" },
                 "intentions": { "type": "string" }
               },
               "anyOf": [
