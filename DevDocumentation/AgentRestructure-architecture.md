@@ -7,7 +7,7 @@ See also: backend reference [DevDocumentation/AgentRestructure-backend.md](DevDo
 
 ## Repository Topography (high-level)
 - Root configs: `package.json`, `tsconfig.json`, `setupinstructions.md`, `README.md`.
-- Backend: `backend/` (Express/Node, SQLite via better-sqlite3, Socket.io, Nunjucks, agents, services, utils, data, migrations, public, scripts). Key entry: `backend/src/server.ts` (Express + Socket.io bootstrap), `backend/src/agents/` (agent implementations), `backend/src/services/` (DB/business logic), `backend/src/utils/` (helpers), `backend/config.json` (runtime config, profiles).
+- Backend: `backend/` (Express/Node, SQLite via better-sqlite3, Socket.io, Nunjucks, agents, services, utils, data, migrations, public, scripts). Key entry: `backend/src/server.ts` (Express + Socket.io bootstrap), `backend/src/agents/` (agent implementations), `backend/src/services/` (DB/business logic), `backend/src/utils/` (helpers), `localConfig/config.json` (runtime config, profiles).
 - Frontend: `frontend/` (Vite + React + Tailwind). Entry: `frontend/src/App.tsx`, components in `frontend/src/components/`, styling via `frontend/src/index.css`, config via `vite.config.ts`, `tailwind.config.js`.
 - Dev docs: `DevDocumentation/` (designs, plans, status, this reference).
 - Data/migrations: `migrations/` SQL, `vector_data/` stores, `backend/migrations/` for backend DB.
@@ -96,7 +96,7 @@ See also: backend reference [DevDocumentation/AgentRestructure-backend.md](DevDo
 - Agents: `backend/src/agents/*.ts` (NarratorAgent, CharacterAgent, DirectorAgent, WorldAgent, SummarizeAgent, VisualAgent, CreatorAgent, VectorizationAgent).
 - Services: `backend/src/services/` (SceneService, CharacterService, MessageService, LorebookService, etc.).
 - Utils: `backend/src/utils/` (memoryRetriever, loreMatcher, jsonRepair, memoryHelpers, logging).
-- Config: `backend/config.json` (profiles, endpoints); `backend/config.example.json`.
+- Config: `localConfig/config.json` (profiles, endpoints); `backend/config.example.json`.
 - DB migrations: `backend/migrations/`.
 - Frontend entry: `frontend/src/main.tsx` or Vite entry (verify), `frontend/src/App.tsx`.
 

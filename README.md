@@ -13,7 +13,7 @@ Both of these projects started me down the rabbit hole. If anything becomes of t
 
 ## LLM Configuration
 
-RoleForge uses OpenAI-compatible API endpoints for all LLM interactions. Configuration is managed via `backend/config.json`.
+RoleForge uses OpenAI-compatible API endpoints for all LLM interactions. Configuration is managed via `localConfig/config.json`.
 
 ### Quick Start Examples
 

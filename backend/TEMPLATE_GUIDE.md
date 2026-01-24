@@ -169,7 +169,7 @@ ASSISTANT:{{assistant_message}}
 
 ### Selecting a Template
 
-Edit `backend/config.json`:
+Edit `localConfig/config.json`:
 
 ```json
 {
@@ -344,7 +344,7 @@ console.log('Rendered output:', rendered.substring(0, 200));
 
 To change default template:
 
-1. Edit `backend/config.json`
+1. Edit `localConfig/config.json`
 2. Change `profiles.{profileName}.template` value
 3. Restart backend: `npm run dev:backend`
 

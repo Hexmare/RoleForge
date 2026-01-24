@@ -7,7 +7,7 @@ Keep in sync with: [DevDocumentation/AgentRestructure-architecture.md](DevDocume
 ## Stack & Runtime
 - Node.js + Express + Socket.io, SQLite (better-sqlite3), Nunjucks for prompt templates, OpenAI-compatible LLM client, Tailwind assets for backend public (if any).
 - Entry: `backend/src/server.ts` (Express app + Socket.io bootstrap).
-- Config: `backend/config.json` (profiles, endpoints), `backend/config.example.json` (template), `backend/package.json` (scripts, deps), `backend/tsconfig.json`.
+- Config: `localConfig/config.json` (profiles, endpoints), `backend/config.example.json` (template), `backend/package.json` (scripts, deps), `backend/tsconfig.json`.
 
 ## Directory Layout (backend/)
 - `src/server.ts`: Express/Socket.io setup, route wiring, event emitters.
@@ -30,7 +30,7 @@ Keep in sync with: [DevDocumentation/AgentRestructure-architecture.md](DevDocume
 - Responsibilities: initialize rounds, build session context, call Director/Character/World/Narrator, manage history/summary, persist world/character state, emit socket events.
 - Planned flow per round: user/continuation → Director pass 1 (select actors, guidance, state updates, activations/deactivations) → Character agents (per actor) → Director pass 2 (reconcile) → round close (persist + events).
 - Guardrails: `maxDirectorPasses` default 2; WorldAgent feature-flagged off by default; Director authoritative on pre-character state updates.
-- WorldAgent flag: set `features.worldAgentEnabled=true` in `backend/config.json` to enable; default false keeps Director as owner of trackers/world updates. When enabled, WorldAgent uses the shared context envelope + JSON templating. Trackers/world state persist once per round after reconciliation to avoid double writes.
+- WorldAgent flag: set `features.worldAgentEnabled=true` in `localConfig/config.json` to enable; default false keeps Director as owner of trackers/world updates. When enabled, WorldAgent uses the shared context envelope + JSON templating. Trackers/world state persist once per round after reconciliation to avoid double writes.
 
 ## Context Envelope (planned shared type)
 - `AgentContextEnvelope`: request metadata (requestType, sceneId, roundNumber); history (raw, summaries, per-round bullets, last-round messages verbatim); lore (raw/formatted); memories (per character, with scopes); scenario/author notes (world/campaign/arc/scene) truncated; persona & character summaries; character/world state; trackers; director guidance placeholders; token budget metadata.
@@ -83,7 +83,7 @@ Keep in sync with: [DevDocumentation/AgentRestructure-architecture.md](DevDocume
 - Agents: `src/agents/*.ts`
 - Services: `src/services/*.ts`
 - Utils: `src/utils/*.ts`
-- Config: `backend/config.json`
+- Config: `localConfig/config.json`
 - Server: `src/server.ts`
 - Migrations: `backend/migrations/`
 

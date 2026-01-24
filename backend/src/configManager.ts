@@ -80,7 +80,7 @@ export class ConfigManager {
   private config: Config;
   private readonly configPath: string;
 
-  constructor(configPath: string = path.join(__dirname, '..', '..', 'localconfig', 'config.json')) {
+  constructor(configPath: string = path.join(__dirname, '..', '..', 'localConfig', 'config.json')) {
     this.configPath = configPath;
     this.config = this.loadConfig(configPath);
   }

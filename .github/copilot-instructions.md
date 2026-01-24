@@ -461,7 +461,7 @@ io.onAny((eventName, ...args) => {
 
 - [ ] All TypeScript compiles without errors (`npm run build`)
 - [ ] All tests pass (`npm run test`)
-- [ ] `backend/config.json` configured with production endpoints
+- [ ] `localConfig/config.json` configured with production endpoints
 - [ ] Database migrations applied
 - [ ] LLM API keys set in environment variables
 - [ ] Frontend built and optimized

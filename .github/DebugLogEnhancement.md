@@ -56,13 +56,13 @@ Examples:
 - `roleforge:backend:*`         → everything backend-only
 - `roleforge:frontend:*`        → everything frontend-only
 
-## Configuring Flags via backend/config.json
+## Configuring Flags via localConfig/config.json
 
-The `debug` package still respects the `DEBUG` environment variable, but we prefer loading namespaces from the existing tracked backend configuration (`backend/config.json`) so everyone shares the same defaults.
+The `debug` package still respects the `DEBUG` environment variable, but we prefer loading namespaces from the existing tracked backend configuration (`localConfig/config.json`) so everyone shares the same defaults.
 
-### 1. Update backend/config.json
+### 1. Update localConfig/config.json
 
-Add or extend the `debug` section inside `backend/config.json` (the file already under version control) with the desired namespaces, terminal-color preference, and a whitelist of allowed namespace patterns:
+Add or extend the `debug` section inside `localConfig/config.json` (the file already under version control) with the desired namespaces, terminal-color preference, and a whitelist of allowed namespace patterns:
 
 ```json
 "debug": {
@@ -87,7 +87,7 @@ Add or extend the `debug` section inside `backend/config.json` (the file already
 
 ### 2. Backend – Load and validate
 
-In the backend entry point (for example, `backend/src/server.ts`), load `backend/config.json`, fall back to `process.env.DEBUG`, and validate namespaces against the configured whitelist before enabling them:
+In the backend entry point (for example, `backend/src/server.ts`), load `localConfig/config.json`, fall back to `process.env.DEBUG`, and validate namespaces against the configured whitelist before enabling them:
 
 ```javascript
 const fs = require('fs');
@@ -146,7 +146,7 @@ Rather than reading a static file, the frontend should hit a backend endpoint (e
 }
 ```
 
-The backend endpoint must load `backend/config.json`, run the whitelist validation described above, and return only sanitized values; no browser-side persistence (like `localStorage`) is allowed.
+The backend endpoint must load `localConfig/config.json`, run the whitelist validation described above, and return only sanitized values; no browser-side persistence (like `localStorage`) is allowed.
 
 ```javascript
 import debug from 'debug';
