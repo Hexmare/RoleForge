@@ -1778,7 +1778,18 @@ app.post('/api/characters/:id/field', async (req, res) => {
     const result = await orchestrator.createCharacter(context);
     // For field, result is the value
     let value = result;
-    try { value = JSON.parse(result); } catch {}
+    try {
+      const parsed = JSON.parse(result);
+      // If parsed result has a "result" wrapper, unwrap it
+      if (parsed && typeof parsed === 'object' && 'result' in parsed && Object.keys(parsed).length === 1) {
+        value = parsed.result;
+      } else {
+        value = parsed;
+      }
+    } catch {
+      // If parsing fails, use result as-is
+      value = result;
+    }
     
     // Return the generated value to frontend for local state management
     res.json({ value });
@@ -1877,43 +1888,17 @@ app.delete('/api/characters/:id', (req, res) => {
   res.json({ id: req.params.id });
 });
 
-// Character array management endpoints
-app.post('/api/characters/:id/family-members', (req, res) => {
-  const { id } = req.params;
-  const { member } = req.body;
-  if (!member || typeof member !== 'string') return res.status(400).json({ error: 'Invalid member' });
-  const char = CharacterService.getBaseById(id);
-  if (!char) return res.status(404).json({ error: 'Character not found' });
-  const familyMembers = char.familyMembers || [];
-  familyMembers.push(member);
-  char.familyMembers = familyMembers;
-  CharacterService.saveBaseCharacter(id, char);
-  res.json({ familyMembers });
-});
-
-app.delete('/api/characters/:id/family-members/:index', (req, res) => {
-  const { id, index } = req.params;
-  const idx = parseInt(index);
-  if (isNaN(idx)) return res.status(400).json({ error: 'Invalid index' });
-  const char = CharacterService.getBaseById(id);
-  if (!char) return res.status(404).json({ error: 'Character not found' });
-  const familyMembers = char.familyMembers || [];
-  if (idx < 0 || idx >= familyMembers.length) return res.status(400).json({ error: 'Index out of range' });
-  familyMembers.splice(idx, 1);
-  char.familyMembers = familyMembers;
-  CharacterService.saveBaseCharacter(id, char);
-  res.json({ familyMembers });
-});
-
+// Character traits management endpoints (secrets, goals)
 app.post('/api/characters/:id/secrets', (req, res) => {
   const { id } = req.params;
   const { secret } = req.body;
   if (!secret || typeof secret !== 'string') return res.status(400).json({ error: 'Invalid secret' });
   const char = CharacterService.getBaseById(id);
   if (!char) return res.status(404).json({ error: 'Character not found' });
-  const secrets = char.secrets || [];
+  if (!char.traits) char.traits = {};
+  const secrets = char.traits.secrets || [];
   secrets.push(secret);
-  char.secrets = secrets;
+  char.traits.secrets = secrets;
   CharacterService.saveBaseCharacter(id, char);
   res.json({ secrets });
 });
@@ -1924,10 +1909,11 @@ app.delete('/api/characters/:id/secrets/:index', (req, res) => {
   if (isNaN(idx)) return res.status(400).json({ error: 'Invalid index' });
   const char = CharacterService.getBaseById(id);
   if (!char) return res.status(404).json({ error: 'Character not found' });
-  const secrets = char.secrets || [];
+  if (!char.traits) char.traits = {};
+  const secrets = char.traits.secrets || [];
   if (idx < 0 || idx >= secrets.length) return res.status(400).json({ error: 'Index out of range' });
   secrets.splice(idx, 1);
-  char.secrets = secrets;
+  char.traits.secrets = secrets;
   CharacterService.saveBaseCharacter(id, char);
   res.json({ secrets });
 });
@@ -1938,9 +1924,10 @@ app.post('/api/characters/:id/goals', (req, res) => {
   if (!goal || typeof goal !== 'string') return res.status(400).json({ error: 'Invalid goal' });
   const char = CharacterService.getBaseById(id);
   if (!char) return res.status(404).json({ error: 'Character not found' });
-  const goals = char.goals || [];
+  if (!char.traits) char.traits = {};
+  const goals = char.traits.goals || [];
   goals.push(goal);
-  char.goals = goals;
+  char.traits.goals = goals;
   CharacterService.saveBaseCharacter(id, char);
   res.json({ goals });
 });
@@ -1951,10 +1938,11 @@ app.delete('/api/characters/:id/goals/:index', (req, res) => {
   if (isNaN(idx)) return res.status(400).json({ error: 'Invalid index' });
   const char = CharacterService.getBaseById(id);
   if (!char) return res.status(404).json({ error: 'Character not found' });
-  const goals = char.goals || [];
+  if (!char.traits) char.traits = {};
+  const goals = char.traits.goals || [];
   if (idx < 0 || idx >= goals.length) return res.status(400).json({ error: 'Index out of range' });
   goals.splice(idx, 1);
-  char.goals = goals;
+  char.traits.goals = goals;
   CharacterService.saveBaseCharacter(id, char);
   res.json({ goals });
 });
@@ -2579,7 +2567,18 @@ app.post('/api/personas/:id/field', async (req, res) => {
     const result = await orchestrator.createCharacter(context);
     const updatedPersona = { ...existingData };
     let value = result;
-    try { value = JSON.parse(result); } catch {}
+    try {
+      const parsed = JSON.parse(result);
+      // If parsed result has a "result" wrapper, unwrap it
+      if (parsed && typeof parsed === 'object' && 'result' in parsed && Object.keys(parsed).length === 1) {
+        value = parsed.result;
+      } else {
+        value = parsed;
+      }
+    } catch {
+      // If parsing fails, use result as-is
+      value = result;
+    }
     updatedPersona[field] = value;
     const stmt = db.prepare('UPDATE personas SET name = ?, data = ?, race = ?, skinTone = ? WHERE id = ?');
     const dbResult = stmt.run(

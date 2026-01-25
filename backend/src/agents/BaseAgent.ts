@@ -422,6 +422,42 @@ export abstract class BaseAgent {
     return cleaned;
   }
 
+  /**
+   * Safely parse JSON from LLM response, handling:
+   * - Code fences (```json ... ```)
+   * - Wrapper objects like {"result": "..."}
+   * - Nested JSON strings
+   * @param response Raw LLM response
+   * @returns Parsed JSON object or original string if parsing fails
+   */
+  protected parseJsonSafely(response: string): any {
+    let cleaned = this.cleanResponse(response);
+    
+    try {
+      // First attempt: direct parse
+      const parsed = JSON.parse(cleaned);
+      
+      // Check if it's a wrapper object with a single "result" key
+      if (parsed && typeof parsed === 'object' && 'result' in parsed && Object.keys(parsed).length === 1) {
+        // Try to parse the result value if it's a string
+        if (typeof parsed.result === 'string') {
+          try {
+            return JSON.parse(parsed.result);
+          } catch {
+            // If result is not valid JSON, return it as-is
+            return parsed.result;
+          }
+        }
+        return parsed.result;
+      }
+      
+      return parsed;
+    } catch (error) {
+      // If direct parse fails, return the cleaned string
+      return cleaned;
+    }
+  }
+
   protected renderTemplate(templateName: string, context: AgentContext): string {
     const templatePath = path.join(dirname(fileURLToPath(import.meta.url)), '..', 'prompts', `${templateName}.njk`);
     const template = fs.readFileSync(templatePath, 'utf-8');

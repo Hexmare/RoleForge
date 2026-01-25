@@ -2,40 +2,38 @@ import { useState, useEffect, useCallback } from 'react';
 import Cropper from 'react-easy-crop';
 
 interface Persona {
+  // Core Fields (identity)
   id: number;
   name: string;
   species: string;
   race: string;
   gender: string;
-  age: string;
+  description: string;  // Short bio (merged backstory/scenario)
+
+  // Appearance & Style (consolidated)
   appearance: {
-    height: string;
-    weight: string;
-    build: string;
-    eyeColor: string;
-    hairColor: string;
-    hairStyle: string;
-    attractiveness: string;
-    distinctiveFeatures?: string;
+    physical?: string;   // e.g., "tall, athletic build"
+    aesthetic?: string;  // e.g., "gothic, mysterious"
   };
-  aesthetic: string;
-  currentOutfit: string;
-  personality: string;
-  skills: string;
-  powers?: string;
-  occupation: string;
-  workplace?: string;
+  currentOutfit: string;  // Initial clothing; updates via state
+
+  // Personality & Traits (merged)
+  personality: string;    // Brief overview
+  traits: {
+    likes?: string[];     // Merged likes/turn-ons
+    dislikes?: string[];  // Merged dislikes/turn-offs
+    kinks?: string[];     // Sexual preferences
+  };
+
+  // Abilities & Role (merged)
+  abilities: string[];    // Combined skills/powers
+  occupation: string;     // Include workplace if relevant
+
+  // Relationships (consolidated)
   sexualOrientation: string;
-  relationshipStatus: string;
-  relationshipPartner?: string;
-  likes: string;
-  turnOns: string;
-  dislikes: string;
-  turnOffs: string;
-  kinks: string;
-  backstory?: string;
-  scenario?: string;
-  description: string;
+  relationshipStatus: string;  // e.g., "single" or "partnered with [name]"
+
+  // Optional/Extension
   avatarUrl?: string;
   extensions?: Record<string, any>;
 }
@@ -61,6 +59,10 @@ function PersonaManager() {
   const [showFieldRegenDialog, setShowFieldRegenDialog] = useState(false);
   const [regenField, setRegenField] = useState<string | null>(null);
   const [regenInstructions, setRegenInstructions] = useState('');
+  const [newLike, setNewLike] = useState('');
+  const [newDislike, setNewDislike] = useState('');
+  const [newKink, setNewKink] = useState('');
+  const [newAbility, setNewAbility] = useState('');
 
   async function fetchPersonas() {
     const res = await fetch('/api/personas');
@@ -268,7 +270,7 @@ function PersonaManager() {
   };
 
   const allFields = [
-    'name', 'species', 'race', 'gender', 'appearance', 'aesthetic', 'currentOutfit', 'personality', 'skills', 'powers', 'occupation', 'workplace', 'sexualOrientation', 'relationshipStatus', 'relationshipPartner', 'likes', 'turnOns', 'dislikes', 'turnOffs', 'kinks', 'backstory', 'scenario', 'description'
+    'name', 'species', 'race', 'gender', 'description', 'appearance', 'currentOutfit', 'personality', 'abilities', 'occupation', 'sexualOrientation', 'relationshipStatus', 'likes', 'dislikes', 'kinks'
   ];
 
   return (
@@ -332,110 +334,34 @@ function PersonaManager() {
               {editing !== 'new' && <button type="button" onClick={() => { setRegenField('gender'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Age: The persona's age or age range</label>
-              <input
-                type="text"
-                value={form.age || ''}
-                onChange={(e) => setForm({ ...form, age: e.target.value })}
+              <label style={{ flex: 1 }}>Description: Short bio or summary of the persona</label>
+              <textarea
+                value={form.description || ''}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
                 style={{ flex: 2 }}
               />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('age'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
+              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('description'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
             </div>
             <fieldset style={{ marginBottom: 8 }}>
-              <legend>Appearance: Physical description of the persona</legend>
+              <legend>Appearance: Physical description and style</legend>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ flex: 1 }}>Height:</label>
-                <input
-                  type="text"
-                  value={form.appearance?.height || ''}
-                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, height: e.target.value } })}
+                <label style={{ flex: 1 }}>Physical: e.g., "tall, athletic build"</label>
+                <textarea
+                  value={form.appearance?.physical || ''}
+                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, physical: e.target.value } })}
                   style={{ flex: 2 }}
                 />
               </div>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ flex: 1 }}>Weight:</label>
-                <input
-                  type="text"
-                  value={form.appearance?.weight || ''}
-                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, weight: e.target.value } })}
-                  style={{ flex: 2 }}
-                />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ flex: 1 }}>Build:</label>
-                <input
-                  type="text"
-                  value={form.appearance?.build || ''}
-                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, build: e.target.value } })}
-                  style={{ flex: 2 }}
-                />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ flex: 1 }}>Eye Color:</label>
-                <input
-                  type="text"
-                  value={form.appearance?.eyeColor || ''}
-                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, eyeColor: e.target.value } })}
-                  style={{ flex: 2 }}
-                />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ flex: 1 }}>Hair Color:</label>
-                <input
-                  type="text"
-                  value={form.appearance?.hairColor || ''}
-                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, hairColor: e.target.value } })}
-                  style={{ flex: 2 }}
-                />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ flex: 1 }}>Hair Style:</label>
-                <input
-                  type="text"
-                  value={form.appearance?.hairStyle || ''}
-                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, hairStyle: e.target.value } })}
-                  style={{ flex: 2 }}
-                />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ flex: 1 }}>Attractiveness:</label>
-                <input
-                  type="text"
-                  value={form.appearance?.attractiveness || ''}
-                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, attractiveness: e.target.value } })}
-                  style={{ flex: 2 }}
-                />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ flex: 1 }}>Distinctive Features:</label>
-                <input
-                  type="text"
-                  value={form.appearance?.distinctiveFeatures || ''}
-                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, distinctiveFeatures: e.target.value } })}
-                  style={{ flex: 2 }}
-                />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ flex: 1 }}>Skin Tone:</label>
-                <input
-                  type="text"
-                  value={form.appearance?.skinTone || ''}
-                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, skinTone: e.target.value } })}
+                <label style={{ flex: 1 }}>Aesthetic: e.g., "gothic, mysterious"</label>
+                <textarea
+                  value={form.appearance?.aesthetic || ''}
+                  onChange={(e) => setForm({ ...form, appearance: { ...form.appearance, aesthetic: e.target.value } })}
                   style={{ flex: 2 }}
                 />
               </div>
               {editing !== 'new' && <button type="button" onClick={() => { setRegenField('appearance'); setShowFieldRegenDialog(true); }}>Regenerate Appearance</button>}
             </fieldset>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Aesthetic: Overall style or vibe of the persona</label>
-              <input
-                type="text"
-                value={form.aesthetic || ''}
-                onChange={(e) => setForm({ ...form, aesthetic: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('aesthetic'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
               <label style={{ flex: 1 }}>Current Outfit: What the persona is currently wearing</label>
               <input
@@ -455,27 +381,47 @@ function PersonaManager() {
               />
               {editing !== 'new' && <button type="button" onClick={() => { setRegenField('personality'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
             </div>
+            <fieldset style={{ marginBottom: 8 }}>
+              <legend>Abilities: Combined skills, powers, and competencies</legend>
+              {(form.abilities || []).map((ability, index) => (
+                <div key={index} style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+                  <input
+                    type="text"
+                    value={ability}
+                    onChange={(e) => {
+                      const newAbilities = [...(form.abilities || [])];
+                      newAbilities[index] = e.target.value;
+                      setForm({ ...form, abilities: newAbilities });
+                    }}
+                    style={{ flex: 1 }}
+                  />
+                  <button type="button" onClick={() => {
+                    const newAbilities = [...(form.abilities || [])];
+                    newAbilities.splice(index, 1);
+                    setForm({ ...form, abilities: newAbilities });
+                  }}>Remove</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', alignItems: 'center', marginTop: 8 }}>
+                <input
+                  type="text"
+                  value={newAbility}
+                  onChange={(e) => setNewAbility(e.target.value)}
+                  placeholder="Enter ability"
+                  style={{ flex: 1, marginRight: 8 }}
+                />
+                <button type="button" onClick={() => {
+                  if (newAbility.trim()) {
+                    const newAbilities = [...(form.abilities || []), newAbility.trim()];
+                    setForm({ ...form, abilities: newAbilities });
+                    setNewAbility('');
+                  }
+                }}>Add</button>
+                {editing !== 'new' && <button type="button" onClick={() => { setRegenField('abilities'); setShowFieldRegenDialog(true); }}>Generate</button>}
+              </div>
+            </fieldset>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Skills: Abilities and competencies</label>
-              <textarea
-                value={form.skills || ''}
-                onChange={(e) => setForm({ ...form, skills: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('skills'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Powers: Special abilities or supernatural powers</label>
-              <input
-                type="text"
-                value={form.powers || ''}
-                onChange={(e) => setForm({ ...form, powers: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('powers'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Occupation: The persona's job or role</label>
+              <label style={{ flex: 1 }}>Occupation: The persona's job or role (include workplace if relevant)</label>
               <input
                 type="text"
                 value={form.occupation || ''}
@@ -483,16 +429,6 @@ function PersonaManager() {
                 style={{ flex: 2 }}
               />
               {editing !== 'new' && <button type="button" onClick={() => { setRegenField('occupation'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Workplace: Where the persona works</label>
-              <input
-                type="text"
-                value={form.workplace || ''}
-                onChange={(e) => setForm({ ...form, workplace: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('workplace'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
               <label style={{ flex: 1 }}>Sexual Orientation: The persona's sexual orientation</label>
@@ -505,7 +441,7 @@ function PersonaManager() {
               {editing !== 'new' && <button type="button" onClick={() => { setRegenField('sexualOrientation'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Relationship Status: Current relationship status</label>
+              <label style={{ flex: 1 }}>Relationship Status: e.g., "single" or "partnered with [name]"</label>
               <input
                 type="text"
                 value={form.relationshipStatus || ''}
@@ -514,88 +450,135 @@ function PersonaManager() {
               />
               {editing !== 'new' && <button type="button" onClick={() => { setRegenField('relationshipStatus'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Relationship Partner: Name of partner if applicable</label>
-              <input
-                type="text"
-                value={form.relationshipPartner || ''}
-                onChange={(e) => setForm({ ...form, relationshipPartner: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('relationshipPartner'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Likes: Things the persona enjoys</label>
-              <textarea
-                value={form.likes || ''}
-                onChange={(e) => setForm({ ...form, likes: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('likes'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Turn Ons: What arouses the persona</label>
-              <textarea
-                value={form.turnOns || ''}
-                onChange={(e) => setForm({ ...form, turnOns: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('turnOns'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Dislikes: Things the persona dislikes</label>
-              <textarea
-                value={form.dislikes || ''}
-                onChange={(e) => setForm({ ...form, dislikes: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('dislikes'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Turn Offs: What repels the persona</label>
-              <textarea
-                value={form.turnOffs || ''}
-                onChange={(e) => setForm({ ...form, turnOffs: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('turnOffs'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Kinks: Sexual preferences and fetishes</label>
-              <textarea
-                value={form.kinks || ''}
-                onChange={(e) => setForm({ ...form, kinks: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('kinks'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Backstory: The persona's history and background</label>
-              <textarea
-                value={form.backstory || ''}
-                onChange={(e) => setForm({ ...form, backstory: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('backstory'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Scenario: Initial scenario or setting for the persona</label>
-              <textarea
-                value={form.scenario || ''}
-                onChange={(e) => setForm({ ...form, scenario: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('scenario'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ flex: 1 }}>Description: A summary description of the persona</label>
-              <textarea
-                value={form.description || ''}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                style={{ flex: 2 }}
-              />
-              {editing !== 'new' && <button type="button" onClick={() => { setRegenField('description'); setShowFieldRegenDialog(true); }}>Regenerate</button>}
-            </div>
+            <fieldset style={{ marginBottom: 8 }}>
+              <legend>Traits: Personality traits and preferences</legend>
+              <fieldset style={{ marginBottom: 8 }}>
+                <legend>Likes: Things the persona enjoys (merged likes/turn-ons)</legend>
+                {((form.traits?.likes || []) as string[]).map((like, index) => (
+                  <div key={index} style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+                    <input
+                      type="text"
+                      value={like}
+                      onChange={(e) => {
+                        const currentTraits = form.traits || {};
+                        const newLikes = [...(currentTraits.likes || [])];
+                        newLikes[index] = e.target.value;
+                        setForm({ ...form, traits: { ...currentTraits, likes: newLikes } });
+                      }}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" onClick={() => {
+                      const currentTraits = form.traits || {};
+                      const newLikes = [...(currentTraits.likes || [])];
+                      newLikes.splice(index, 1);
+                      setForm({ ...form, traits: { ...currentTraits, likes: newLikes } });
+                    }}>Remove</button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', alignItems: 'center', marginTop: 8 }}>
+                  <input
+                    type="text"
+                    value={newLike}
+                    onChange={(e) => setNewLike(e.target.value)}
+                    placeholder="Enter like"
+                    style={{ flex: 1, marginRight: 8 }}
+                  />
+                  <button type="button" onClick={() => {
+                    if (newLike.trim()) {
+                      const currentTraits = form.traits || {};
+                      const newLikes = [...(currentTraits.likes || []), newLike.trim()];
+                      setForm({ ...form, traits: { ...currentTraits, likes: newLikes } });
+                      setNewLike('');
+                    }
+                  }}>Add</button>
+                  {editing !== 'new' && <button type="button" onClick={() => { setRegenField('likes'); setShowFieldRegenDialog(true); }}>Generate</button>}
+                </div>
+              </fieldset>
+              <fieldset style={{ marginBottom: 8 }}>
+                <legend>Dislikes: Things the persona dislikes (merged dislikes/turn-offs)</legend>
+                {((form.traits?.dislikes || []) as string[]).map((dislike, index) => (
+                  <div key={index} style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+                    <input
+                      type="text"
+                      value={dislike}
+                      onChange={(e) => {
+                        const currentTraits = form.traits || {};
+                        const newDislikes = [...(currentTraits.dislikes || [])];
+                        newDislikes[index] = e.target.value;
+                        setForm({ ...form, traits: { ...currentTraits, dislikes: newDislikes } });
+                      }}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" onClick={() => {
+                      const currentTraits = form.traits || {};
+                      const newDislikes = [...(currentTraits.dislikes || [])];
+                      newDislikes.splice(index, 1);
+                      setForm({ ...form, traits: { ...currentTraits, dislikes: newDislikes } });
+                    }}>Remove</button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', alignItems: 'center', marginTop: 8 }}>
+                  <input
+                    type="text"
+                    value={newDislike}
+                    onChange={(e) => setNewDislike(e.target.value)}
+                    placeholder="Enter dislike"
+                    style={{ flex: 1, marginRight: 8 }}
+                  />
+                  <button type="button" onClick={() => {
+                    if (newDislike.trim()) {
+                      const currentTraits = form.traits || {};
+                      const newDislikes = [...(currentTraits.dislikes || []), newDislike.trim()];
+                      setForm({ ...form, traits: { ...currentTraits, dislikes: newDislikes } });
+                      setNewDislike('');
+                    }
+                  }}>Add</button>
+                  {editing !== 'new' && <button type="button" onClick={() => { setRegenField('dislikes'); setShowFieldRegenDialog(true); }}>Generate</button>}
+                </div>
+              </fieldset>
+              <fieldset style={{ marginBottom: 8 }}>
+                <legend>Kinks: Sexual preferences and fetishes</legend>
+                {((form.traits?.kinks || []) as string[]).map((kink, index) => (
+                  <div key={index} style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+                    <input
+                      type="text"
+                      value={kink}
+                      onChange={(e) => {
+                        const currentTraits = form.traits || {};
+                        const newKinks = [...(currentTraits.kinks || [])];
+                        newKinks[index] = e.target.value;
+                        setForm({ ...form, traits: { ...currentTraits, kinks: newKinks } });
+                      }}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" onClick={() => {
+                      const currentTraits = form.traits || {};
+                      const newKinks = [...(currentTraits.kinks || [])];
+                      newKinks.splice(index, 1);
+                      setForm({ ...form, traits: { ...currentTraits, kinks: newKinks } });
+                    }}>Remove</button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', alignItems: 'center', marginTop: 8 }}>
+                  <input
+                    type="text"
+                    value={newKink}
+                    onChange={(e) => setNewKink(e.target.value)}
+                    placeholder="Enter kink"
+                    style={{ flex: 1, marginRight: 8 }}
+                  />
+                  <button type="button" onClick={() => {
+                    if (newKink.trim()) {
+                      const currentTraits = form.traits || {};
+                      const newKinks = [...(currentTraits.kinks || []), newKink.trim()];
+                      setForm({ ...form, traits: { ...currentTraits, kinks: newKinks } });
+                      setNewKink('');
+                    }
+                  }}>Add</button>
+                  {editing !== 'new' && <button type="button" onClick={() => { setRegenField('kinks'); setShowFieldRegenDialog(true); }}>Generate</button>}
+                </div>
+              </fieldset>
+            </fieldset>
             <div style={{ marginTop: 16 }}>
               {editing !== 'new' && <button type="button" onClick={() => setShowRegenerateAll(true)}>Regenerate All</button>}
               <button type="submit">{editing === 'new' ? 'Create' : 'Update'}</button>

@@ -78,34 +78,22 @@ describe('Character and Persona Generation', () => {
       species: 'Human',
       race: 'Human',
       gender: 'Male',
+      description: 'A brave warrior',
       appearance: {
-        height: '6ft',
-        weight: '180lbs',
-        build: 'Athletic',
-        eyeColor: 'Blue',
-        hairColor: 'Brown',
-        hairStyle: 'Short',
-        attractiveness: '8/10',
-        distinctiveFeatures: 'Scar on cheek'
+        physical: '6ft, 180lbs, athletic build, blue eyes, short brown hair',
+        aesthetic: 'Modern, scar on cheek'
       },
-      aesthetic: 'Modern',
       currentOutfit: 'Casual clothes',
       personality: 'Brave and kind',
-      skills: 'Fighting, leadership',
-      powers: 'None',
-      occupation: 'Warrior',
-      workplace: 'Castle',
+      traits: {
+        likes: ['Justice', 'honor'],
+        dislikes: ['Cowardice'],
+        kinks: []
+      },
+      abilities: ['Fighting', 'leadership'],
+      occupation: 'Warrior at castle',
       sexualOrientation: 'Heterosexual',
-      relationshipStatus: 'Single',
-      relationshipPartner: '',
-      likes: 'Justice, honor',
-      turnOns: 'Confidence',
-      dislikes: 'Cowardice',
-      turnOffs: 'Dishonesty',
-      kinks: 'None',
-      backstory: 'Born in a small village',
-      scenario: 'Defending the kingdom',
-      description: 'A brave warrior'
+      relationshipStatus: 'Single'
     };
 
     (chatCompletion as any).mockResolvedValue(JSON.stringify(mockCharacter));
@@ -134,34 +122,22 @@ describe('Character and Persona Generation', () => {
       species: 'Human',
       race: 'Elf',
       gender: 'Female',
+      description: 'A wise elven mage',
       appearance: {
-        height: '5ft 6in',
-        weight: '130lbs',
-        build: 'Slender',
-        eyeColor: 'Green',
-        hairColor: 'Blonde',
-        hairStyle: 'Long wavy',
-        attractiveness: '9/10',
-        distinctiveFeatures: 'Pointed ears'
+        physical: '5ft 6in, 130lbs, slender build, green eyes, long wavy blonde hair',
+        aesthetic: 'Fantasy, pointed ears'
       },
-      aesthetic: 'Fantasy',
       currentOutfit: 'Elven robes',
       personality: 'Wise and mysterious',
-      skills: 'Magic, archery',
-      powers: 'Magic',
-      occupation: 'Mage',
-      workplace: 'Tower',
+      traits: {
+        likes: ['Nature', 'magic'],
+        dislikes: ['Ignorance'],
+        kinks: []
+      },
+      abilities: ['Magic', 'archery'],
+      occupation: 'Mage at tower',
       sexualOrientation: 'Bisexual',
-      relationshipStatus: 'Single',
-      relationshipPartner: '',
-      likes: 'Nature, magic',
-      turnOns: 'Intelligence',
-      dislikes: 'Ignorance',
-      turnOffs: 'Rudeness',
-      kinks: 'None',
-      backstory: 'Raised in an elven forest',
-      scenario: 'Seeking ancient artifacts',
-      description: 'A wise elven mage'
+      relationshipStatus: 'Single'
     };
 
     (chatCompletion as any).mockResolvedValue(JSON.stringify(mockPersona));
