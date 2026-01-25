@@ -176,6 +176,10 @@ export class ConfigManager {
     return this.config.features?.worldAgentEnabled ?? false;
   }
 
+  isDirectorAgentEnabled(): boolean {
+    return this.config.features?.directorAgentEnabled ?? false;
+  }
+
   updateDebugSettings(updates: Partial<DebugSettings>): Config {
     const nextDebug: DebugSettings = {
       ...this.config.debug,

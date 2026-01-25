@@ -1,9 +1,15 @@
 {
   "defaultProfile": "openai",
   "features": {
+    "narratorAgentEnabled": true,
+    "characterAgentEnabled": true,
+    "directorAgentEnabled": false,
+    "worldAgentEnabled": false,
     "visualAgentEnabled": true,
-    "socketAckLogs": true,
     "summarizationEnabled": false,
+    "creatorAgentEnabled": true,
+    "vectorizationAgentEnabled": true,
+    "socketAckLogs": true,
     "summarizationInterval": 1000,
     "summarizationRoundInterval": 4,
     "maxSummaryTokens": 1000,

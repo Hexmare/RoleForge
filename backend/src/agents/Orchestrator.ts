@@ -1165,14 +1165,21 @@ export class Orchestrator {
       availableCharacterNames: availableCharNames.join(', '),
       history: this.sceneSummary ? [`[SCENE SUMMARY]\n${this.sceneSummary}\n\n[MESSAGES]\n${this.history.join('\n')}`] : this.history
     };
-    audit('directorPassStarted', { pass: 1, activeCharacterNames: activeCharacterNamesStr });
-    emitLifecycle('directorPassStarted', { pass: 1, activeCharacterNames: activeCharacterNamesStr });
-    orchestratorLog('Calling DirectorAgent');
-    this.emitAgentStatus('Director', 'start', sceneId);
-    const directorOutput = await directorAgent.run(directorContext);
-    orchestratorLog('DirectorAgent completed, output length:', directorOutput.length);
-    orchestratorLog('DirectorAgent raw output preview:', directorOutput.substring(0, 200) + (directorOutput.length > 200 ? '...' : ''));
-    this.emitAgentStatus('Director', 'complete', sceneId);
+    const directorAgentEnabled = this.configManager.isDirectorAgentEnabled();
+    let directorOutput = '';
+    
+    if (directorAgentEnabled) {
+      audit('directorPassStarted', { pass: 1, activeCharacterNames: activeCharacterNamesStr });
+      emitLifecycle('directorPassStarted', { pass: 1, activeCharacterNames: activeCharacterNamesStr });
+      orchestratorLog('Calling DirectorAgent');
+      this.emitAgentStatus('Director', 'start', sceneId);
+      directorOutput = await directorAgent.run(directorContext);
+      orchestratorLog('DirectorAgent completed, output length:', directorOutput.length);
+      orchestratorLog('DirectorAgent raw output preview:', directorOutput.substring(0, 200) + (directorOutput.length > 200 ? '...' : ''));
+      this.emitAgentStatus('Director', 'complete', sceneId);
+    } else {
+      orchestratorLog('DirectorAgent disabled, skipping first pass');
+    }
     
     // Check if the director returned a validation error
     let isValidationError = false;
@@ -1193,8 +1200,8 @@ export class Orchestrator {
     let directorRetries = 0;
     let directorLastError: any = null;
     
-    // Skip parsing attempts if we already know it's a validation error
-    if (!isValidationError) {
+    // Skip parsing attempts if we already know it's a validation error or director is disabled
+    if (directorAgentEnabled && !isValidationError) {
       while (directorRetries < 3) {
       let cleanedOutput = directorOutput.trim();
       if (cleanedOutput.startsWith('```json') && cleanedOutput.endsWith('```')) {
@@ -1229,6 +1236,13 @@ export class Orchestrator {
     }
 
     let directorPlan = directorParsed ? normalizeDirectorPlan(directorParsed) : normalizeDirectorPlan({ openGuidance: directorOutput });
+    
+    // If director is disabled, use a minimal plan with empty guidance
+    if (!directorAgentEnabled) {
+      directorPlan = normalizeDirectorPlan({ openGuidance: '' });
+      orchestratorLog('[DIRECTOR] Disabled - using fallback plan with no guidance');
+    }
+    
     // Never allow the user persona to appear in director lists
     if (personaName) {
       const normalizeRef = (ref?: string) => {
@@ -1246,11 +1260,27 @@ export class Orchestrator {
       directorPlan.remainingActors = (directorPlan.remainingActors || []).filter((r) => !isUserRef(r));
       directorPlan.newActivations = (directorPlan.newActivations || []).filter((r) => !isUserRef(r));
     }
+    // Helper function for round-robin character selection (fallback when director is unavailable)
+    const getRoundRobinCharacters = () => {
+      return sessionContext.activeCharacters
+        .map(c => c.name)
+        .filter(name => {
+          // Filter out user persona if present
+          if (!personaName) return true;
+          const normalizeRef = (ref?: string) => {
+            if (!ref) return '';
+            const base = String(ref).trim().toLowerCase();
+            return base.endsWith('_implied') ? base.slice(0, -8) : base;
+          };
+          return normalizeRef(name) !== normalizeRef(personaName);
+        });
+    };
+
     orchestratorLog('[DIRECTOR PASS1] mentions -> acting:%s activations:%s deactivations:%s',
       JSON.stringify((directorPlan.actingCharacters || []).map((a: any) => a.name || a.id)),
       JSON.stringify(directorPlan.activations || []),
       JSON.stringify(directorPlan.deactivations || []));
-    if (!directorParsed) {
+    if (directorAgentEnabled && !directorParsed) {
       orchestratorLog('DirectorAgent failed to parse/repair JSON after', directorRetries, 'attempts:', directorLastError);
       const guidanceMatch = directorOutput.match(/Guidance:\s*(.+?)(?:\n|$)/i);
       const charactersMatch = directorOutput.match(/Characters:\s*(.+?)(?:\n|$)/i);
@@ -1268,6 +1298,15 @@ export class Orchestrator {
     const directorApplication = applyDirectorPlan(directorPlan, sessionContext, characterStates);
     charactersToRespond = directorApplication.charactersToRespond;
     characterStates = directorApplication.updatedStates;
+
+    // Use round-robin fallback when director is disabled or failed to parse
+    if (!directorAgentEnabled) {
+      charactersToRespond = getRoundRobinCharacters();
+      orchestratorLog('[DIRECTOR] Disabled - using round-robin fallback with active characters:', charactersToRespond);
+    } else if (directorAgentEnabled && !directorParsed) {
+      charactersToRespond = getRoundRobinCharacters();
+      orchestratorLog('[DIRECTOR] Parse failed - using round-robin fallback with active characters:', charactersToRespond);
+    }
 
     emitLifecycle('directorPassCompleted', {
       pass: 1,
@@ -1776,7 +1815,7 @@ export class Orchestrator {
     // Director reconciliation pass (post-character) runs only after characters have acted/responded
     const anyCharacterActed = Object.values(characterStates || {}).some((state: any) => !!state?.hasActedThisRound);
     const anyResponses = (responses?.length || 0) > 0;
-    if (sceneId && (anyCharacterActed || anyResponses)) {
+    if (directorAgentEnabled && sceneId && (anyCharacterActed || anyResponses)) {
       const actedThisRound = Object.entries(characterStates)
         .filter(([, state]) => (state as any)?.hasActedThisRound)
         .map(([name]) => name);
