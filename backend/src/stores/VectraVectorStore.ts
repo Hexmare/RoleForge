@@ -152,8 +152,13 @@ export class VectraVectorStore implements VectorStoreInterface {
 
       // Before inserting, make sure directory exists (defensive)
       const indexPath = path.join(this.basePath, scope);
+      console.log(`[VECTOR_STORE_DEBUG] Adding memory to scope: ${scope}`);
+      console.log(`[VECTOR_STORE_DEBUG] Index path: ${indexPath}`);
+      console.log(`[VECTOR_STORE_DEBUG] Base path: ${this.basePath}`);
+      
       try {
         await fs.mkdir(indexPath, { recursive: true });
+        console.log(`[VECTOR_STORE_DEBUG] Successfully created/verified directory: ${indexPath}`);
       } catch (mkdirErr: any) {
         // On some Windows setups or race conditions, mkdir can fail with ENOENT
         // Attempt to ensure basePath exists, then retry
@@ -203,6 +208,7 @@ export class VectraVectorStore implements VectorStoreInterface {
               ...normalizedMeta
             }
           });
+          console.log(`[VECTOR_STORE_DEBUG] Successfully inserted item ${id} into scope ${scope}`);
       };
 
         try {
@@ -264,6 +270,16 @@ export class VectraVectorStore implements VectorStoreInterface {
 
             if (!found) {
               vectraStoreLog(`[VECTOR_STORE] Warning: inserted item ${id} may not be fully visible yet for scope ${scope}`);
+              // Check if index.json actually exists
+              try {
+                const indexJsonPath2 = path.join(indexPath, 'index.json');
+                const stat = await fs.stat(indexJsonPath2);
+                console.log(`[VECTOR_STORE_DEBUG] index.json exists: ${indexJsonPath2}, size: ${stat.size} bytes`);
+                const content = await fs.readFile(indexJsonPath2, 'utf-8');
+                console.log(`[VECTOR_STORE_DEBUG] index.json content preview:`, content.substring(0, 200));
+              } catch (e) {
+                console.error(`[VECTOR_STORE_DEBUG] index.json NOT FOUND or error:`, e);
+              }
             }
           } catch (insertError) {
         const errMsg = insertError instanceof Error ? insertError.message : String(insertError);
@@ -403,6 +419,10 @@ export class VectraVectorStore implements VectorStoreInterface {
           if (Array.isArray(storedVector) && storedVector.length === queryVector.length) {
             // Valid vector array - compute cosine similarity
             similarity = EmbeddingManager.cosineSimilarity(queryVector, storedVector);
+            
+            // Log raw similarity for diagnostics
+            vectraStoreLog(`[VECTOR_STORE] Item ${item.id}: raw semantic similarity = ${similarity.toFixed(4)}`);
+            
             // Clamp and diagnose any unexpected out-of-range similarities
             if (similarity > 1 || similarity < -1) {
               vectraStoreLog(`[VECTOR_STORE] Raw similarity out of range for item ${item.id}: ${similarity}`);
@@ -421,19 +441,29 @@ export class VectraVectorStore implements VectorStoreInterface {
             similarity = 0;
           }
           
-          // Lexical boost: if query tokens appear in the stored text, strongly favor this match
+          // Lexical boost: if query tokens appear in the stored text, moderately favor this match
+          // But don't let lexical matching dominate semantic similarity
           const qTokens = queryText.toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean);
           const text = String(item.metadata?.text || '').toLowerCase();
           const matchedTokens = qTokens.filter((tok) => tok && text.includes(tok));
-          let lexicalBoost = 0;
+          
+          // Calculate match ratio (what percentage of query tokens matched)
+          const matchRatio = qTokens.length > 0 ? matchedTokens.length / qTokens.length : 0;
+          
+          // Small boost based on match ratio: max 0.15 boost for perfect lexical match
+          // This keeps semantic similarity as the primary signal
+          const lexicalBoost = matchRatio * 0.15;
+          
+          // Apply boost only if there's actually a semantic match already (similarity > 0.3)
+          // This prevents pure lexical matches from scoring high without semantic relevance
+          const boosted = similarity > 0.3 
+            ? Math.min(1, similarity + lexicalBoost)
+            : similarity;
+          
+          // Log scoring for debugging
           if (matchedTokens.length > 0) {
-            // Base lift plus small increment per token; cap to avoid dominating cosine entirely
-            lexicalBoost = Math.min(0.6, 0.35 + matchedTokens.length * 0.1);
+            vectraStoreLog(`[VECTOR_STORE] Item ${item.id}: semantic=${similarity.toFixed(4)}, lexical=${matchRatio.toFixed(2)}, boost=${lexicalBoost.toFixed(4)}, final=${boosted.toFixed(4)}`);
           }
-
-          // Ensure direct lexical hit cannot fall below a mid-level score even if embedding is noisy
-          const lexicalFloor = matchedTokens.length > 0 ? Math.max(0.6, matchedTokens.length / Math.max(1, qTokens.length)) : 0;
-          const boosted = Math.min(1, Math.max(similarity + lexicalBoost, lexicalFloor));
 
           if (boosted >= minSimilarity) {
             results.push({

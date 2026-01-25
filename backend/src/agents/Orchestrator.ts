@@ -967,7 +967,7 @@ export class Orchestrator {
             query: userInput + ' ' + this.sceneSummary,
             scope: `world_${this.worldState.id}_multi`,
             topK: 3,
-            minSimilarity: 0.3,
+            minSimilarity: 0.5,
             includeMultiCharacter: true,
           } as any);
           if (memories.length > 0) {
@@ -1261,19 +1261,60 @@ export class Orchestrator {
       directorPlan.newActivations = (directorPlan.newActivations || []).filter((r) => !isUserRef(r));
     }
     // Helper function for round-robin character selection (fallback when director is unavailable)
+    // Uses heuristics: 1) Order by mention in user input, 2) Random order if no mentions
     const getRoundRobinCharacters = () => {
-      return sessionContext.activeCharacters
-        .map(c => c.name)
-        .filter(name => {
-          // Filter out user persona if present
+      // Filter out user persona
+      const normalizeRef = (ref?: string) => {
+        if (!ref) return '';
+        const base = String(ref).trim().toLowerCase();
+        return base.endsWith('_implied') ? base.slice(0, -8) : base;
+      };
+      
+      const eligibleCharacters = sessionContext.activeCharacters
+        .filter(c => {
           if (!personaName) return true;
-          const normalizeRef = (ref?: string) => {
-            if (!ref) return '';
-            const base = String(ref).trim().toLowerCase();
-            return base.endsWith('_implied') ? base.slice(0, -8) : base;
-          };
-          return normalizeRef(name) !== normalizeRef(personaName);
+          return normalizeRef(c.name) !== normalizeRef(personaName);
         });
+      
+      // Detect character mentions in user input
+      const inputLower = (userInput || '').toLowerCase();
+      const mentionedChars: Array<{ char: any; index: number }> = [];
+      const unmentionedChars: any[] = [];
+      
+      for (const char of eligibleCharacters) {
+        const nameLower = char.name.toLowerCase();
+        const index = inputLower.indexOf(nameLower);
+        
+        if (index >= 0) {
+          mentionedChars.push({ char, index });
+        } else {
+          unmentionedChars.push(char);
+        }
+      }
+      
+      // Sort mentioned characters by order of appearance in input
+      mentionedChars.sort((a, b) => a.index - b.index);
+      
+      // Shuffle unmentioned characters for variety
+      for (let i = unmentionedChars.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [unmentionedChars[i], unmentionedChars[j]] = [unmentionedChars[j], unmentionedChars[i]];
+      }
+      
+      // Combine: mentioned first (in order), then unmentioned (shuffled)
+      const orderedChars = [
+        ...mentionedChars.map(m => m.char),
+        ...unmentionedChars
+      ];
+      
+      // If no one was mentioned, the list is fully shuffled
+      const orderingMethod = mentionedChars.length > 0 
+        ? `${mentionedChars.length} mentioned, ${unmentionedChars.length} shuffled`
+        : `all ${orderedChars.length} shuffled`;
+      
+      orchestratorLog(`[DIRECTOR] Round-robin ordering: ${orderingMethod}`);
+      
+      return orderedChars.map(c => c.name);
     };
 
     orchestratorLog('[DIRECTOR PASS1] mentions -> acting:%s activations:%s deactivations:%s',
@@ -1628,8 +1669,23 @@ export class Orchestrator {
       // Build current round messages (all responses so far in this round)
       const currentRoundMessages = turnResponses.map(r => `${r.character}: ${r.response}`);
       
+      // Build fresh context envelope for character WITHOUT caps (CharacterAgent handles its own token budgeting)
+      const characterEnvelope = sceneId
+        ? this.buildContextEnvelope(sceneId, 'user', {
+            roundNumber: this.currentRoundNumber,
+            history: this.history.slice(0, currentRoundStartIndex),
+            summarizedHistory: this.sceneSummary ? [this.sceneSummary] : undefined,
+            characterSummaries: sessionContext.activeCharacters,
+            characterStates: sessionContext.scene.characterStates,
+            worldState: sessionContext.scene.worldState,
+            trackers: sessionContext.trackers,
+            tokenBudget: undefined  // Disable contextBuilder caps - CharacterAgent handles budgeting
+          })
+        : undefined;
+      
       const characterContext: AgentContext = {
         ...context,
+        contextEnvelope: characterEnvelope,  // Use fresh uncapped envelope
         character: characterData,
         characterState: characterStates[charName],
         characterDirective: directiveMap[charName],
@@ -1658,13 +1714,23 @@ export class Orchestrator {
           const query = userInput + ' ' + this.history.join(' ').substring(0, 500);
           orchestratorLog(`[CHARACTER_MEMORY] Query text length: ${query.length}`);
           const scope = `world_${worldId}_char_${characterData.id}`;
-          const memories = await retriever.retrieve({ scope, query, topK: 5, minSimilarity: 0.3 } as any);
+          const memories = await retriever.retrieve({ scope, query, topK: 5, minSimilarity: 0.5 } as any);
           orchestratorLog(`[CHARACTER_MEMORY] Retrieved ${memories.length} memories for ${charName}`);
           if (memories.length > 0) {
             // Inject raw memories into character context; leave formatted for backwards compatibility
             characterContext.vectorMemoriesRaw = memories;
             characterContext.vectorMemories = retriever.formatMemoriesForPrompt(memories);
-            orchestratorLog(`[CHARACTER] ${charName}: Injected ${memories.length} memories into context`);
+            
+            // Add memories to context envelope for proper message construction
+            if (characterContext.contextEnvelope) {
+              if (!characterContext.contextEnvelope.memories) {
+                characterContext.contextEnvelope.memories = {};
+              }
+              // Store as array of memory objects for formatMemories to process
+              characterContext.contextEnvelope.memories[charName] = memories;
+            }
+            
+            orchestratorLog(`[CHARACTER] ${charName}: Injected ${memories.length} memories into context and envelope`);
           } else {
             orchestratorLog(`[CHARACTER_MEMORY] No memories found for ${charName}`);
           }

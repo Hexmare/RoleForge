@@ -1,10 +1,14 @@
 {
   "embeddingProvider": "transformers",
-  "embeddingModel": "nomic-ai/nomic-embed-text-v1.5",
+  "embeddingModel": "Xenova/bge-m3",
   "apiKeys": {},
   "chunkStrategy": "perMessage",
   "chunkSize": 1024,
   "slidingWindowOverlap": 0.2,
+  "memoryCaps": {
+    "maxTopK": 20,
+    "maxQueryChars": 2000
+  },
   "temporalDecay": {
     "enabled": false,
     "mode": "time", 

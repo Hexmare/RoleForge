@@ -12,10 +12,10 @@
 
 {% endfor %}
 {% endif %}
-{% if memories and memories.length > 0 %}## MEMORIES
+{% if memories and memories.length > 0 %}[Memories begin]
 {% for memory in memories %}{{ memory }}
+{% endfor %}[Memories end]
 
-{% endfor %}
 {% endif %}
 {% if finalSystemPrompt %}{{ finalSystemPrompt }}
 

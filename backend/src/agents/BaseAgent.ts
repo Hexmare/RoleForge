@@ -149,18 +149,32 @@ export abstract class BaseAgent {
   }
 
   /**
-   * Format memories from envelope structure into string array
+   * Format memories from envelope structure into string array.
+   * Extracts clean text only, wraps each in brackets, adds begin/end markers.
    */
   private formatMemories(memories?: Record<string, any[]>): string[] | undefined {
     if (!memories) return undefined;
     
     const formatted: string[] = [];
+    
     for (const [key, entries] of Object.entries(memories)) {
       if (key === '__loreOverride') continue;
       if (entries && entries.length > 0) {
         for (const entry of entries) {
-          const text = typeof entry === 'string' ? entry : JSON.stringify(entry);
-          formatted.push(text);
+          // Extract clean text from memory object
+          let cleanText = '';
+          
+          if (typeof entry === 'string') {
+            cleanText = entry;
+          } else if (entry && typeof entry === 'object') {
+            // Try to extract text field, falling back to metadata.text
+            cleanText = entry.text || entry.metadata?.text || entry.content || JSON.stringify(entry);
+          }
+          
+          if (cleanText) {
+            // Wrap each memory in brackets
+            formatted.push(`[${cleanText}]`);
+          }
         }
       }
     }
@@ -199,12 +213,12 @@ export abstract class BaseAgent {
       let lastRaw = '';
 
       while (attempt <= maxValidationRetries) {
-        // On retry, add error info to the context
+        // On retry, add error info to the context WITHOUT including the failed response
         const contextForAttempt = attempt === 0
           ? context
           : {
               ...context,
-              userInput: context.userInput + `\n\n[VALIDATION RETRY]\nPrevious response was invalid (${lastValidation?.errors?.join('; ') || 'invalid JSON'}). Return valid JSON only.`
+              userInput: context.userInput + `\n\n[VALIDATION RETRY]\nPrevious response had invalid JSON (${lastValidation?.errors?.join('; ') || 'invalid format'}). Return valid JSON only, matching the expected schema/object. No commentary.`
             };
 
         let raw = '';
@@ -380,9 +394,8 @@ export abstract class BaseAgent {
   }
 
   private buildValidationRetryPrompt(basePrompt: string, errors: string[] | undefined, raw: string): string {
-    const snippet = this.truncateForLog(raw);
     const errorText = errors && errors.length > 0 ? errors.join('; ') : 'invalid JSON output';
-    return `${basePrompt}\n\n[VALIDATION RETRY]\nPrevious response was invalid (${errorText}). Return valid JSON only, matching the expected schema/object. No commentary. Previous response (truncated):\n${snippet}`;
+    return `${basePrompt}\n\n[VALIDATION RETRY]\nPrevious response had invalid JSON (${errorText}). Return valid JSON only, matching the expected schema/object. No commentary.`;
   }
 
   private truncateForLog(value: string): string {

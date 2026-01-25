@@ -204,6 +204,19 @@ async function attemptChatCompletion(
   };
 
   try {
+    // Log full prompt being sent
+    console.log('\n========== FULL LLM REQUEST ==========');
+    console.log('[LLM] Model:', model);
+    console.log('[LLM] Profile:', profile.baseURL);
+    console.log('[LLM] Message count:', cleanedMessages.length);
+    cleanedMessages.forEach((msg, idx) => {
+      console.log(`\n[LLM] Message ${idx} (${msg.role}):`);
+      console.log(msg.content);
+      console.log(`[LLM] Message ${idx} length: ${msg.content.length} characters`);
+    });
+    console.log('[LLM] Options:', JSON.stringify(samplerOptions, null, 2));
+    console.log('========== END LLM REQUEST ==========\n');
+
     if (options.stream) {
       console.log(`[LLM] Making streaming call to ${model} at ${profile.baseURL}`);
       const stream = await client.chat.completions.create({

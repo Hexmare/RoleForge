@@ -22,7 +22,9 @@ export function buildOpenAIMessages(context: MessageContext): ChatMessage[] {
   }
   
   if (context.memories && context.memories.length > 0) {
-    systemParts.push('## MEMORIES\n' + context.memories.join('\n\n'));
+    // Each memory is already wrapped in brackets by formatMemories
+    // Join with newlines for readability
+    systemParts.push('[Memories begin]\n' + context.memories.join('\n') + '\n[Memories end]');
   }
   
   if (context.finalSystemPrompt) {
@@ -43,9 +45,12 @@ export function buildOpenAIMessages(context: MessageContext): ChatMessage[] {
   
   // Create system message
   if (systemParts.length > 0) {
+    const systemContent = systemParts.join('\n\n');
+    console.log('[MESSAGE_BUILDER] System message length:', systemContent.length);
+    console.log('[MESSAGE_BUILDER] System message parts:', systemParts.map(p => `${p.substring(0, 50)}... (${p.length} chars)`));
     messages.push({
       role: 'system',
-      content: systemParts.join('\n\n')
+      content: systemContent
     });
   }
   

@@ -18,7 +18,12 @@ export async function customLLMRequest(
   const { timeout = 120000 } = options;
 
   try {
+    console.log('\n========== FULL CUSTOM LLM REQUEST ==========');
     console.log(`[Custom LLM] Posting to ${profile.baseURL} with model ${profile.model}`);
+    console.log('[Custom LLM] Rendered prompt length:', renderedPrompt.length);
+    console.log('[Custom LLM] Full rendered prompt:');
+    console.log(renderedPrompt);
+    console.log('========== END CUSTOM LLM REQUEST ==========\n');
 
     // Construct request body based on common LLM API patterns
     const requestBody = {
