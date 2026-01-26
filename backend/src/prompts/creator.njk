@@ -7,38 +7,32 @@ Name: {{ name }}
 Description: {{ description }}
 Instructions: {{ instructions }}
 
-The output must be a valid JSON object with exactly these top-level fields:
+The output must be a valid JSON object with these fields:
+- id: string (UUID)
 - name: string
 - species: string (e.g., 'Human', 'Elf')
-- race: string (e.g., 'Caucasian', 'Dark Elf') [MANDATORY]
-- ethnicity: string (e.g., 'European', 'African', 'Asian') [MANDATORY]
+- race: string (e.g., 'Caucasian', 'Dark Elf')
 - gender: string (e.g., 'Female', 'Male')
-- appearance: object with height, weight, build, eyeColor, hairColor, hairStyle, skinTone, attractiveness (all strings) [skinTone is MANDATORY, e.g., 'pale', 'fair', 'olive', 'tan', 'brown', 'deep brown']
-- aesthetic: string (comma-separated styles)
-- currentOutfit: string (comma-separated or short phrase)
-- personality: string (comma-separated traits)
-- skills: string (comma-separated)
-- powers: string (optional)
-- occupation: string
-- workplace: string (optional)
+- description: string (backstory/bio)
+- appearance: object with:
+  - physical: string (consolidated physical description: height, weight, build, eye color, hair, features)
+  - aesthetic: string (style and aesthetic description)
+- currentOutfit: string
+- personality: string (personality overview)
+- traits: object with:
+  - likes: array of strings (3-5 items)
+  - dislikes: array of strings (3-5 items)
+  - kinks: array of strings (3-5 items)
+  - secrets: array of strings (optional, 1-3 items)
+  - goals: array of strings (optional, 1-3 items)
+- abilities: array of strings (combined skills/powers)
+- occupation: string (include workplace if relevant)
 - sexualOrientation: string
 - relationshipStatus: string
-- relationshipPartner: string (optional)
-- likes: string (comma-separated)
-- turnOns: string (comma-separated)
-- dislikes: string (comma-separated)
-- turnOffs: string (comma-separated)
-- kinks: string (comma-separated)
-- familyMembers: array of strings (optional - only include if description or instructions mention family members)
-- secrets: array of strings (optional - only include if description or instructions mention secrets)
-- goals: array of strings (optional - only include if description or instructions mention goals)
-- backstory: string (optional)
-- scenario: string (optional)
-- description: string
 - avatarUrl: string (optional)
 - extensions: object (optional)
 
-Create a complete character object filling all fields logically based on the name, description, and instructions. Race, ethnicity, and skin tone are MANDATORY. Only include familyMembers, secrets, and goals arrays if they are explicitly mentioned or implied in the description or instructions. Ensure the output is valid JSON matching this structure exactly.
+Generate a complete character. Fill appearance.physical with detailed consolidated description. Populate all trait arrays with at least 3-5 items each. Ensure abilities has multiple entries.
 
 Output only the JSON object, no additional text.
 {% elif mode == 'update' %}
@@ -50,12 +44,12 @@ Existing Character:
 Selected Fields to Update: {{ selectedFields | join(', ') }}
 Instructions: {{ instructions }}
 
-The character must follow this JSON schema structure (do not output the schema itself):
+The character must follow this JSON schema structure:
 {{ schema }}
 
 Generate an updated character object that modifies only the selected fields (or all if none specified) based on the instructions. Keep other fields unchanged. Ensure the output is valid JSON matching the schema exactly.
 
-Output only the JSON object, no additional text or schema.
+Output only the JSON object, no additional text.
 {% elif mode == 'field' %}
 Update a specific field for the character.
 
@@ -65,11 +59,15 @@ Existing Character:
 Field to Update: {{ field }}
 Instructions: {{ instructions }}
 
-The character must follow this JSON schema structure (do not output the schema itself):
+The character must follow this JSON schema structure:
 {{ schema }}
 
-{% if field == 'familyMembers' or field == 'secrets' or field == 'goals' %}
-Generate a single new entry for the {{ field }} array based on the instructions and existing character. Output only the entry as a string (do not include quotes unless they are part of the entry).
+{% if field == 'likes' or field == 'dislikes' or field == 'kinks' or field == 'secrets' or field == 'goals' %}
+Generate a single new entry for the traits.{{ field }} array based on the instructions and existing character. Output only the entry as a string (do not include quotes unless they are part of the entry).
+{% elif field == 'abilities' %}
+Generate a single new entry for the abilities array based on the instructions and existing character. Output only the entry as a string.
+{% elif field == 'appearance' %}
+Generate the complete appearance object with both physical and aesthetic fields based on the instructions and existing character. Output as JSON object: {"physical": "...", "aesthetic": "..."}
 {% else %}
 Generate the value for the specified field based on the instructions and existing character. Output only the value as a string (or JSON if the field is an object/array).
 {% endif %}
@@ -80,39 +78,25 @@ Imported Card Data:
 User Directions/Overrides:
 {{ userDirections }}
 
-The output must be a valid JSON object with exactly these top-level fields:
+The output must be a valid JSON object with these fields:
+- id: string (UUID)
 - name: string
-- species: string (e.g., 'Human', 'Elf')
-- race: string (e.g., 'Caucasian', 'Dark Elf') [MANDATORY]
-- ethnicity: string (e.g., 'European', 'African', 'Asian') [MANDATORY]
-- gender: string (e.g., 'Female', 'Male')
-- age: string (e.g., '25', '19 years old', 'mid-thirties') [MANDATORY]
-- appearance: object with height, weight, build, eyeColor, hairColor, hairStyle, skinTone, attractiveness (all strings) [skinTone is MANDATORY, e.g., 'pale', 'fair', 'olive', 'tan', 'brown', 'deep brown']
-- aesthetic: string (comma-separated styles)
-- currentOutfit: string (comma-separated or short phrase)
-- personality: string (comma-separated traits)
-- skills: string (comma-separated)
-- powers: string (optional)
+- species: string
+- race: string
+- gender: string
+- description: string (backstory/bio)
+- appearance: object with physical and aesthetic strings
+- currentOutfit: string
+- personality: string
+- traits: object with likes, dislikes, kinks, secrets, goals arrays
+- abilities: array of strings
 - occupation: string
-- workplace: string (optional)
 - sexualOrientation: string
 - relationshipStatus: string
-- relationshipPartner: string (optional)
-- likes: string (comma-separated)
-- turnOns: string (comma-separated)
-- dislikes: string (comma-separated)
-- turnOffs: string (comma-separated)
-- kinks: string (comma-separated)
-- familyMembers: array of strings (optional - only include if card data or user directions mention family members)
-- secrets: array of strings (optional - only include if card data or user directions mention secrets)
-- goals: array of strings (optional - only include if card data or user directions mention goals)
-- backstory: string (optional)
-- scenario: string (optional)
-- description: string
 - avatarUrl: string (optional)
 - extensions: object (optional)
 
-Ensure race, ethnicity, age, and skin tone are MANDATORY. Ensure the output is valid JSON matching this structure exactly.
+Convert the card data to this format. Consolidate physical attributes into appearance.physical, merge likes/turnOns into traits.likes, merge dislikes/turnOffs into traits.dislikes, combine skills/powers into abilities array.
 
-Output only the JSON object, no additional text or schema.
+Output only the JSON object, no additional text.
 {% endif %}

@@ -15,6 +15,11 @@ interface LLMProfile {
     frequencyPenalty?: number;
     presencePenalty?: number;
     stop?: string[];
+    // DRY sampling parameters
+    dryMultiplier?: number;
+    dryBase?: number;
+    dryAllowedLength?: number;
+    drySequenceBreakers?: string[];
   };
   fallbackProfiles?: string[];
 }
@@ -378,12 +383,57 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
   isExpanded,
   onToggle
 }) => {
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [scanningModels, setScanningModels] = useState(false);
+  const [scanError, setScanError] = useState<string>('');
+  const [useCustomModel, setUseCustomModel] = useState(false);
+
   // Map template names to descriptions
   const templateDescriptions: Record<string, string> = {
     'chatml': 'ChatML (OpenAI, Claude, Mistral, Local ChatML)',
     'alpaca': 'Alpaca (Stanford Alpaca, OpenAssistant)',
     'vicuna': 'Vicuna (Vicuna 7B/13B/33B)',
     'llama2': 'Llama2 (Meta Llama2-Chat)'
+  };
+
+  const scanModels = async () => {
+    if (!profile.baseURL) {
+      setScanError('Base URL is required');
+      return;
+    }
+
+    setScanningModels(true);
+    setScanError('');
+    try {
+      const res = await fetch('/api/llm/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          baseURL: profile.baseURL,
+          apiKey: profile.apiKey
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableModels(data.models || []);
+        if (data.models && data.models.length > 0) {
+          // Auto-select first model if none selected
+          if (!profile.model) {
+            onUpdate({ model: data.models[0] });
+          }
+        } else {
+          setScanError('No models found');
+        }
+      } else {
+        const error = await res.json();
+        setScanError(error.error || 'Failed to scan models');
+      }
+    } catch (error) {
+      setScanError('Failed to connect: ' + (error as Error).message);
+    } finally {
+      setScanningModels(false);
+    }
   };
 
   return (
@@ -430,12 +480,82 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
 
           <div style={{ marginBottom: '15px' }}>
             <label style={{ color: '#a1a8b8' }}>Model:</label>
-            <input 
-              type="text"
-              value={profile.model || ''}
-              onChange={e => onUpdate({ model: e.target.value })}
-              style={{ width: '100%', padding: '8px', marginTop: '5px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
-            />
+            <div style={{ display: 'flex', gap: '8px', marginTop: '5px' }}>
+              <div style={{ flex: 1 }}>
+                {useCustomModel || availableModels.length === 0 ? (
+                  <input 
+                    type="text"
+                    value={profile.model || ''}
+                    onChange={e => onUpdate({ model: e.target.value })}
+                    style={{ width: '100%', padding: '8px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+                    placeholder="Enter model name"
+                  />
+                ) : (
+                  <select
+                    value={profile.model || ''}
+                    onChange={e => onUpdate({ model: e.target.value })}
+                    style={{ width: '100%', padding: '8px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+                  >
+                    {!profile.model && <option value="">Select a model...</option>}
+                    {/* Show current model if it's not in the scanned list */}
+                    {profile.model && !availableModels.includes(profile.model) && (
+                      <option value={profile.model}>{profile.model} (current)</option>
+                    )}
+                    {availableModels.map(model => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <button
+                onClick={scanModels}
+                disabled={scanningModels || !profile.baseURL}
+                style={{
+                  padding: '8px 16px',
+                  background: scanningModels ? '#4a5568' : '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: scanningModels || !profile.baseURL ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  opacity: scanningModels || !profile.baseURL ? 0.6 : 1
+                }}
+                title="Scan for available models from API"
+              >
+                {scanningModels ? 'Scanning...' : '🔍 Scan'}
+              </button>
+              {availableModels.length > 0 && (
+                <button
+                  onClick={() => {
+                    setUseCustomModel(!useCustomModel);
+                    if (useCustomModel) {
+                      // Switching back to dropdown - clear custom model
+                      if (!availableModels.includes(profile.model || '')) {
+                        onUpdate({ model: availableModels[0] || '' });
+                      }
+                    }
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#6b7280',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                  title={useCustomModel ? 'Use dropdown' : 'Enter custom model'}
+                >
+                  {useCustomModel ? '📋' : '✏️'}
+                </button>
+              )}
+            </div>
+            {scanError && (
+              <small style={{ color: '#ef4444', display: 'block', marginTop: '5px' }}>{scanError}</small>
+            )}
+            {availableModels.length > 0 && !scanError && (
+              <small style={{ color: '#10b981', display: 'block', marginTop: '5px' }}>✓ Found {availableModels.length} model(s)</small>
+            )}
           </div>
 
           <div style={{ marginBottom: '15px' }}>
@@ -620,6 +740,60 @@ const SamplerForm: React.FC<SamplerFormProps> = ({ sampler = {}, onChange }) => 
         <small style={{ color: '#6b7280' }}>Penalize new tokens</small>
       </div>
 
+      <div>
+        <label style={{ color: '#a1a8b8' }}>DRY Multiplier:</label>
+        <input 
+          type="number" 
+          step="0.1" 
+          min="0" 
+          max="5"
+          value={sampler.dryMultiplier || 0}
+          onChange={e => updateSampler('dryMultiplier', parseFloat(e.target.value))}
+          style={{ width: '100%', padding: '8px', marginTop: '5px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+        />
+        <small style={{ color: '#6b7280' }}>0.0 = disabled, typical: 0.8-1.0</small>
+      </div>
+
+      <div>
+        <label style={{ color: '#a1a8b8' }}>DRY Base:</label>
+        <input 
+          type="number" 
+          step="0.05" 
+          min="1" 
+          max="4"
+          value={sampler.dryBase || 1.75}
+          onChange={e => updateSampler('dryBase', parseFloat(e.target.value))}
+          style={{ width: '100%', padding: '8px', marginTop: '5px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+        />
+        <small style={{ color: '#6b7280' }}>Base value (typical: 1.75)</small>
+      </div>
+
+      <div>
+        <label style={{ color: '#a1a8b8' }}>DRY Allowed Length:</label>
+        <input 
+          type="number" 
+          step="1" 
+          min="0" 
+          max="10"
+          value={sampler.dryAllowedLength || 2}
+          onChange={e => updateSampler('dryAllowedLength', parseInt(e.target.value))}
+          style={{ width: '100%', padding: '8px', marginTop: '5px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+        />
+        <small style={{ color: '#6b7280' }}>Min sequence length (typical: 2-4)</small>
+      </div>
+
+      <div style={{ gridColumn: '1 / -1' }}>
+        <label style={{ color: '#a1a8b8' }}>DRY Sequence Breakers (comma-separated):</label>
+        <input 
+          type="text"
+          value={(sampler.drySequenceBreakers || []).join(', ')}
+          onChange={e => updateSampler('drySequenceBreakers', e.target.value.split(',').map(s => s.trim()).filter(s => s))}
+          style={{ width: '100%', padding: '8px', marginTop: '5px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+          placeholder='e.g., \\n, :, "'
+        />
+        <small style={{ color: '#6b7280' }}>Tokens that reset sequence matching</small>
+      </div>
+
       <div style={{ gridColumn: '1 / -1' }}>
         <label style={{ color: '#a1a8b8' }}>Stop Sequences (comma-separated):</label>
         <input 
@@ -738,6 +912,63 @@ const SamplerOverrides: React.FC<SamplerOverridesProps> = ({ sampler, onChange }
           placeholder="Leave empty for default"
         />
         <small style={{ color: '#6b7280' }}>Penalize new tokens</small>
+      </div>
+
+      <div>
+        <label style={{ color: '#a1a8b8', fontSize: '14px' }}>DRY Multiplier:</label>
+        <input 
+          type="number" 
+          step="0.1" 
+          min="0" 
+          max="5"
+          value={sampler.dryMultiplier !== undefined ? sampler.dryMultiplier : ''}
+          onChange={e => updateSampler('dryMultiplier', e.target.value ? parseFloat(e.target.value) : undefined)}
+          style={{ width: '100%', padding: '5px', marginTop: '3px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+          placeholder="Leave empty for default"
+        />
+        <small style={{ color: '#6b7280' }}>0.0 = disabled, typical: 0.8-1.0</small>
+      </div>
+
+      <div>
+        <label style={{ color: '#a1a8b8', fontSize: '14px' }}>DRY Base:</label>
+        <input 
+          type="number" 
+          step="0.05" 
+          min="1" 
+          max="4"
+          value={sampler.dryBase !== undefined ? sampler.dryBase : ''}
+          onChange={e => updateSampler('dryBase', e.target.value ? parseFloat(e.target.value) : undefined)}
+          style={{ width: '100%', padding: '5px', marginTop: '3px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+          placeholder="Leave empty for default"
+        />
+        <small style={{ color: '#6b7280' }}>Base value (typical: 1.75)</small>
+      </div>
+
+      <div>
+        <label style={{ color: '#a1a8b8', fontSize: '14px' }}>DRY Allowed Length:</label>
+        <input 
+          type="number" 
+          step="1" 
+          min="0" 
+          max="10"
+          value={sampler.dryAllowedLength !== undefined ? sampler.dryAllowedLength : ''}
+          onChange={e => updateSampler('dryAllowedLength', e.target.value ? parseInt(e.target.value) : undefined)}
+          style={{ width: '100%', padding: '5px', marginTop: '3px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+          placeholder="Leave empty for default"
+        />
+        <small style={{ color: '#6b7280' }}>Min sequence length (typical: 2-4)</small>
+      </div>
+
+      <div style={{ gridColumn: '1 / -1' }}>
+        <label style={{ color: '#a1a8b8', fontSize: '14px' }}>DRY Sequence Breakers (comma-separated):</label>
+        <input 
+          type="text"
+          value={sampler.drySequenceBreakers !== undefined ? (sampler.drySequenceBreakers || []).join(', ') : ''}
+          onChange={e => updateSampler('drySequenceBreakers', e.target.value ? e.target.value.split(',').map(s => s.trim()).filter(s => s) : undefined)}
+          style={{ width: '100%', padding: '5px', marginTop: '3px', border: '1px solid #2a3142', borderRadius: '4px', boxSizing: 'border-box', background: '#0f1419', color: '#e6e8ec' }}
+          placeholder='Leave empty for default (e.g., \\n, :, ")'
+        />
+        <small style={{ color: '#6b7280' }}>Tokens that reset sequence matching</small>
       </div>
 
       <div style={{ gridColumn: '1 / -1' }}>

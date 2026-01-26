@@ -419,6 +419,38 @@ export abstract class BaseAgent {
     // Fallback: remove <thinking> tags
     cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
     
+    // Try to extract just the JSON if there's extra text
+    // Look for the first { or [ and find its matching closing brace/bracket
+    const firstBrace = cleaned.indexOf('{');
+    const firstBracket = cleaned.indexOf('[');
+    let startIndex = -1;
+    let startChar = '';
+    
+    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+      startIndex = firstBrace;
+      startChar = '{';
+    } else if (firstBracket !== -1) {
+      startIndex = firstBracket;
+      startChar = '[';
+    }
+    
+    if (startIndex !== -1) {
+      // Find matching closing bracket/brace
+      let depth = 0;
+      const endChar = startChar === '{' ? '}' : ']';
+      for (let i = startIndex; i < cleaned.length; i++) {
+        if (cleaned[i] === startChar) depth++;
+        if (cleaned[i] === endChar) {
+          depth--;
+          if (depth === 0) {
+            // Found the matching closing bracket/brace
+            cleaned = cleaned.substring(startIndex, i + 1);
+            break;
+          }
+        }
+      }
+    }
+    
     return cleaned;
   }
 

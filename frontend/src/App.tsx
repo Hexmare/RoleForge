@@ -1271,7 +1271,11 @@ function App() {
           {rightPanelOpen && (
             <Panel side="right" open={true} onToggle={() => setRightPanelOpen(false)} title="World Status">
               <div className="p-4">
-                <WorldStatus sessionContext={sessionContext} campaignId={sessionContext?.campaign?.id} />
+                <WorldStatus 
+                  sessionContext={sessionContext} 
+                  campaignId={sessionContext?.campaign?.id} 
+                  onRefresh={refreshSessionContext}
+                />
               </div>
             </Panel>
           )}

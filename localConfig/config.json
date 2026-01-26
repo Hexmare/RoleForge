@@ -66,7 +66,11 @@
         "presencePenalty": 1.1,
         "maxContextTokens": 20000,
         "forceJson": true,
-        "n": 1
+        "n": 1,
+        "drySequenceBreakers": [
+          "\\\\n"
+        ],
+        "dryMultiplier": 0.8
       },
       "stream": true
     },
@@ -86,6 +90,12 @@
         "n": 1
       },
       "stream": true
+    },
+    "LM Studio": {
+      "type": "openai",
+      "baseURL": "http://192.168.88.135:1234/v1",
+      "model": "mn-captainerisnebula-12b-chimera-v1.1-heretic-uncensored-abliterated-i1",
+      "template": "chatml"
     }
   },
   "agents": {

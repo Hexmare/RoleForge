@@ -261,7 +261,53 @@ app.get('/api/campaigns/:campaignId/state', (req, res) => {
 app.put('/api/campaigns/:campaignId/state', (req, res) => {
   const { campaignId } = req.params;
   const updates = req.body;
-  res.json(CampaignService.updateState(Number(campaignId), updates));
+  
+  // Handle campaign-level state (trackers, dynamicFacts)
+  const campaignStateUpdates: any = {};
+  if (updates.dynamicFacts !== undefined) {
+    campaignStateUpdates.dynamicFacts = updates.dynamicFacts;
+  }
+  if (updates.trackers !== undefined) {
+    campaignStateUpdates.trackers = updates.trackers;
+  }
+  
+  // Update campaign state if there are campaign-level changes
+  if (Object.keys(campaignStateUpdates).length > 0) {
+    CampaignService.updateState(Number(campaignId), campaignStateUpdates);
+  }
+  
+  // Handle scene-level state (characterStates, userPersonaState)
+  if (updates.characterStates !== undefined || updates.userPersonaState !== undefined) {
+    const campaignState = CampaignService.getState(Number(campaignId));
+    if (campaignState?.currentSceneId) {
+      const sceneId = campaignState.currentSceneId;
+      const scene = SceneService.getById(sceneId);
+      if (scene) {
+        // Parse characterStates from database (it's stored as JSON string)
+        const characterStates = scene.characterStates 
+          ? (typeof scene.characterStates === 'string' ? JSON.parse(scene.characterStates) : scene.characterStates)
+          : {};
+        
+        // Update character states
+        if (updates.characterStates) {
+          Object.assign(characterStates, updates.characterStates);
+        }
+        
+        // Update user persona state (stored as characterStates['user'])
+        if (updates.userPersonaState) {
+          if (!characterStates['user']) {
+            characterStates['user'] = {};
+          }
+          Object.assign(characterStates['user'], updates.userPersonaState);
+        }
+        
+        // Save updated characterStates to scene
+        SceneService.update(sceneId, { characterStates });
+      }
+    }
+  }
+  
+  res.json(CampaignService.getState(Number(campaignId)));
 });
 
 // Arcs
@@ -1632,6 +1678,70 @@ app.get('/api/llm/templates', (req, res) => {
   }
 });
 
+// Fetch available models from OpenAI-compatible endpoint
+app.post('/api/llm/models', express.json(), async (req, res) => {
+  try {
+    const { baseURL, apiKey } = req.body;
+    
+    if (!baseURL) {
+      return res.status(400).json({ error: 'baseURL is required' });
+    }
+
+    // Normalize baseURL to ensure it has /v1 if needed and ends properly
+    let normalizedURL = baseURL.trim();
+    if (!normalizedURL.includes('/v1') && !normalizedURL.includes('/api')) {
+      normalizedURL = normalizedURL.replace(/\/$/, '') + '/v1';
+    }
+    const modelsURL = normalizedURL.replace(/\/$/, '') + '/models';
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    console.log('[LLM_MODELS] Fetching models from:', modelsURL);
+    const response = await axios.get(modelsURL, { 
+      headers,
+      timeout: 10000,
+      validateStatus: () => true // Don't throw on any status
+    });
+    
+    if (response.status !== 200) {
+      console.error('[LLM_MODELS] Error response:', response.status, response.data);
+      return res.status(response.status).json({ 
+        error: `Failed to fetch models: ${response.statusText || 'Unknown error'}`,
+        details: typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
+      });
+    }
+
+    const data = response.data;
+    console.log('[LLM_MODELS] Received data:', JSON.stringify(data).substring(0, 200));
+    
+    // OpenAI format: { data: [ { id: "model-name", ... }, ... ] }
+    if (data.data && Array.isArray(data.data)) {
+      const modelIds = data.data.map((m: any) => m.id || m.model || m.name).filter(Boolean);
+      console.log('[LLM_MODELS] Found models (OpenAI format):', modelIds.length);
+      return res.json({ models: modelIds });
+    }
+    
+    // Some APIs return direct array
+    if (Array.isArray(data)) {
+      const modelIds = data.map((m: any) => m.id || m.model || m.name).filter(Boolean);
+      console.log('[LLM_MODELS] Found models (array format):', modelIds.length);
+      return res.json({ models: modelIds });
+    }
+
+    // Fallback
+    console.log('[LLM_MODELS] No models found in response');
+    res.json({ models: [] });
+  } catch (error: any) {
+    console.error('[LLM_MODELS] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Characters CRUD
 app.get('/api/characters', (req, res) => {
   const characters = CharacterService.getAllCharacters();
@@ -1776,19 +1886,78 @@ app.post('/api/characters/:id/field', async (req, res) => {
       worldState: {}
     };
     const result = await orchestrator.createCharacter(context);
-    // For field, result is the value
+    
+    // The result comes back as a string from CreatorAgent
+    // It may be JSON-wrapped or have code fences - extract only JSON portion
     let value = result;
+    
+    // Try to parse as JSON (could be an object for appearance field)
     try {
-      const parsed = JSON.parse(result);
+      // Remove code fences if present
+      let cleaned = result.trim();
+      if (cleaned.startsWith('```')) {
+        const lines = cleaned.split('\n');
+        lines.shift(); // Remove opening fence
+        if (lines[lines.length - 1].trim().startsWith('```')) {
+          lines.pop(); // Remove closing fence
+        }
+        cleaned = lines.join('\n').trim();
+      }
+      
+      // Extract only the JSON portion if there's extra text
+      const firstBrace = cleaned.indexOf('{');
+      const firstBracket = cleaned.indexOf('[');
+      let startIndex = -1;
+      let startChar = '';
+      
+      if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+        startIndex = firstBrace;
+        startChar = '{';
+      } else if (firstBracket !== -1) {
+        startIndex = firstBracket;
+        startChar = '[';
+      }
+      
+      if (startIndex !== -1) {
+        // Find matching closing bracket/brace
+        let depth = 0;
+        const endChar = startChar === '{' ? '}' : ']';
+        for (let i = startIndex; i < cleaned.length; i++) {
+          if (cleaned[i] === startChar) depth++;
+          if (cleaned[i] === endChar) {
+            depth--;
+            if (depth === 0) {
+              // Found the matching closing bracket/brace
+              cleaned = cleaned.substring(startIndex, i + 1);
+              break;
+            }
+          }
+        }
+      }
+      
+      console.log('[FIELD_REGEN] Cleaned result length:', cleaned.length);
+      console.log('[FIELD_REGEN] Cleaned result preview:', cleaned.substring(0, 200));
+      console.log('[FIELD_REGEN] Cleaned result end:', cleaned.substring(Math.max(0, cleaned.length - 200)));
+      
+      const parsed = JSON.parse(cleaned);
+      
       // If parsed result has a "result" wrapper, unwrap it
       if (parsed && typeof parsed === 'object' && 'result' in parsed && Object.keys(parsed).length === 1) {
         value = parsed.result;
+      } else if (parsed && typeof parsed === 'object' && field && field in parsed && Object.keys(parsed).length === 1) {
+        // If the parsed object has a single key matching the field name, unwrap it
+        // e.g., {"appearance": {"physical": "...", "aesthetic": "..."}} -> {"physical": "...", "aesthetic": "..."}
+        value = parsed[field];
       } else {
         value = parsed;
       }
-    } catch {
-      // If parsing fails, use result as-is
-      value = result;
+    } catch (parseError) {
+      // If parsing fails, use result as-is (it's a plain string value)
+      value = result.trim();
+      // Remove quotes if the entire value is quoted
+      if (value.startsWith('"') && value.endsWith('"')) {
+        value = value.slice(1, -1);
+      }
     }
     
     // Return the generated value to frontend for local state management

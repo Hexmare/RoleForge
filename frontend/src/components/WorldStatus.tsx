@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 interface WorldStatusProps {
   sessionContext: any | null;
   campaignId?: number;
+  onRefresh?: () => void;
 }
 
 interface ExpandedSections {
@@ -10,7 +11,7 @@ interface ExpandedSections {
 }
 
 interface EditingState {
-  type: 'worldState' | 'stat' | 'objective' | 'relationship' | 'charState' | null;
+  type: 'worldState' | 'stat' | 'objective' | 'relationship' | 'charState' | 'userPersonaState' | null;
   key?: string;
   index?: number;
   charName?: string;
@@ -30,10 +31,11 @@ const SectionHeader = ({ title, expanded, onToggle }: { title: string; expanded:
   </button>
 );
 
-export const WorldStatus: React.FC<WorldStatusProps> = ({ sessionContext, campaignId }) => {
+export const WorldStatus: React.FC<WorldStatusProps> = ({ sessionContext, campaignId, onRefresh }) => {
   const [expandedSections, setExpandedSections] = useState<ExpandedSections>({
     worldState: true,
     trackers: true,
+    userPersona: true,
     characters: false,
   });
 
@@ -62,9 +64,12 @@ export const WorldStatus: React.FC<WorldStatusProps> = ({ sessionContext, campai
     } else if (type === 'relationship' && key) {
       const val = sessionContext?.trackers?.relationships?.[key];
       value = typeof val === 'string' ? val : JSON.stringify(val, null, 2);
+    } else if (type === 'userPersonaState' && key) {
+      value = String(sessionContext?.scene?.userPersonaState?.[key] || '');
     } else if (type === 'charState' && key && index !== undefined) {
+      // key = character name, index = field name (passed as string in index param)
       const charState = sessionContext?.scene?.characterStates?.[key];
-      const fieldName = Object.keys(charState || {})[index];
+      const fieldName = String(index);
       if (fieldName && charState) {
         value = String(charState[fieldName] || '');
       }
@@ -119,6 +124,11 @@ export const WorldStatus: React.FC<WorldStatusProps> = ({ sessionContext, campai
           };
         }
         newState.characterStates = charStates;
+      } else if (editingState.type === 'userPersonaState' && editingState.key) {
+        newState.userPersonaState = {
+          ...sessionContext?.scene?.userPersonaState,
+          [editingState.key]: editValue,
+        };
       }
 
       const response = await fetch(`/api/campaigns/${campaignId}/state`, {
@@ -130,6 +140,10 @@ export const WorldStatus: React.FC<WorldStatusProps> = ({ sessionContext, campai
       if (response.ok) {
         setEditingState({ type: null });
         setEditValue('');
+        // Refresh session context to show updated values
+        if (onRefresh) {
+          onRefresh();
+        }
       }
     } finally {
       setSaving(false);
@@ -148,8 +162,9 @@ export const WorldStatus: React.FC<WorldStatusProps> = ({ sessionContext, campai
     (sessionContext.trackers.relationships && Object.keys(sessionContext.trackers.relationships).length > 0)
   );
   const hasCharacterStates = sessionContext?.scene?.characterStates && Object.keys(sessionContext.scene.characterStates).length > 0;
+  const hasUserPersonaState = sessionContext?.scene?.userPersonaState && Object.keys(sessionContext.scene.userPersonaState).length > 0;
 
-  if (!hasWorldState && !hasTrackers && !hasCharacterStates) {
+  if (!hasWorldState && !hasTrackers && !hasCharacterStates && !hasUserPersonaState) {
     return <div className="text-text-secondary text-sm p-3">No world status available</div>;
   }
 
@@ -327,6 +342,47 @@ export const WorldStatus: React.FC<WorldStatusProps> = ({ sessionContext, campai
         </div>
       )}
 
+      {/* USER PERSONA STATE */}
+      {hasUserPersonaState && (
+        <div className="border border-border-color rounded-lg" style={containerStyle}>
+          <SectionHeader title="User Persona State" expanded={expandedSections.userPersona} onToggle={() => toggleSection('userPersona')} />
+          {expandedSections.userPersona && (
+            <div className="p-3 bg-panel-secondary" style={{ ...containerStyle, fontSize: '10px' }}>
+              {Object.entries(sessionContext.scene.userPersonaState).map(([field, value], idx, arr) => {
+                const isEditing = editingState.type === 'userPersonaState' && editingState.key === field;
+                return (
+                  <div key={field} style={{ ...containerStyle, paddingBottom: idx < arr.length - 1 ? '12px' : '0', borderBottom: idx < arr.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none', marginBottom: idx < arr.length - 1 ? '12px' : '0' }}>
+                    {isEditing ? (
+                      <div className="flex gap-2 items-start" style={{ ...containerStyle, minWidth: 0 }}>
+                        <div className="text-right" style={{ minWidth: '80px', flexShrink: 0 }}>
+                          <span className="font-medium text-text-primary text-xs">{field}:</span>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <textarea value={editValue} onChange={(e) => setEditValue(e.target.value)} className="w-full p-2 rounded text-xs" style={{ background: 'rgba(0,0,0,0.3)', color: '#e6eef2', border: '1px solid rgba(255,255,255,0.1)', resize: 'vertical', minHeight: '60px', maxHeight: '150px', fontFamily: 'monospace', overflow: 'auto' }} />
+                        </div>
+                        <div className="flex flex-col gap-1" style={{ flexShrink: 0 }}>
+                          <button onClick={saveEdit} disabled={saving} className="px-2 py-1 rounded text-xs bg-green-600 hover:bg-green-700 disabled:opacity-50">✅</button>
+                          <button onClick={cancelEdit} className="px-2 py-1 rounded text-xs bg-red-600 hover:bg-red-700">❌</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="hover:bg-panel-primary cursor-pointer transition-colors" onDoubleClick={() => startEditing('userPersonaState', field)} title="Double-click to edit" style={{ ...containerStyle, display: 'flex', gap: '1rem', alignItems: 'flex-start', minWidth: 0 }}>
+                        <div className="text-right" style={{ minWidth: '80px', flexShrink: 0 }}>
+                          <span className="font-medium text-text-primary text-xs">{field}:</span>
+                        </div>
+                        <span className="text-text-secondary text-xs" style={{ flex: 1, minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                          {String(value)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* CHARACTER STATES */}
       {hasCharacterStates && (
         <div className="border border-border-color rounded-lg" style={containerStyle}>
@@ -359,7 +415,7 @@ export const WorldStatus: React.FC<WorldStatusProps> = ({ sessionContext, campai
                                 </div>
                               </div>
                             ) : (
-                              <div className="hover:bg-panel-primary cursor-pointer transition-colors" onDoubleClick={() => startEditing('charState', charName, idx)} title="Double-click to edit" style={{ ...containerStyle, display: 'flex', gap: '1rem', alignItems: 'flex-start', minWidth: 0 }}>
+                              <div className="hover:bg-panel-primary cursor-pointer transition-colors" onDoubleClick={() => startEditing('charState', charName, field as any)} title="Double-click to edit" style={{ ...containerStyle, display: 'flex', gap: '1rem', alignItems: 'flex-start', minWidth: 0 }}>
                                 <div className="text-right" style={{ minWidth: '80px', flexShrink: 0 }}>
                                   <span className="font-medium text-text-primary text-xs">{field}:</span>
                                 </div>

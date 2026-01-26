@@ -191,6 +191,11 @@ async function attemptChatCompletion(
     stop: profile.sampler.stop,
     n: profile.sampler.n || 1,
     logit_bias: profile.sampler.logitBias ?? null,
+    // DRY sampling parameters
+    dry_multiplier: profile.sampler.dryMultiplier,
+    dry_base: profile.sampler.dryBase,
+    dry_allowed_length: profile.sampler.dryAllowedLength,
+    dry_sequence_breakers: profile.sampler.drySequenceBreakers,
   } : {};
 
   // Conditionally add response_format or other format options

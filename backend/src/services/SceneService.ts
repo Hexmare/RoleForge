@@ -70,6 +70,18 @@ export const SceneService = {
     if (scene && typeof scene.currentRoundNumber === 'undefined') {
       scene.currentRoundNumber = 1;
     }
+    // Handle double-stringified characterStates (defensive fix)
+    if (scene && scene.characterStates && typeof scene.characterStates === 'string') {
+      try {
+        const parsed = JSON.parse(scene.characterStates);
+        // If it parsed to a string, it was double-stringified - parse again
+        if (typeof parsed === 'string') {
+          scene.characterStates = parsed;
+        }
+      } catch (e) {
+        // Invalid JSON, leave as-is
+      }
+    }
     return scene;
   },
 

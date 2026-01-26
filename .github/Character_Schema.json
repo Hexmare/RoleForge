@@ -17,117 +17,90 @@
       "type": "string",
       "description": "e.g., 'Caucasian', 'Dark Elf'"
     },
-    "ethnicity": {
-      "type": "string",
-      "description": "e.g., 'European', 'African', 'Asian'"
-    },
     "gender": {
       "type": "string",
       "description": "e.g., 'Female', 'Male', 'Non-binary'"
     },
-    "age": {
+    "description": {
       "type": "string",
-      "description": "e.g., '25', '19 years old', 'mid-thirties'"
+      "description": "Short bio, backstory, or scenario description"
     },
     "appearance": {
       "type": "object",
       "properties": {
-        "height": { "type": "string" },
-        "weight": { "type": "string" },
-        "build": { "type": "string" },
-        "eyeColor": { "type": "string" },
-        "hairColor": { "type": "string" },
-        "hairStyle": { "type": "string" },
-        "skinTone": { "type": "string", "description": "e.g., 'pale', 'fair', 'olive', 'tan', 'brown', 'deep brown'" },
-        "attractiveness": { "type": "string" },
-        "distinctiveFeatures": { "type": "string" }
-      },
-      "required": ["height", "weight", "build", "eyeColor", "hairColor", "hairStyle", "attractiveness"]
-    },
-    "aesthetic": {
-      "type": "string",
-      "description": "Comma-separated styles"
+        "physical": {
+          "type": "string",
+          "description": "Physical description consolidating height, weight, build, features, etc. e.g., 'tall, athletic build, 6ft, muscular, striking blue eyes'"
+        },
+        "aesthetic": {
+          "type": "string",
+          "description": "Style and aesthetic, e.g., 'gothic, mysterious, elegant'"
+        }
+      }
     },
     "currentOutfit": {
       "type": "string",
-      "description": "Comma-separated or short phrase"
+      "description": "Initial clothing description"
     },
     "personality": {
       "type": "string",
-      "description": "Comma-separated traits"
+      "description": "Brief personality overview"
     },
-    "skills": {
-      "type": "string",
-      "description": "Comma-separated"
+    "traits": {
+      "type": "object",
+      "properties": {
+        "likes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Things the character likes or is attracted to"
+        },
+        "dislikes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Things the character dislikes or avoids"
+        },
+        "kinks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Sexual preferences and kinks"
+        },
+        "secrets": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Hidden information or secrets"
+        },
+        "goals": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Character objectives and motivations"
+        }
+      }
     },
-    "powers": {
-      "type": "string"
+    "abilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Combined skills, powers, and abilities e.g., ['swordfighting', 'fire magic', 'persuasion']"
     },
     "occupation": {
-      "type": "string"
-    },
-    "workplace": {
-      "type": "string"
+      "type": "string",
+      "description": "Job or role, include workplace if relevant e.g., 'blacksmith at the forge'"
     },
     "sexualOrientation": {
-      "type": "string"
+      "type": "string",
+      "description": "e.g., 'heterosexual', 'bisexual', 'pansexual'"
     },
     "relationshipStatus": {
-      "type": "string"
-    },
-    "relationshipPartner": {
-      "type": "string"
-    },
-    "likes": {
       "type": "string",
-      "description": "Comma-separated"
-    },
-    "turnOns": {
-      "type": "string",
-      "description": "Comma-separated"
-    },
-    "dislikes": {
-      "type": "string",
-      "description": "Comma-separated"
-    },
-    "turnOffs": {
-      "type": "string",
-      "description": "Comma-separated"
-    },
-    "kinks": {
-      "type": "string",
-      "description": "Comma-separated"
-    },
-    "familyMembers": {
-      "type": "array",
-      "items": { "type": "string" },
-      "description": "Array of family member names"
-    },
-    "secrets": {
-      "type": "array",
-      "items": { "type": "string" },
-      "description": "Array of character secrets"
-    },
-    "goals": {
-      "type": "array",
-      "items": { "type": "string" },
-      "description": "Array of character goals"
-    },
-    "backstory": {
-      "type": "string"
-    },
-    "scenario": {
-      "type": "string"
-    },
-    "description": {
-      "type": "string"
+      "description": "e.g., 'single', 'partnered with [name]', 'married'"
     },
     "avatarUrl": {
-      "type": "string"
+      "type": "string",
+      "description": "Optional avatar image URL"
     },
     "extensions": {
-      "type": "object"
+      "type": "object",
+      "description": "Optional extension data"
     }
   },
-  "required": ["id", "name", "species", "race", "gender", "appearance", "aesthetic", "currentOutfit", "personality", "skills", "occupation", "sexualOrientation", "relationshipStatus", "likes", "turnOns", "dislikes", "turnOffs", "kinks"]
+  "required": ["id", "name", "species", "race", "gender", "description", "appearance", "currentOutfit", "personality", "abilities", "occupation", "sexualOrientation", "relationshipStatus"]
 }

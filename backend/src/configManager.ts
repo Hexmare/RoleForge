@@ -18,6 +18,11 @@ export interface SamplerSettings {
   forceJson?: boolean;
   logitBias?: Record<string, number>;
   n?: number;
+  // DRY (Don't Repeat Yourself) sampling settings
+  dryMultiplier?: number;       // Multiplier for DRY penalty (0.0 = disabled, typically 0.8-1.0)
+  dryBase?: number;             // Base value for DRY formula (typically 1.75)
+  dryAllowedLength?: number;    // Minimum sequence length before DRY penalty applies (typically 2-4)
+  drySequenceBreakers?: string[]; // Tokens that reset the sequence matching (e.g., ["\n", ":", '"'])
 }
 
 export interface DebugSettings {

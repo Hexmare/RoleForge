@@ -556,15 +556,9 @@ export class Orchestrator {
     }
 
     const sanitizedTrackers = this.sanitizeTrackers(campaignState.trackers);
-    // Persist sanitized trackers back to DB if they changed (e.g., removing clothing fields)
-    const rawTrackersStr = JSON.stringify(campaignState.trackers || {});
-    const sanitizedTrackersStr = JSON.stringify(sanitizedTrackers);
-    if (rawTrackersStr !== sanitizedTrackersStr) {
-      const updateStmt = this.db.prepare('UPDATE CampaignState SET trackers = ?, updatedAt = CURRENT_TIMESTAMP WHERE campaignId = ?');
-      if (updateStmt && typeof updateStmt.run === 'function') {
-        updateStmt.run(sanitizedTrackersStr, campaignRow.id);
-      }
-    }
+    // NOTE: We sanitize trackers for use in session context (removing unwanted fields like clothing),
+    // but we do NOT persist the sanitized version back to the database to preserve manual edits.
+    // The sanitization only affects the in-memory session context.
 
     // Parse active characters UUIDs
     const activeCharacters = sceneRow.activeCharacters ? JSON.parse(sceneRow.activeCharacters) : [];
@@ -1262,6 +1256,7 @@ export class Orchestrator {
     }
     // Helper function for round-robin character selection (fallback when director is unavailable)
     // Uses heuristics: 1) Order by mention in user input, 2) Random order if no mentions
+    // For continue rounds: starts with the character who should respond next after the last responder
     const getRoundRobinCharacters = () => {
       // Filter out user persona
       const normalizeRef = (ref?: string) => {
@@ -1275,6 +1270,43 @@ export class Orchestrator {
           if (!personaName) return true;
           return normalizeRef(c.name) !== normalizeRef(personaName);
         });
+      
+      // Check if this is a continue round (synthetic input from continueRound)
+      const isContinueRound = (userInput || '').startsWith('[System: Continue scene');
+      
+      if (isContinueRound) {
+        // Get the last character who responded in this round
+        const lastMessage = this.history[this.history.length - 1];
+        let lastResponder: string | null = null;
+        
+        if (lastMessage) {
+          const match = lastMessage.match(/^([^:]+):/);
+          if (match) {
+            lastResponder = match[1].trim();
+          }
+        }
+        
+        if (lastResponder) {
+          // Find the index of the last responder in eligible characters
+          const lastResponderIndex = eligibleCharacters.findIndex(
+            c => normalizeRef(c.name) === normalizeRef(lastResponder!)
+          );
+          
+          if (lastResponderIndex !== -1) {
+            // Rotate the array so the next character after last responder is first
+            const rotatedChars = [
+              ...eligibleCharacters.slice(lastResponderIndex + 1),
+              ...eligibleCharacters.slice(0, lastResponderIndex + 1)
+            ];
+            
+            orchestratorLog(`[DIRECTOR] Continue round: rotating order to start after ${lastResponder}`);
+            return rotatedChars.map(c => c.name);
+          }
+        }
+        
+        // If we couldn't determine last responder, fall through to normal logic
+        orchestratorLog(`[DIRECTOR] Continue round: couldn't determine last responder, using normal order`);
+      }
       
       // Detect character mentions in user input
       const inputLower = (userInput || '').toLowerCase();
