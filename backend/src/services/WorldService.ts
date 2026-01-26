@@ -46,6 +46,62 @@ export const WorldService = {
   },
 
   delete(id: number) {
+    // Manually delete related records to avoid foreign key constraint issues
+    // (In case CASCADE wasn't properly enforced when tables were created)
+    
+    // Delete World_Lorebooks entries
+    db.prepare('DELETE FROM World_Lorebooks WHERE worldId = ?').run(id);
+    
+    // Delete WorldCharacterOverrides
+    db.prepare('DELETE FROM WorldCharacterOverrides WHERE worldId = ?').run(id);
+    
+    // Delete LoreEntries
+    db.prepare('DELETE FROM LoreEntries WHERE worldId = ?').run(id);
+    
+    // Get all campaigns for this world
+    const campaigns = db.prepare('SELECT id FROM Campaigns WHERE worldId = ?').all(id);
+    
+    // Delete each campaign (which should cascade to arcs, scenes, etc.)
+    for (const campaign of campaigns as any[]) {
+      // Delete Campaign_Lorebooks
+      db.prepare('DELETE FROM Campaign_Lorebooks WHERE campaignId = ?').run(campaign.id);
+      
+      // Delete CampaignCharacterOverrides
+      db.prepare('DELETE FROM CampaignCharacterOverrides WHERE campaignId = ?').run(campaign.id);
+      
+      // Get all arcs for this campaign
+      const arcs = db.prepare('SELECT id FROM Arcs WHERE campaignId = ?').all(campaign.id);
+      
+      for (const arc of arcs as any[]) {
+        // Get all scenes for this arc
+        const scenes = db.prepare('SELECT id FROM Scenes WHERE arcId = ?').all(arc.id);
+        
+        for (const scene of scenes as any[]) {
+          // Delete Messages for each scene
+          db.prepare('DELETE FROM Messages WHERE sceneId = ?').run(scene.id);
+          
+          // Delete SceneRounds for each scene
+          db.prepare('DELETE FROM SceneRounds WHERE sceneId = ?').run(scene.id);
+          
+          // Delete CampaignState if it references this scene
+          db.prepare('DELETE FROM CampaignState WHERE currentSceneId = ?').run(scene.id);
+        }
+        
+        // Delete all scenes for this arc
+        db.prepare('DELETE FROM Scenes WHERE arcId = ?').run(arc.id);
+      }
+      
+      // Delete all arcs for this campaign
+      db.prepare('DELETE FROM Arcs WHERE campaignId = ?').run(campaign.id);
+      
+      // Delete CampaignState for this campaign
+      db.prepare('DELETE FROM CampaignState WHERE campaignId = ?').run(campaign.id);
+    }
+    
+    // Delete all campaigns for this world
+    db.prepare('DELETE FROM Campaigns WHERE worldId = ?').run(id);
+    
+    // Finally delete the world itself
     const stmt = db.prepare('DELETE FROM Worlds WHERE id = ?');
     const result = stmt.run(id);
     return { changes: result.changes };

@@ -74,20 +74,32 @@ export function buildOpenAIMessages(context: MessageContext): ChatMessage[] {
   }
   
   // Build current round interactions (user input + all character responses so far)
-  let currentRoundContent = '[CURRENT ROUND INTERACTIONS]\nThe following messages have occurred in the current round.- do NOT repeat or quote them.\n\n';
+  let currentRoundContent = '[CURRENT ROUND INTERACTIONS]\nThe following messages have occurred in the current round - do NOT repeat or quote them.\n\n';
   const roundParts: string[] = [];
   
   if (context.userInput) {
-    roundParts.push(context.userInput);
+    // Wrap user input with [USER: ...] brackets
+    roundParts.push(`[USER: ${context.userInput}]`);
   }
   
   if (context.currentRoundMessages && context.currentRoundMessages.length > 0) {
     for (let i = 0; i < context.currentRoundMessages.length; i++) {
-      roundParts.push(context.currentRoundMessages[i]);
+      const msg = context.currentRoundMessages[i];
+      // Check if message already has character name prefix (format: "CharName: message")
+      if (msg.includes(':')) {
+        const colonIndex = msg.indexOf(':');
+        const sender = msg.substring(0, colonIndex).trim();
+        const content = msg.substring(colonIndex + 1).trim();
+        roundParts.push(`[CHARACTER ${sender}: ${content}]`);
+      } else {
+        // If no prefix, wrap as unknown character
+        roundParts.push(`[CHARACTER: ${msg}]`);
+      }
     }
   }
   
   currentRoundContent += roundParts.join('\n\n');
+  currentRoundContent += '\n\n[END CURRENT ROUND INTERACTIONS]';
   
   // Add current round as the final user message
   if (roundParts.length > 0) {

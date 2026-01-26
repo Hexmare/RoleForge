@@ -262,8 +262,11 @@ app.put('/api/campaigns/:campaignId/state', (req, res) => {
   const { campaignId } = req.params;
   const updates = req.body;
   
-  // Handle campaign-level state (trackers, dynamicFacts)
+  // Handle campaign-level state (currentSceneId, trackers, dynamicFacts)
   const campaignStateUpdates: any = {};
+  if (updates.currentSceneId !== undefined) {
+    campaignStateUpdates.currentSceneId = updates.currentSceneId;
+  }
   if (updates.dynamicFacts !== undefined) {
     campaignStateUpdates.dynamicFacts = updates.dynamicFacts;
   }

@@ -58,6 +58,43 @@ export const CampaignService = {
   },
 
   delete(id: number) {
+    // Manually cascade delete to avoid foreign key constraint issues
+    
+    // Delete Campaign_Lorebooks entries
+    db.prepare('DELETE FROM Campaign_Lorebooks WHERE campaignId = ?').run(id);
+    
+    // Delete CampaignCharacterOverrides
+    db.prepare('DELETE FROM CampaignCharacterOverrides WHERE campaignId = ?').run(id);
+    
+    // Get all arcs for this campaign
+    const arcs = db.prepare('SELECT id FROM Arcs WHERE campaignId = ?').all(id);
+    
+    for (const arc of arcs as any[]) {
+      // Get all scenes for this arc
+      const scenes = db.prepare('SELECT id FROM Scenes WHERE arcId = ?').all(arc.id);
+      
+      for (const scene of scenes as any[]) {
+        // Delete Messages for each scene
+        db.prepare('DELETE FROM Messages WHERE sceneId = ?').run(scene.id);
+        
+        // Delete SceneRounds for each scene
+        db.prepare('DELETE FROM SceneRounds WHERE sceneId = ?').run(scene.id);
+        
+        // Delete CampaignState if it references this scene
+        db.prepare('DELETE FROM CampaignState WHERE currentSceneId = ?').run(scene.id);
+      }
+      
+      // Delete all scenes for this arc
+      db.prepare('DELETE FROM Scenes WHERE arcId = ?').run(arc.id);
+    }
+    
+    // Delete all arcs for this campaign
+    db.prepare('DELETE FROM Arcs WHERE campaignId = ?').run(id);
+    
+    // Delete CampaignState for this campaign
+    db.prepare('DELETE FROM CampaignState WHERE campaignId = ?').run(id);
+    
+    // Finally delete the campaign itself
     const stmt = db.prepare('DELETE FROM Campaigns WHERE id = ?');
     const result = stmt.run(id);
     return { changes: result.changes };

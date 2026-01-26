@@ -210,7 +210,14 @@ export class Orchestrator {
           maxSummaryTokens
         } as AgentContext;
 
-        const summary = await summarizeAgent.run(context);
+        let summary: string | null = null;
+        try {
+          summary = await summarizeAgent.run(context);
+        } catch (error) {
+          orchestratorLog('[SUMMARIZE] Agent call failed for chunk:', error);
+          continue;
+        }
+        
         if (!summary) {
           continue;
         }
@@ -979,8 +986,14 @@ export class Orchestrator {
       const narratorAgent = this.agents.get('narrator')!;
       orchestratorLog('Calling NarratorAgent');
       this.emitAgentStatus('Narrator', 'start', sceneId);
-      const narration = await narratorAgent.run(context);
-      orchestratorLog('NarratorAgent completed');
+      let narration: string = '';
+      try {
+        narration = await narratorAgent.run(context);
+        orchestratorLog('NarratorAgent completed');
+      } catch (error) {
+        orchestratorLog('[NARRATOR] Agent call failed:', error);
+        narration = 'The narrator is momentarily silent.';
+      }
       this.emitAgentStatus('Narrator', 'complete', sceneId);
       this.history.push(`Narrator: ${narration}`);
       return { responses: [{ sender: 'Narrator', content: narration }], lore: [] };
@@ -1167,9 +1180,14 @@ export class Orchestrator {
       emitLifecycle('directorPassStarted', { pass: 1, activeCharacterNames: activeCharacterNamesStr });
       orchestratorLog('Calling DirectorAgent');
       this.emitAgentStatus('Director', 'start', sceneId);
-      directorOutput = await directorAgent.run(directorContext);
-      orchestratorLog('DirectorAgent completed, output length:', directorOutput.length);
-      orchestratorLog('DirectorAgent raw output preview:', directorOutput.substring(0, 200) + (directorOutput.length > 200 ? '...' : ''));
+      try {
+        directorOutput = await directorAgent.run(directorContext);
+        orchestratorLog('DirectorAgent completed, output length:', directorOutput.length);
+        orchestratorLog('DirectorAgent raw output preview:', directorOutput.substring(0, 200) + (directorOutput.length > 200 ? '...' : ''));
+      } catch (error) {
+        orchestratorLog('[DIRECTOR] Agent call failed (pass 1):', error);
+        directorOutput = '{}';
+      }
       this.emitAgentStatus('Director', 'complete', sceneId);
     } else {
       orchestratorLog('DirectorAgent disabled, skipping first pass');
@@ -1536,8 +1554,14 @@ export class Orchestrator {
         emitLifecycle('worldUpdateStarted', { enabled: true });
         orchestratorLog('Calling WorldAgent');
         this.emitAgentStatus('WorldAgent', 'start', sceneId);
-        const worldUpdateStr = await worldAgent.run(worldContext);
-        orchestratorLog('WorldAgent completed');
+        let worldUpdateStr: string = '{}';
+        try {
+          worldUpdateStr = await worldAgent.run(worldContext);
+          orchestratorLog('WorldAgent completed');
+        } catch (error) {
+          orchestratorLog('[WORLD] Agent call failed:', error);
+          worldUpdateStr = '{}';
+        }
         this.emitAgentStatus('WorldAgent', 'complete', sceneId);
         // Parse JSON response from WorldAgent (enforced by response_format)
         let worldStateChanged = false;
@@ -1785,11 +1809,17 @@ export class Orchestrator {
           orchestratorLog(`[CHARACTER] Retry ${characterRetries} for "${charName}"`);
         }
         // Call LLM
-        characterResponse = await characterAgent.run(characterContext);
+        try {
+          characterResponse = await characterAgent.run(characterContext);
+        } catch (error) {
+          orchestratorLog(`[CHARACTER] Agent call failed for "${charName}" (attempt ${characterRetries + 1}):`, error);
+          characterLastError = error;
+          characterRetries++;
+          continue;
+        }
         orchestratorLog(`[CHARACTER] CharacterAgent for "${charName}" completed (attempt ${characterRetries + 1})`);
         orchestratorLog(`[CHARACTER] Raw response length: ${characterResponse?.length || 0} chars`);
         orchestratorLog(`[CHARACTER] First 200 chars of response: ${characterResponse?.substring(0, 200) || 'EMPTY'}`);
-        this.emitAgentStatus(charName, 'complete', sceneId);
         
         if (characterResponse) {
           // Strip ```json wrapper if present
@@ -1839,6 +1869,9 @@ export class Orchestrator {
         
         characterRetries++;
       }
+      
+      // Emit agent complete status AFTER all retries finish
+      this.emitAgentStatus(charName, 'complete', sceneId);
       
       if (!characterParsed) {
         orchestratorLog(`[CHARACTER] Failed to parse/repair JSON after ${characterRetries} attempts:`, characterLastError);
@@ -1933,9 +1966,15 @@ export class Orchestrator {
       emitLifecycle('directorPassStarted', { pass: 2 });
       orchestratorLog('Calling DirectorAgent (reconciliation pass)');
       this.emitAgentStatus('Director', 'start', sceneId);
-      const directorReconOutput = await directorAgent.run(reconciliationContext);
-      orchestratorLog('DirectorAgent reconciliation completed, output length:', directorReconOutput.length);
-      orchestratorLog('DirectorAgent reconciliation raw output preview:', directorReconOutput.substring(0, 200) + (directorReconOutput.length > 200 ? '...' : ''));
+      let directorReconOutput: string = '{}';
+      try {
+        directorReconOutput = await directorAgent.run(reconciliationContext);
+        orchestratorLog('DirectorAgent reconciliation completed, output length:', directorReconOutput.length);
+        orchestratorLog('DirectorAgent reconciliation raw output preview:', directorReconOutput.substring(0, 200) + (directorReconOutput.length > 200 ? '...' : ''));
+      } catch (error) {
+        orchestratorLog('[DIRECTOR] Agent call failed (pass 2 reconciliation):', error);
+        directorReconOutput = '{}';
+      }
       this.emitAgentStatus('Director', 'complete', sceneId);
 
       let directorReconParsed: any = null;
@@ -2110,8 +2149,14 @@ export class Orchestrator {
         };
         orchestratorLog('Calling CreatorAgent');
         this.emitAgentStatus('Creator', 'start', sceneId);
-        const creatorResult = await creatorAgent.run(context);
-        orchestratorLog('CreatorAgent completed');
+        let creatorResult: string = '';
+        try {
+          creatorResult = await creatorAgent.run(context);
+          orchestratorLog('CreatorAgent completed');
+        } catch (error) {
+          orchestratorLog('[CREATOR] Agent call failed:', error);
+          creatorResult = 'Creation failed. Please try again with a different description.';
+        }
         this.emitAgentStatus('Creator', 'complete', sceneId);
         return { responses: [{ sender: 'Creator', content: creatorResult }], lore: [] };
       case 'image':
@@ -2192,7 +2237,15 @@ export class Orchestrator {
         let visualRetries = 0;
         let visualLastError: any = null;
         while (visualRetries < 3) {
-          const visualResponse = await visualAgent.run(visualContext);
+          let visualResponse: string = '';
+          try {
+            visualResponse = await visualAgent.run(visualContext);
+          } catch (error) {
+            orchestratorLog('[VISUAL] Agent call failed (attempt ${visualRetries + 1}):', error);
+            visualLastError = error;
+            visualRetries++;
+            continue;
+          }
 
           // If VisualAgent returned a markdown image tag like: ![{...}](url)
           // treat it as a valid response: extract inner JSON if present
@@ -2291,8 +2344,14 @@ export class Orchestrator {
         } as any;
         orchestratorLog('Calling NarratorAgent for /scenepicture with scene-picture mode');
         this.emitAgentStatus('Narrator', 'start', sceneId);
-        const narration = await narratorAgent.run(narrContext);
-        orchestratorLog('NarratorAgent completed for /scenepicture');
+        let narration: string = '';
+        try {
+          narration = await narratorAgent.run(narrContext);
+          orchestratorLog('NarratorAgent completed for /scenepicture');
+        } catch (error) {
+          orchestratorLog('[NARRATOR] Agent call failed in /scenepicture:', error);
+          narration = 'The scene description could not be generated at this time.';
+        }
         this.emitAgentStatus('Narrator', 'complete', sceneId);
 
         // Generate SD prompt for scene picture visualization
@@ -2315,10 +2374,17 @@ export class Orchestrator {
           } as any;
           
           // Call visual agent to generate SD prompt
-          const sdPrompt = await visAgent.run(visualContext);
-          
-          // Generate image from the SD prompt
-          const imageUrl = await visAgent.generateImage(sdPrompt);
+          let sdPrompt: string = '';
+          let imageUrl: string = '';
+          try {
+            sdPrompt = await visAgent.run(visualContext);
+            
+            // Generate image from the SD prompt
+            imageUrl = await visAgent.generateImage(sdPrompt);
+          } catch (error) {
+            orchestratorLog('[VISUAL] Agent call failed in /scenepicture:', error);
+            throw error; // Re-throw to be caught by outer try-catch
+          }
           this.emitAgentStatus('Visual', 'complete', sceneId);
           const meta = { prompt: sdPrompt, urls: [imageUrl], current: 0 };
           const md = `![${JSON.stringify(meta)}](${imageUrl})`;
@@ -2364,6 +2430,11 @@ export class Orchestrator {
 
   async createCharacter(context: AgentContext): Promise<string> {
     const creatorAgent = this.agents.get('creator')!;
-    return await creatorAgent.run(context);
+    try {
+      return await creatorAgent.run(context);
+    } catch (error) {
+      orchestratorLog('[CREATOR] Agent call failed in createCharacter:', error);
+      throw new Error(`Character creation failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }

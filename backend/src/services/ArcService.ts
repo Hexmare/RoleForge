@@ -36,6 +36,26 @@ export const ArcService = {
   },
 
   delete(id: number) {
+    // Manually cascade delete to avoid foreign key constraint issues
+    
+    // Get all scenes for this arc
+    const scenes = db.prepare('SELECT id FROM Scenes WHERE arcId = ?').all(id);
+    
+    for (const scene of scenes as any[]) {
+      // Delete Messages for each scene
+      db.prepare('DELETE FROM Messages WHERE sceneId = ?').run(scene.id);
+      
+      // Delete SceneRounds for each scene
+      db.prepare('DELETE FROM SceneRounds WHERE sceneId = ?').run(scene.id);
+      
+      // Delete CampaignState if it references this scene
+      db.prepare('DELETE FROM CampaignState WHERE currentSceneId = ?').run(scene.id);
+    }
+    
+    // Delete all scenes for this arc
+    db.prepare('DELETE FROM Scenes WHERE arcId = ?').run(id);
+    
+    // Finally delete the arc itself
     const stmt = db.prepare('DELETE FROM Arcs WHERE id = ?');
     const result = stmt.run(id);
     return { changes: result.changes };

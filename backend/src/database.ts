@@ -22,6 +22,10 @@ if (!fs.existsSync(charactersDbDir)) {
 }
 const charactersDb = new Database(charactersDbPath) as any;
 
+// Enable foreign key constraints (required for CASCADE deletes to work)
+db.pragma('foreign_keys = ON');
+charactersDb.pragma('foreign_keys = ON');
+
 // Enable WAL mode for better concurrency; fall back quietly if unavailable (e.g., sandboxed test FS)
 try {
   db.pragma('journal_mode = WAL');
