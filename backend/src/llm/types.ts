@@ -40,6 +40,7 @@ export interface MessageContext {
     sceneId?: number;
     roundNumber?: number;
     characterName?: string;
+    userPersonaName?: string;
   };
 }
 

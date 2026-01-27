@@ -363,6 +363,27 @@ export class Orchestrator {
         throw new Error(`[ORCHESTRATOR] Failed to build session context for scene ${sceneId}`);
       }
 
+      // Resolve the correct user persona for continuation instead of defaulting to "system"
+      // Prefer the most recent user message sender; fall back to any non-character state key (e.g., 'user')
+      let continuationPersona = 'default';
+      try {
+        const lastUser = this.db
+          .prepare('SELECT sender FROM Messages WHERE sceneId = ? AND source = ? ORDER BY messageNumber DESC LIMIT 1')
+          .get(sceneId, 'User') as any;
+        if (lastUser?.sender) {
+          continuationPersona = String(lastUser.sender);
+        } else {
+          const characterStateKeys = Object.keys(sessionContext.scene.characterStates || {});
+          const activeNames = new Set((sessionContext.activeCharacters || []).map((c: any) => c?.name));
+          const userKey = characterStateKeys.find((k) => k && k.toLowerCase() === 'user');
+          const firstNonCharacter = characterStateKeys.find((k) => k && !activeNames.has(k));
+          continuationPersona = userKey || firstNonCharacter || continuationPersona;
+        }
+      } catch (personaErr) {
+        orchestratorLog('[CONTINUE_ROUND] Failed to resolve user persona; using default', personaErr);
+      }
+      orchestratorLog('[CONTINUE_ROUND] Using persona for continuation:', continuationPersona);
+
       // Extract active character UUIDs from the resolved character objects
       // sessionContext.activeCharacters are full character objects, we need just the IDs
       const activeCharacterUUIDs = sessionContext.activeCharacters.map((c: any) => c.id);
@@ -372,7 +393,7 @@ export class Orchestrator {
       // This ensures all agent status messages, parsing, world updates, and frontend notifications happen
       await this.processUserInput(
         syntheticUserInput,
-        'system', // Use 'system' as persona
+        continuationPersona,
         activeCharacterUUIDs, // Pass active character UUIDs
         sceneId, // Pass scene ID for round tracking
         (response: { sender: string; content: string }) => {

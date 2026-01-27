@@ -143,7 +143,9 @@ export abstract class BaseAgent {
       metadata: {
         agentName: this.agentName,
         sceneId: envelope?.sceneId,
-        roundNumber: envelope?.roundNumber
+        roundNumber: envelope?.roundNumber,
+        characterName: agentContext.character?.name,
+        userPersonaName: agentContext.userPersona?.name
       }
     };
   }
@@ -213,13 +215,9 @@ export abstract class BaseAgent {
       let lastRaw = '';
 
       while (attempt <= maxValidationRetries) {
-        // On retry, add error info to the context WITHOUT including the failed response
-        const contextForAttempt = attempt === 0
-          ? context
-          : {
-              ...context,
-              userInput: context.userInput + `\n\n[VALIDATION RETRY]\nPrevious response had invalid JSON (${lastValidation?.errors?.join('; ') || 'invalid format'}). Return valid JSON only, matching the expected schema/object. No commentary.`
-            };
+        // On retry, we just retry WITHOUT polluting the context
+        // The model should use the same context but try again
+        const contextForAttempt = context;
 
         let raw = '';
         if (profile.type === 'custom') {
@@ -394,8 +392,9 @@ export abstract class BaseAgent {
   }
 
   private buildValidationRetryPrompt(basePrompt: string, errors: string[] | undefined, raw: string): string {
-    const errorText = errors && errors.length > 0 ? errors.join('; ') : 'invalid JSON output';
-    return `${basePrompt}\n\n[VALIDATION RETRY]\nPrevious response had invalid JSON (${errorText}). Return valid JSON only, matching the expected schema/object. No commentary.`;
+    // DO NOT pollute the prompt with validation errors - just return the base prompt
+    // The model will retry with the same context
+    return basePrompt;
   }
 
   private truncateForLog(value: string): string {

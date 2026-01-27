@@ -1,8 +1,49 @@
 import { MessageContext, ChatMessage } from './types.js';
 
 /**
+ * Parse a history message to extract speaker and content.
+ * Expected formats: "SpeakerName: message" or just "message"
+ */
+function parseHistoryMessage(message: string): { speaker: string | null; content: string } {
+  const colonIndex = message.indexOf(':');
+  if (colonIndex > 0 && colonIndex < 50) { // Reasonable speaker name length
+    const speaker = message.substring(0, colonIndex).trim();
+    const content = message.substring(colonIndex + 1).trim();
+    return { speaker, content };
+  }
+  return { speaker: null, content: message };
+}
+
+/**
+ * Determine if a speaker should be mapped to 'user' role.
+ * User personas, player names, etc. should be 'user'.
+ */
+function isUserSpeaker(speaker: string, context: MessageContext): boolean {
+  if (!speaker) return false;
+  const lowerSpeaker = speaker.toLowerCase();
+  
+  // Check against common user identifiers
+  if (lowerSpeaker === 'user' || lowerSpeaker === 'player' || lowerSpeaker === 'you') {
+    return true;
+  }
+  
+  // Check if matches the user persona name from metadata
+  if (context.metadata?.userPersonaName) {
+    const lowerUserName = context.metadata.userPersonaName.toLowerCase();
+    if (lowerSpeaker === lowerUserName) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
  * Builds an OpenAI-compatible messages array from structured message context.
  * This directly constructs the message format without intermediate template rendering.
+ * 
+ * CRITICAL: Chat history is converted to proper user/assistant message pairs,
+ * NOT dumped into a second system message. This prevents character confusion.
  */
 export function buildOpenAIMessages(context: MessageContext): ChatMessage[] {
   const messages: ChatMessage[] = [];
@@ -54,60 +95,106 @@ export function buildOpenAIMessages(context: MessageContext): ChatMessage[] {
     });
   }
   
-  // Add chat history with clear markers (previous rounds only, NOT including current round)
+  // CRITICAL INSIGHT: OpenAI's "assistant" role means "the AI you're talking to" - there's only ONE assistant.
+  // In multi-character scenarios, putting different characters as "assistant" teaches the model to blend them.
+  // SOLUTION: Put ALL conversation history in system context with clear speaker labels.
+  // Only use user/assistant for the actual conversation flow with the LLM.
+  
+  const currentCharName = context.metadata?.characterName;
+  const userPersonaName = context.metadata?.userPersonaName;
+  
+  // Build conversation history as structured system context (deduped, with speaker labels)
   if (context.chatHistory && context.chatHistory.length > 0) {
-    let historyContent = '[CHAT HISTORY BEGIN]\nThese are the messages from previous rounds in the scene:\n\n';
-    
-    for (let i = 0; i < context.chatHistory.length; i++) {
-      historyContent += context.chatHistory[i];
-      if (i < context.chatHistory.length - 1) {
-        historyContent += '\n\n';
-      }
+    console.log('[MESSAGE_BUILDER] Adding', context.chatHistory.length, 'history messages to system context');
+
+    const seenHistory = new Set<string>();
+    let historyContent = '## CONVERSATION HISTORY\n';
+
+    for (const historyMsg of context.chatHistory) {
+      const trimmed = (historyMsg || '').trim();
+      if (!trimmed) continue;
+
+      // Ensure a speaker prefix exists
+      const colonIndex = trimmed.indexOf(':');
+      const withSpeaker = colonIndex > 0
+        ? trimmed
+        : `${currentCharName || 'Speaker'}: ${trimmed}`;
+
+      if (seenHistory.has(withSpeaker)) continue;
+      seenHistory.add(withSpeaker);
+      historyContent += withSpeaker + '\n\n';
     }
-    
-    historyContent += '\n\n[CHAT HISTORY END]';
-    
-    messages.push({
-      role: 'system',
-      content: historyContent
-    });
+
+    if (seenHistory.size > 0) {
+      messages.push({
+        role: 'system',
+        content: historyContent.trim()
+      });
+    }
   }
   
-  // Build current round interactions (user input + all character responses so far)
-  let currentRoundContent = '[CURRENT ROUND INTERACTIONS]\nThe following messages have occurred in the current round - do NOT repeat or quote them.\n\n';
+  // Build current round interactions as the final user message
+  let currentRoundContent = `## CURRENT TURN\nYou are ${currentCharName}. Respond as ${currentCharName} based on the following:\n\n`;
   const roundParts: string[] = [];
+
+  // Helper to ensure speaker labels are present and deduplicate messages
+  const normalizeRoundMessages = (messages: string[]): string[] => {
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    for (const msg of messages) {
+      const trimmed = msg.trim();
+      if (!trimmed) continue;
+
+      // Drop system/meta noise that leaks into rounds
+      if (trimmed.includes('[System: Continue scene')) continue;
+      if (trimmed.includes('PrevSpeaker')) continue;
+      if (trimmed.startsWith('undefined:')) continue;
+
+      // Ensure a speaker prefix exists
+      const colonIndex = trimmed.indexOf(':');
+      const withSpeaker = colonIndex > 0
+        ? trimmed
+        : `${currentCharName || 'Speaker'}: ${trimmed}`;
+
+      // Dedup by full line
+      if (!seen.has(withSpeaker)) {
+        seen.add(withSpeaker);
+        normalized.push(withSpeaker);
+      }
+    }
+    return normalized;
+  };
   
   if (context.userInput) {
-    // Wrap user input with [USER: ...] brackets
-    roundParts.push(`[USER: ${context.userInput}]`);
+    const trimmedInput = context.userInput.trim();
+    // Skip injected continue-scene blobs to avoid repetition
+    const isContinueSceneBlob = trimmedInput.startsWith('[System: Continue scene') || trimmedInput.includes('Previous character messages:');
+    if (!isContinueSceneBlob) {
+      roundParts.push(`${userPersonaName || 'User'}: ${trimmedInput}`);
+    }
   }
   
   if (context.currentRoundMessages && context.currentRoundMessages.length > 0) {
-    for (let i = 0; i < context.currentRoundMessages.length; i++) {
-      const msg = context.currentRoundMessages[i];
-      // Check if message already has character name prefix (format: "CharName: message")
-      if (msg.includes(':')) {
-        const colonIndex = msg.indexOf(':');
-        const sender = msg.substring(0, colonIndex).trim();
-        const content = msg.substring(colonIndex + 1).trim();
-        roundParts.push(`[CHARACTER ${sender}: ${content}]`);
-      } else {
-        // If no prefix, wrap as unknown character
-        roundParts.push(`[CHARACTER: ${msg}]`);
-      }
+    const normalized = normalizeRoundMessages(context.currentRoundMessages);
+    for (const msg of normalized) {
+      roundParts.push(msg);
     }
   }
   
-  currentRoundContent += roundParts.join('\n\n');
-  currentRoundContent += '\n\n[END CURRENT ROUND INTERACTIONS]';
-  
-  // Add current round as the final user message
   if (roundParts.length > 0) {
+    currentRoundContent += roundParts.join('\n\n');
+    // Explicit anti-parroting rule for current turn
+    currentRoundContent += '\n\nRULE: Do not repeat or paraphrase the wording above. Avoid reusing openings, phrases, or topics already said. Add a new angle or detail that has not been mentioned.';
+    
     messages.push({
       role: 'user',
       content: currentRoundContent
     });
   }
+  
+  console.log('[MESSAGE_BUILDER] Built', messages.length, 'messages:', 
+    messages.filter(m => m.role === 'system').length, 'system,',
+    messages.filter(m => m.role === 'user').length, 'user');
   
   return messages;
 }
